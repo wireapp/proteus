@@ -1,0 +1,21 @@
+[package]
+
+name         = "libproteus"
+version      = "0.0.1"
+authors      = ["Toralf Wittner <tw@dtex.org>", "Roman S. Borschel <roman@pkaboo.org>"]
+description  = "Axolotl protocol implementation"
+homepage     = "https://github.com/twittner/proteus"
+repository   = "git@github.com:twittner/proteus.git"
+license      = "MPL-2.0"
+
+[dependencies]
+rustc-serialize = "0.2"
+
+[dependencies.sodiumoxide]
+git = "https://github.com/dnaq/sodiumoxide"
+
+[dependencies.hkdf]
+git = "https://github.com/twittner/hkdf"
+
+[dependencies.bincode]
+git = "https://github.com/TyOverby/bincode"
