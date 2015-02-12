@@ -12,6 +12,8 @@ use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage
 use internal::util;
 use std::cmp::{Ord, Ordering};
 use std::collections::RingBuf;
+use std::error::{Error, FromError};
+use std::fmt;
 use std::iter::count;
 use std::vec::Vec;
 
@@ -119,9 +121,9 @@ impl MessageKeys {
 
 // Store ////////////////////////////////////////////////////////////////////
 
-pub trait PreKeyStore {
-    fn prekey(&self, id: PreKeyId) -> Option<PreKey>;
-    fn remove(&mut self, id: PreKeyId);
+pub trait PreKeyStore<E> {
+    fn prekey(&self, id: PreKeyId) -> Result<Option<PreKey>, E>;
+    fn remove(&mut self, id: PreKeyId) -> Result<(), E>;
 }
 
 // Session //////////////////////////////////////////////////////////////////
@@ -173,7 +175,7 @@ impl Session {
         }
     }
 
-    pub fn init_from_message<'r>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore, env: &Envelope) -> Result<(Session, Vec<u8>), DecryptError> {
+    pub fn init_from_message<'r, E: Error>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<(Session, Vec<u8>), DecryptError<E>> {
         let msg = match *env.message() {
             Message::Plain(_)     => return Err(DecryptError::InvalidMessage),
             Message::Keyed(ref m) => m
@@ -203,14 +205,14 @@ impl Session {
         state.encrypt(identity, &pending, plain)
     }
 
-    pub fn decrypt(&mut self, store: &mut PreKeyStore, env: &Envelope) -> Result<Vec<u8>, DecryptError> {
+    pub fn decrypt<E: Error>(&mut self, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<Vec<u8>, DecryptError<E>> {
         let mesg = match *env.message() {
             Message::Plain(ref m) => m,
             Message::Keyed(ref m) => {
                 if m.identity_key != self.remote_identity {
                     return Err(DecryptError::RemoteIdentityChanged)
                 }
-                self.unpack(store, m)
+                try!(self.unpack(store, m))
             }
         };
 
@@ -249,8 +251,8 @@ impl Session {
         }
     }
 
-    fn unpack<'s>(&mut self, store: &mut PreKeyStore, m: &'s PreKeyMessage) -> &'s CipherMessage {
-        store.prekey(m.prekey_id).map(|prekey| {
+    fn unpack<'s, E: Error>(&mut self, store: &mut PreKeyStore<E>, m: &'s PreKeyMessage) -> Result<&'s CipherMessage, DecryptError<E>> {
+        try!(store.prekey(m.prekey_id)).map(|prekey| {
             let new_state = SessionState::init_as_bob(BobParams {
                 bob_ident:   &self.local_identity,
                 bob_prekey:  prekey.key_pair,
@@ -263,9 +265,9 @@ impl Session {
             }
         });
         if m.prekey_id != keys::MAX_PREKEY_ID {
-            store.remove(m.prekey_id)
+            try!(store.remove(m.prekey_id));
         }
-        &m.message
+        Ok(&m.message)
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -286,16 +288,6 @@ pub struct SessionState {
     pub root_key:        RootKey,
     pub prev_counter:    Counter,
     pub skipped_msgkeys: RingBuf<MessageKeys>
-}
-
-#[derive(Copy, PartialEq, Eq, Debug)]
-pub enum DecryptError {
-    RemoteIdentityChanged,
-    InvalidSignature,
-    InvalidMessage,
-    DuplicateMessage,
-    TooDistantFuture,
-    OutdatedMessage
 }
 
 impl SessionState {
@@ -410,7 +402,7 @@ impl SessionState {
         Envelope::new(&msgkeys.mac_key, message)
     }
 
-    fn decrypt(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError> {
+    fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
         let i = match self.recv_chains.iter().position(|c| c.ratchet_key == m.ratchet_key) {
             Some(i) => i,
             None    => {
@@ -443,7 +435,7 @@ impl SessionState {
         }
     }
 
-    fn try_skipped_message_keys(&mut self, env: &Envelope, mesg: &CipherMessage) -> Result<Vec<u8>, DecryptError> {
+    fn try_skipped_message_keys<E>(&mut self, env: &Envelope, mesg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
         let too_old = self.skipped_msgkeys.get(0)
             .map(|k| k.counter > mesg.counter)
             .unwrap_or(false);
@@ -465,7 +457,7 @@ impl SessionState {
         }
     }
 
-    fn stage_skipped_message_keys(msg: &CipherMessage, chr: &RecvChain) -> Result<(ChainKey, MessageKeys, RingBuf<MessageKeys>), DecryptError> {
+    fn stage_skipped_message_keys<E>(msg: &CipherMessage, chr: &RecvChain) -> Result<(ChainKey, MessageKeys, RingBuf<MessageKeys>), DecryptError<E>> {
         let num = (msg.counter.value() - chr.chain_key.idx.value()) as usize;
 
         if num > MAX_COUNTER_GAP {
@@ -503,6 +495,70 @@ impl SessionState {
     }
 }
 
+// Decrypt Error ////////////////////////////////////////////////////////////
+
+#[derive(Copy, PartialEq, Eq)]
+pub enum DecryptError<E> {
+    RemoteIdentityChanged,
+    InvalidSignature,
+    InvalidMessage,
+    DuplicateMessage,
+    TooDistantFuture,
+    OutdatedMessage,
+    PreKeyStoreError(E)
+}
+
+impl<E> DecryptError<E> {
+    fn as_str(&self) -> &str {
+        match *self {
+            DecryptError::RemoteIdentityChanged => "RemoteIdentityChanged",
+            DecryptError::InvalidSignature      => "InvalidSignature",
+            DecryptError::InvalidMessage        => "InvalidMessage",
+            DecryptError::DuplicateMessage      => "DuplicateMessage",
+            DecryptError::TooDistantFuture      => "TooDistantFuture",
+            DecryptError::OutdatedMessage       => "OutdatedMessage",
+            DecryptError::PreKeyStoreError(_)   => "PreKeyStoreError"
+        }
+    }
+}
+
+impl<E: fmt::Debug> fmt::Debug for DecryptError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            DecryptError::PreKeyStoreError(ref e) => write!(f, "PrekeyStoreError: {:?}", e),
+            _                                     => f.write_str(self.as_str())
+        }
+    }
+}
+
+impl<E: fmt::Display> fmt::Display for DecryptError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            DecryptError::PreKeyStoreError(ref e) => write!(f, "PrekeyStoreError: {}", e),
+            _                                     => f.write_str(self.as_str())
+        }
+    }
+}
+
+impl<E: Error> Error for DecryptError<E> {
+    fn description(&self) -> &str {
+        self.as_str()
+    }
+
+    fn cause(&self) -> Option<&Error> {
+        match *self {
+            DecryptError::PreKeyStoreError(ref e) => Some(e),
+            _                                     => None
+        }
+    }
+}
+
+impl<E: Error> FromError<E> for DecryptError<E> {
+    fn from_error(err: E) -> DecryptError<E> {
+        DecryptError::PreKeyStoreError(err)
+    }
+}
+
 // Tests ////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
@@ -510,6 +566,8 @@ mod tests {
     use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle};
     use internal::keys::gen_prekeys;
     use internal::message::Envelope;
+    use std::error::Error;
+    use std::old_io::{IoResult, IoError};
     use std::vec::Vec;
     use super::*;
 
@@ -523,15 +581,16 @@ mod tests {
         }
     }
 
-    impl PreKeyStore for TestStore {
-        fn prekey(&self, id: PreKeyId) -> Option<PreKey> {
-            self.prekeys.iter().find(|k| k.key_id == id).map(|k| k.clone())
+    impl PreKeyStore<IoError> for TestStore {
+        fn prekey(&self, id: PreKeyId) -> IoResult<Option<PreKey>> {
+            Ok(self.prekeys.iter().find(|k| k.key_id == id).map(|k| k.clone()))
         }
 
-        fn remove(&mut self, id: PreKeyId) {
+        fn remove(&mut self, id: PreKeyId) -> IoResult<()> {
             self.prekeys.iter()
                 .position(|k| k.key_id == id)
                 .map(|ix| self.prekeys.swap_remove(ix));
+            Ok(())
         }
     }
 
@@ -785,18 +844,18 @@ mod tests {
         }
     }
 
-    fn assert_decrypt(expected: &[u8], actual: Result<Vec<u8>, DecryptError>) {
+    fn assert_decrypt<E: Error>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>) {
         match actual {
             Ok(b)  => assert_eq!(expected, b.as_slice()),
-            Err(e) => assert!(false, format!("{:?}", e))
+            Err(e) => assert!(false, format!("{}", e))
         }
     }
 
-    fn assert_init_from_message<'r>(i: &'r IdentityKeyPair, s: &mut PreKeyStore, m: &Envelope, t: &[u8]) -> Session {
+    fn assert_init_from_message<'r, E: Error>(i: &'r IdentityKeyPair, s: &mut PreKeyStore<E>, m: &Envelope, t: &[u8]) -> Session {
         match Session::init_from_message(i, s, m) {
             Ok((s, b)) => { assert_eq!(t, b.as_slice()); s },
             Err(e)     => {
-                assert!(false, format!("{:?}", e));
+                assert!(false, format!("{}", e));
                 unreachable!()
             }
         }
