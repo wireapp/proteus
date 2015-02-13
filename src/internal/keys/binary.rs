@@ -119,7 +119,7 @@ pub fn dec_keypair<R: Buffer>(d: &mut DecoderReader<R>) -> Result<KeyPair, Decod
 mod tests {
     use bincode::*;
     use internal::keys::KeyPair;
-    use std::old_io::MemWriter;
+    use std::vec::Vec;
     use super::*;
 
     fn encoder<W: Writer>(w: &mut W) -> EncoderWriter<W> {
@@ -133,10 +133,10 @@ mod tests {
     #[test]
     fn enc_dec_pubkey() {
         let k = KeyPair::new();
-        let mut w = MemWriter::new();
+        let mut w = Vec::new();
         let b = match enc_public_key(&k.public_key, &mut encoder(&mut w)) {
             Err(e) => panic!("Failed to encode public key: {}", e),
-            _      => w.into_inner()
+            _      => w
         };
         match dec_public_key(&mut decoder(&mut b.as_slice())) {
             Err(e) => panic!("Failed to decode public key: {}", e),
@@ -147,10 +147,10 @@ mod tests {
     #[test]
     fn enc_dec_seckey() {
         let k = KeyPair::new();
-        let mut w = MemWriter::new();
+        let mut w = Vec::new();
         let b = match enc_secret_key(&k.secret_key, &mut encoder(&mut w)) {
             Err(e) => panic!("Failed to encode secret key: {}", e),
-            _      => w.into_inner()
+            _      => w
         };
         match dec_secret_key(&mut decoder(&mut b.as_slice())) {
             Err(e) => panic!("failed to decode secret key: {}", e),

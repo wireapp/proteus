@@ -9,7 +9,6 @@ use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey};
 use internal::util;
 use std::old_io::extensions::u64_to_be_bytes;
-use std::old_io::MemWriter;
 use std::slice::bytes::copy_memory;
 use std::vec::Vec;
 
@@ -83,14 +82,14 @@ pub struct Envelope {
 
 impl Envelope {
     pub fn new(k: &MacKey, m: Message) -> Envelope {
-        let mut wrt = MemWriter::new();
-        binary::enc_msg(&m, &mut EncoderWriter::new(&mut wrt, SizeLimit::Infinite)).unwrap();
+        let mut v = Vec::new();
+        binary::enc_msg(&m, &mut EncoderWriter::new(&mut v, SizeLimit::Infinite)).unwrap();
 
         Envelope {
             version:     Version::V1,
-            mac:         k.sign(wrt.get_ref()),
+            mac:         k.sign(v.as_slice()),
             message:     m,
-            message_enc: wrt.into_inner()
+            message_enc: v
         }
     }
 
