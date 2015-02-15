@@ -277,17 +277,25 @@ impl Session {
     pub fn decode(b: &[u8]) -> Option<Session> {
         util::decode(b, binary::dec_session).ok()
     }
+
+    pub fn local_identity(&self) -> &IdentityKey {
+        &self.local_identity.public_key
+    }
+
+    pub fn remote_identity(&self) -> &IdentityKey {
+        &self.remote_identity
+    }
 }
 
 // Session State ////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
 pub struct SessionState {
-    pub recv_chains:     RingBuf<RecvChain>,
-    pub send_chain:      SendChain,
-    pub root_key:        RootKey,
-    pub prev_counter:    Counter,
-    pub skipped_msgkeys: RingBuf<MessageKeys>
+    recv_chains:     RingBuf<RecvChain>,
+    send_chain:      SendChain,
+    root_key:        RootKey,
+    prev_counter:    Counter,
+    skipped_msgkeys: RingBuf<MessageKeys>
 }
 
 impl SessionState {
