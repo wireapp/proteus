@@ -565,7 +565,7 @@ impl<E: Error> FromError<E> for DecryptError<E> {
 mod tests {
     use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle};
     use internal::keys::gen_prekeys;
-    use internal::message::{Envelope, Message};
+    use internal::message::Envelope;
     use std::error::Error;
     use std::old_io::{IoResult, IoError};
     use std::vec::Vec;
@@ -618,19 +618,14 @@ mod tests {
         bob = Session::decode(&bob.encode()).unwrap();
         assert_eq!(1, bob.session_states.len());
         assert_eq!(1, bob.session_states[0].recv_chains.len());
-
-        match *hello_bob.message() {
-            Message::Keyed(ref msg) =>
-                assert_eq!(alice_ident.public_key.fingerprint(), msg.identity_key.fingerprint()),
-            Message::Plain(_) =>
-                unreachable!()
-        }
+        assert_eq!(bob.remote_identity.fingerprint(), alice.local_identity.public_key.fingerprint());
 
         let hello_alice = bob.encrypt(b"Hello Alice!");
 
         // Alice
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
         assert_eq!(2, alice.session_states[0].recv_chains.len());
+        assert_eq!(alice.remote_identity.fingerprint(), bob.local_identity.public_key.fingerprint());
         let ping_bob_1 = alice.encrypt(b"Ping1!");
         let ping_bob_2 = alice.encrypt(b"Ping2!");
         assert_prev_count(&alice, 2);
