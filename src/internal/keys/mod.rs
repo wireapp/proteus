@@ -5,6 +5,7 @@
 
 use internal::ffi;
 use internal::util;
+use rustc_serialize::hex::ToHex;
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
@@ -22,6 +23,10 @@ pub struct IdentityKey {
 impl IdentityKey {
     pub fn new(k: PublicKey) -> IdentityKey {
         IdentityKey { public_key: k }
+    }
+
+    pub fn fingerprint(&self) -> String {
+        self.public_key.fingerprint()
     }
 }
 
@@ -202,6 +207,10 @@ impl Debug for PublicKey {
 impl PublicKey {
     pub fn verify(&self, s: &Signature, m: &[u8]) -> bool {
         sign::verify_detached(&s.sig, m, &self.pub_edward)
+    }
+
+    pub fn fingerprint(&self) -> String {
+        self.pub_edward.0.to_hex()
     }
 }
 
