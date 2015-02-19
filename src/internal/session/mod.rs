@@ -189,7 +189,8 @@ impl Session {
             session_states:  RingBuf::new()
         };
 
-        let msg = try!(session.unpack(store, env));
+        let msg = try!(session.unpack(store, pkmsg));
+
         if session.session_states.is_empty() {
             return Err(DecryptError::InvalidMessage)
         }
@@ -210,7 +211,15 @@ impl Session {
     }
 
     pub fn decrypt<E: Error>(&mut self, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<Vec<u8>, DecryptError<E>> {
-        let msg = try!(self.unpack(store, env));
+        let msg = match *env.message() {
+            Message::Plain(ref m) => m,
+            Message::Keyed(ref m) => {
+                if m.identity_key != self.remote_identity {
+                    return Err(DecryptError::RemoteIdentityChanged)
+                }
+                try!(self.unpack(store, m))
+            }
+        };
         self.decrypt_msg(env, msg)
     }
 
@@ -250,31 +259,23 @@ impl Session {
         }
     }
 
-    fn unpack<'s, E: Error>(&mut self, store: &mut PreKeyStore<E>, env: &'s Envelope) -> Result<&'s CipherMessage, DecryptError<E>> {
-        match *env.message() {
-            Message::Plain(ref m) => Ok(m),
-            Message::Keyed(ref m) => {
-                if m.identity_key != self.remote_identity {
-                    return Err(DecryptError::RemoteIdentityChanged)
-                }
-                try!(store.prekey(m.prekey_id)).map(|prekey| {
-                    let new_state = SessionState::init_as_bob(BobParams {
-                        bob_ident:   &self.local_identity,
-                        bob_prekey:  prekey.key_pair,
-                        alice_ident: &m.identity_key,
-                        alice_base:  &m.base_key
-                    });
-                    self.session_states.push_front(new_state);
-                    if self.session_states.len() > MAX_SESSION_STATES {
-                        self.session_states.pop_back();
-                    }
-                });
-                if m.prekey_id != keys::MAX_PREKEY_ID {
-                    try!(store.remove(m.prekey_id));
-                }
-                Ok(&m.message)
+    fn unpack<'s, E: Error>(&mut self, store: &mut PreKeyStore<E>, m: &'s PreKeyMessage) -> Result<&'s CipherMessage, DecryptError<E>> {
+        try!(store.prekey(m.prekey_id)).map(|prekey| {
+            let new_state = SessionState::init_as_bob(BobParams {
+                bob_ident:   &self.local_identity,
+                bob_prekey:  prekey.key_pair,
+                alice_ident: &m.identity_key,
+                alice_base:  &m.base_key
+            });
+            self.session_states.push_front(new_state);
+            if self.session_states.len() > MAX_SESSION_STATES {
+                self.session_states.pop_back();
             }
+        });
+        if m.prekey_id != keys::MAX_PREKEY_ID {
+            try!(store.remove(m.prekey_id));
         }
+        Ok(&m.message)
     }
 
     pub fn encode(&self) -> Vec<u8> {
