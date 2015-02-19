@@ -223,7 +223,7 @@ impl Session {
         self.decrypt_msg(env, msg)
     }
 
-    pub fn decrypt_msg<E: Error>(&mut self, env: &Envelope, msg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
+    fn decrypt_msg<E: Error>(&mut self, env: &Envelope, msg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
         assert!(!self.session_states.is_empty());
 
         // try first session state
