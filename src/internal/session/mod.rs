@@ -176,7 +176,7 @@ impl Session {
     }
 
     pub fn init_from_message<'r, E: Error>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<(Session, Vec<u8>), DecryptError<E>> {
-        let msg = match *env.message() {
+        let pkmsg = match *env.message() {
             Message::Plain(_)     => return Err(DecryptError::InvalidMessage),
             Message::Keyed(ref m) => m
         };
@@ -184,13 +184,18 @@ impl Session {
         let mut session = Session {
             version:         Version::V1,
             local_identity:  ours.clone(),
-            remote_identity: msg.identity_key,
+            remote_identity: pkmsg.identity_key,
             pending_prekey:  None,
             session_states:  RingBuf::new()
         };
 
-        let plain = try!(session.decrypt(store, env));
-        assert!(!session.session_states.is_empty());
+        let msg = try!(session.unpack(store, pkmsg));
+
+        if session.session_states.is_empty() {
+            return Err(DecryptError::InvalidMessage)
+        }
+
+        let plain = try!(session.decrypt_msg(env, msg));
 
         Ok((session, plain))
     }
@@ -206,7 +211,7 @@ impl Session {
     }
 
     pub fn decrypt<E: Error>(&mut self, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<Vec<u8>, DecryptError<E>> {
-        let mesg = match *env.message() {
+        let msg = match *env.message() {
             Message::Plain(ref m) => m,
             Message::Keyed(ref m) => {
                 if m.identity_key != self.remote_identity {
@@ -215,12 +220,15 @@ impl Session {
                 try!(self.unpack(store, m))
             }
         };
+        self.decrypt_msg(env, msg)
+    }
 
+    fn decrypt_msg<E: Error>(&mut self, env: &Envelope, msg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
         assert!(!self.session_states.is_empty());
 
         // try first session state
         let mut first_state = self.session_states[0].clone();
-        let first_result    = first_state.decrypt(env, mesg);
+        let first_result    = first_state.decrypt(env, msg);
 
         if first_result.is_ok() {
             self.session_states[0] = first_state;
@@ -232,7 +240,7 @@ impl Session {
         let result =
             self.session_states.iter().skip(1).zip(count(1, 1)).map(|(s0, i)| {
                 let mut s1 = s0.clone();
-                let result = s1.decrypt(env, mesg);
+                let result = s1.decrypt(env, msg);
                 if result.is_ok() {
                     Some((result, s1, i))
                 } else {
@@ -851,6 +859,30 @@ mod tests {
 
         for msg in buffer.iter() {
             assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &Envelope::decode(msg).unwrap()));
+        }
+    }
+
+    #[test]
+    fn retry_init_from_message() {
+        let alice_ident = IdentityKeyPair::new();
+        let bob_ident   = IdentityKeyPair::new();
+
+        let mut bob_store = TestStore { prekeys: gen_prekeys(PreKeyId::new(0), 10) };
+
+        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
+
+        let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
+        let hello_bob = alice.encrypt(b"Hello Bob!");
+
+        assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
+        // The behavior on retry depends on the PreKeyStore implementation.
+        // With a PreKeyStore that eagerly deletes prekeys, like the TestStore,
+        // the prekey will be gone and a retry cause an error (and thus a lost message).
+        match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob) {
+            Err(DecryptError::InvalidMessage) => {} // expected
+            Err(e) => { panic!(format!("{}", e)) }
+            Ok(_)  => { panic!("Unexpected success on retrying init_from_message") }
         }
     }
 
