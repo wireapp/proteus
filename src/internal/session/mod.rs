@@ -11,7 +11,7 @@ use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage};
 use internal::util;
 use std::cmp::{Ord, Ordering};
-use std::collections::RingBuf;
+use std::collections::VecDeque;
 use std::error::{Error, FromError};
 use std::fmt;
 use std::iter::count;
@@ -140,7 +140,7 @@ pub struct Session {
     local_identity:  IdentityKeyPair,
     remote_identity: IdentityKey,
     pending_prekey:  Option<(PreKeyId, PublicKey)>,
-    session_states:  RingBuf<SessionState>
+    session_states:  VecDeque<SessionState>
 }
 
 struct AliceParams<'r> {
@@ -159,7 +159,7 @@ struct BobParams<'r> {
 impl Session {
     pub fn init_from_prekey<'r>(alice: &'r IdentityKeyPair, pk: PreKeyBundle) -> Session {
         let alice_base = KeyPair::new();
-        let mut states = RingBuf::new();
+        let mut states = VecDeque::new();
         states.push_front(SessionState::init_as_alice(AliceParams {
             alice_ident:   alice,
             alice_base:    &alice_base,
@@ -186,7 +186,7 @@ impl Session {
             local_identity:  ours.clone(),
             remote_identity: pkmsg.identity_key,
             pending_prekey:  None,
-            session_states:  RingBuf::new()
+            session_states:  VecDeque::new()
         };
 
         let msg = try!(session.unpack(store, pkmsg));
@@ -299,11 +299,11 @@ impl Session {
 
 #[derive(Clone)]
 pub struct SessionState {
-    recv_chains:     RingBuf<RecvChain>,
+    recv_chains:     VecDeque<RecvChain>,
     send_chain:      SendChain,
     root_key:        RootKey,
     prev_counter:    Counter,
-    skipped_msgkeys: RingBuf<MessageKeys>
+    skipped_msgkeys: VecDeque<MessageKeys>
 }
 
 impl SessionState {
@@ -322,7 +322,7 @@ impl SessionState {
         let rootkey  = RootKey::from_cipher_key(dsecs.cipher_key);
         let chainkey = ChainKey::from_mac_key(dsecs.mac_key, Counter::zero());
 
-        let mut recv_chains = RingBuf::with_capacity(MAX_RECV_CHAINS + 1);
+        let mut recv_chains = VecDeque::with_capacity(MAX_RECV_CHAINS + 1);
         recv_chains.push_front(RecvChain::new(chainkey, p.bob.public_key));
 
         // sending chain
@@ -335,7 +335,7 @@ impl SessionState {
             send_chain:      send_chain,
             root_key:        rok,
             prev_counter:    Counter::zero(),
-            skipped_msgkeys: RingBuf::new()
+            skipped_msgkeys: VecDeque::new()
         }
     }
 
@@ -356,11 +356,11 @@ impl SessionState {
         let send_chain = SendChain::new(chainkey, p.bob_prekey);
 
         SessionState {
-            recv_chains:     RingBuf::with_capacity(MAX_RECV_CHAINS + 1),
+            recv_chains:     VecDeque::with_capacity(MAX_RECV_CHAINS + 1),
             send_chain:      send_chain,
             root_key:        rootkey,
             prev_counter:    Counter::zero(),
-            skipped_msgkeys: RingBuf::new()
+            skipped_msgkeys: VecDeque::new()
         }
     }
 
@@ -473,14 +473,14 @@ impl SessionState {
         }
     }
 
-    fn stage_skipped_message_keys<E>(msg: &CipherMessage, chr: &RecvChain) -> Result<(ChainKey, MessageKeys, RingBuf<MessageKeys>), DecryptError<E>> {
+    fn stage_skipped_message_keys<E>(msg: &CipherMessage, chr: &RecvChain) -> Result<(ChainKey, MessageKeys, VecDeque<MessageKeys>), DecryptError<E>> {
         let num = (msg.counter.value() - chr.chain_key.idx.value()) as usize;
 
         if num > MAX_COUNTER_GAP {
             return Err(DecryptError::TooDistantFuture)
         }
 
-        let mut buf = RingBuf::with_capacity(num);
+        let mut buf = VecDeque::with_capacity(num);
         let mut chk = chr.chain_key.clone();
 
         for _ in 0 .. num {
@@ -492,7 +492,7 @@ impl SessionState {
         Ok((chk, mk, buf))
     }
 
-    fn commit_skipped_message_keys(&mut self, mks: RingBuf<MessageKeys>) {
+    fn commit_skipped_message_keys(&mut self, mks: VecDeque<MessageKeys>) {
         assert!(mks.len() <= MAX_COUNTER_GAP);
 
         let excess = self.skipped_msgkeys.len() as isize

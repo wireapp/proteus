@@ -8,7 +8,7 @@ use internal::derived::binary::*;
 use internal::keys::binary::*;
 use internal::message::binary::*;
 use rustc_serialize::{Decodable, Decoder, Encodable};
-use std::collections::RingBuf;
+use std::collections::VecDeque;
 use std::old_io::{Buffer, Writer};
 use super::*;
 
@@ -124,7 +124,7 @@ pub fn dec_session<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Session, Decod
         _ => return Err(d.error("Invalid pending prekeys"))
     };
     let ls: usize = try!(Decodable::decode(d));
-    let mut rb = RingBuf::with_capacity(ls);
+    let mut rb = VecDeque::with_capacity(ls);
     for _ in 0 .. ls {
         rb.push_back(try!(dec_session_state(d)))
     }
@@ -156,7 +156,7 @@ pub fn enc_session_state<W: Writer>(s: &SessionState, e: &mut EncoderWriter<W>) 
 
 pub fn dec_session_state<R: Buffer>(d: &mut DecoderReader<R>) -> Result<SessionState, DecodingError> {
     let lr: usize = try!(Decodable::decode(d));
-    let mut rr = RingBuf::with_capacity(lr);
+    let mut rr = VecDeque::with_capacity(lr);
     for _ in 0 .. lr {
         rr.push_back(try!(dec_recv_chain(d)))
     }
@@ -164,7 +164,7 @@ pub fn dec_session_state<R: Buffer>(d: &mut DecoderReader<R>) -> Result<SessionS
     let rk = try!(dec_root_key(d));
     let ct = try!(dec_counter(d));
     let lv: usize = try!(Decodable::decode(d));
-    let mut vm = RingBuf::with_capacity(lv);
+    let mut vm = VecDeque::with_capacity(lv);
     for _ in 0 .. lv {
         vm.push_front(try!(dec_msg_keys(d)))
     }
