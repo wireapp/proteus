@@ -3,4 +3,4 @@ language: rust
 before_script:
     - wget "https://github.com/jedisct1/libsodium/releases/download/1.0.2/libsodium-1.0.2.tar.gz"
     - tar -xzvf libsodium-1.0.2.tar.gz
-    - cd libsodium-1.0.2 && ./configure --prefix=/usr && make && make install
+    - cd libsodium-1.0.2 && ./configure --prefix=/usr && make && sudo make install
