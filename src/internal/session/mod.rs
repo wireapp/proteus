@@ -583,7 +583,7 @@ mod tests {
     use internal::keys::gen_prekeys;
     use internal::message::Envelope;
     use std::error::Error;
-    use std::old_io::{IoResult, IoError};
+    use std::io;
     use std::vec::Vec;
     use super::*;
 
@@ -597,12 +597,12 @@ mod tests {
         }
     }
 
-    impl PreKeyStore<IoError> for TestStore {
-        fn prekey(&self, id: PreKeyId) -> IoResult<Option<PreKey>> {
+    impl PreKeyStore<io::Error> for TestStore {
+        fn prekey(&self, id: PreKeyId) -> io::Result<Option<PreKey>> {
             Ok(self.prekeys.iter().find(|k| k.key_id == id).map(|k| k.clone()))
         }
 
-        fn remove(&mut self, id: PreKeyId) -> IoResult<()> {
+        fn remove(&mut self, id: PreKeyId) -> io::Result<()> {
             self.prekeys.iter()
                 .position(|k| k.key_id == id)
                 .map(|ix| self.prekeys.swap_remove(ix));

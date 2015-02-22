@@ -9,27 +9,27 @@ use internal::keys::binary::*;
 use internal::message::binary::*;
 use rustc_serialize::{Decodable, Decoder, Encodable};
 use std::collections::VecDeque;
-use std::old_io::{Buffer, Writer};
+use std::io::{BufRead, Write};
 use super::*;
 
 // Root key /////////////////////////////////////////////////////////////////
 
-pub fn enc_root_key<W: Writer>(k: &RootKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_root_key<W: Write>(k: &RootKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     enc_cipher_key(&k.key, e)
 }
 
-pub fn dec_root_key<R: Buffer>(d: &mut DecoderReader<R>) -> Result<RootKey, DecodingError> {
+pub fn dec_root_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<RootKey, DecodingError> {
     dec_cipher_key(d).map(|k| RootKey { key: k } )
 }
 
 // Chain key /////////////////////////////////////////////////////////////////
 
-pub fn enc_chain_key<W: Writer>(k: &ChainKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_chain_key<W: Write>(k: &ChainKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_mac_key(&k.key, e));
     enc_counter(&k.idx, e)
 }
 
-pub fn dec_chain_key<R: Buffer>(d: &mut DecoderReader<R>) -> Result<ChainKey, DecodingError> {
+pub fn dec_chain_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<ChainKey, DecodingError> {
     let k = try!(dec_mac_key(d));
     let c = try!(dec_counter(d));
     Ok(ChainKey { key: k, idx: c })
@@ -37,12 +37,12 @@ pub fn dec_chain_key<R: Buffer>(d: &mut DecoderReader<R>) -> Result<ChainKey, De
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-pub fn enc_send_chain<W: Writer>(s: &SendChain, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_send_chain<W: Write>(s: &SendChain, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_chain_key(&s.chain_key, e));
     enc_keypair(&s.ratchet_key, e)
 }
 
-pub fn dec_send_chain<R: Buffer>(d: &mut DecoderReader<R>) -> Result<SendChain, DecodingError> {
+pub fn dec_send_chain<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SendChain, DecodingError> {
     let k = try!(dec_chain_key(d));
     let c = try!(dec_keypair(d));
     Ok(SendChain { chain_key: k, ratchet_key: c })
@@ -50,12 +50,12 @@ pub fn dec_send_chain<R: Buffer>(d: &mut DecoderReader<R>) -> Result<SendChain, 
 
 // Receive Chain ////////////////////////////////////////////////////////////
 
-pub fn enc_recv_chain<W: Writer>(r: &RecvChain, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_recv_chain<W: Write>(r: &RecvChain, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_chain_key(&r.chain_key, e));
     enc_public_key(&r.ratchet_key, e)
 }
 
-pub fn dec_recv_chain<R: Buffer>(d: &mut DecoderReader<R>) -> Result<RecvChain, DecodingError> {
+pub fn dec_recv_chain<R: BufRead>(d: &mut DecoderReader<R>) -> Result<RecvChain, DecodingError> {
     let k = try!(dec_chain_key(d));
     let c = try!(dec_public_key(d));
     Ok(RecvChain { chain_key: k, ratchet_key: c })
@@ -63,13 +63,13 @@ pub fn dec_recv_chain<R: Buffer>(d: &mut DecoderReader<R>) -> Result<RecvChain, 
 
 // Message Keys /////////////////////////////////////////////////////////////
 
-pub fn enc_msg_keys<W: Writer>(k: &MessageKeys, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_msg_keys<W: Write>(k: &MessageKeys, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_cipher_key(&k.cipher_key, e));
     try!(enc_mac_key(&k.mac_key, e));
     enc_counter(&k.counter, e)
 }
 
-pub fn dec_msg_keys<R: Buffer>(d: &mut DecoderReader<R>) -> Result<MessageKeys, DecodingError> {
+pub fn dec_msg_keys<R: BufRead>(d: &mut DecoderReader<R>) -> Result<MessageKeys, DecodingError> {
     let k = try!(dec_cipher_key(d));
     let m = try!(dec_mac_key(d));
     let c = try!(dec_counter(d));
@@ -78,11 +78,11 @@ pub fn dec_msg_keys<R: Buffer>(d: &mut DecoderReader<R>) -> Result<MessageKeys, 
 
 // Version //////////////////////////////////////////////////////////////////
 
-fn enc_session_version<W: Writer>(_: &Version, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+fn enc_session_version<W: Write>(_: &Version, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     1u32.encode(e)
 }
 
-fn dec_session_version<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
+fn dec_session_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
     match try!(Decodable::decode(d)) {
         1u32 => Ok(Version::V1),
         vers => Err(d.error(format!("Unknow session version {}", vers).as_slice()))
@@ -91,7 +91,7 @@ fn dec_session_version<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Version, D
 
 // Session //////////////////////////////////////////////////////////////////
 
-pub fn enc_session<W: Writer>(s: &Session, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_session<W: Write>(s: &Session, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_session_version(&s.version, e));
     try!(enc_identity_keypair(&s.local_identity, e));
     try!(enc_identity_key(&s.remote_identity, e));
@@ -110,7 +110,7 @@ pub fn enc_session<W: Writer>(s: &Session, e: &mut EncoderWriter<W>) -> Result<(
     Ok(())
 }
 
-pub fn dec_session<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Session, DecodingError> {
+pub fn dec_session<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Session, DecodingError> {
     let vs = try!(dec_session_version(d));
     let li = try!(dec_identity_keypair(d));
     let ri = try!(dec_identity_key(d));
@@ -139,7 +139,7 @@ pub fn dec_session<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Session, Decod
 
 // Session State ////////////////////////////////////////////////////////////
 
-pub fn enc_session_state<W: Writer>(s: &SessionState, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_session_state<W: Write>(s: &SessionState, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(s.recv_chains.len().encode(e));
     for r in s.recv_chains.iter() {
         try!(enc_recv_chain(r, e))
@@ -154,7 +154,7 @@ pub fn enc_session_state<W: Writer>(s: &SessionState, e: &mut EncoderWriter<W>) 
     Ok(())
 }
 
-pub fn dec_session_state<R: Buffer>(d: &mut DecoderReader<R>) -> Result<SessionState, DecodingError> {
+pub fn dec_session_state<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SessionState, DecodingError> {
     let lr: usize = try!(Decodable::decode(d));
     let mut rr = VecDeque::with_capacity(lr);
     for _ in 0 .. lr {

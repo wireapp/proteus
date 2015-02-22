@@ -8,15 +8,16 @@ use internal::util::Array32;
 use rustc_serialize::{Encodable};
 use sodiumoxide::crypto::stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
+use std::io::{BufRead, Write};
 use super::*;
 
 // Cipher Key ///////////////////////////////////////////////////////////////
 
-pub fn enc_cipher_key<W: Writer>(k: &CipherKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_cipher_key<W: Write>(k: &CipherKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     k.key.0.encode(e)
 }
 
-pub fn dec_cipher_key<R: Buffer>(d: &mut DecoderReader<R>) -> Result<CipherKey, DecodingError> {
+pub fn dec_cipher_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<CipherKey, DecodingError> {
     Array32::decode(d).map(|v| {
         CipherKey { key: stream::Key(v.array) }
     })
@@ -24,11 +25,11 @@ pub fn dec_cipher_key<R: Buffer>(d: &mut DecoderReader<R>) -> Result<CipherKey, 
 
 // MAC Key //////////////////////////////////////////////////////////////////
 
-pub fn enc_mac_key<W: Writer>(k: &MacKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_mac_key<W: Write>(k: &MacKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     k.key.0.encode(e)
 }
 
-pub fn dec_mac_key<R: Buffer>(d: &mut DecoderReader<R>) -> Result<MacKey, DecodingError> {
+pub fn dec_mac_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<MacKey, DecodingError> {
     Array32::decode(d).map(|v| {
         MacKey { key: mac::Key(v.array) }
     })
@@ -36,11 +37,11 @@ pub fn dec_mac_key<R: Buffer>(d: &mut DecoderReader<R>) -> Result<MacKey, Decodi
 
 // MAC //////////////////////////////////////////////////////////////////////
 
-pub fn enc_mac<W: Writer>(k: &Mac, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_mac<W: Write>(k: &Mac, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     k.sig.0.encode(e)
 }
 
-pub fn dec_mac<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Mac, DecodingError> {
+pub fn dec_mac<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Mac, DecodingError> {
     Array32::decode(d).map(|v| {
         Mac { sig: mac::Tag(v.array) }
     })

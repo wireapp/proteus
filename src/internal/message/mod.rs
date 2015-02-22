@@ -3,8 +3,7 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-use bincode::SizeLimit;
-use bincode::{EncoderWriter};
+use bincode::EncoderWriter;
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey};
 use internal::util;
@@ -83,7 +82,7 @@ pub struct Envelope {
 impl Envelope {
     pub fn new(k: &MacKey, m: Message) -> Envelope {
         let mut v = Vec::new();
-        binary::enc_msg(&m, &mut EncoderWriter::new(&mut v, SizeLimit::Infinite)).unwrap();
+        binary::enc_msg(&m, &mut EncoderWriter::new(&mut v)).unwrap();
 
         Envelope {
             version:     Version::V1,

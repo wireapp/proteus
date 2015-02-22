@@ -8,16 +8,17 @@ use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
 use internal::derived::binary::*;
 use internal::keys::binary::*;
 use rustc_serialize::{Decodable, Decoder, Encodable};
+use std::io::{BufRead, Write};
 use std::vec::Vec;
 use super::*;
 
 // Version ////////////////////////////////////////////////////////////////////
 
-pub fn enc_msg_version<W: Writer>(_: &Version, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_msg_version<W: Write>(_: &Version, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     1u32.encode(e)
 }
 
-pub fn dec_msg_version<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
+pub fn dec_msg_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
     match try!(Decodable::decode(d)) {
         1u32 => Ok(Version::V1),
         vers => Err(d.error(format!("Unknow session version {}", vers).as_slice()))
@@ -26,17 +27,17 @@ pub fn dec_msg_version<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Version, D
 
 // Counter ////////////////////////////////////////////////////////////////////
 
-pub fn enc_counter<W: Writer>(c: &Counter, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_counter<W: Write>(c: &Counter, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     c.0.encode(e)
 }
 
-pub fn dec_counter<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Counter, DecodingError> {
+pub fn dec_counter<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Counter, DecodingError> {
     Decodable::decode(d).map(Counter)
 }
 
 // Message //////////////////////////////////////////////////////////////////
 
-pub fn enc_msg<W: Writer>(msg: &Message, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_msg<W: Write>(msg: &Message, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     match *msg {
         Message::Plain(ref m) => {
             try!(1u32.encode(e));
@@ -49,7 +50,7 @@ pub fn enc_msg<W: Writer>(msg: &Message, e: &mut EncoderWriter<W>) -> Result<(),
     }
 }
 
-pub fn dec_msg<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Message, DecodingError> {
+pub fn dec_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Message, DecodingError> {
     match try!(Decodable::decode(d)) {
         1u32 => dec_cipher_msg(d).map(Message::Plain),
         2u32 => dec_prekey_msg(d).map(Message::Keyed),
@@ -59,14 +60,14 @@ pub fn dec_msg<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Message, DecodingE
 
 // Prekey Message ///////////////////////////////////////////////////////////
 
-pub fn enc_prekey_msg<W: Writer>(msg: &PreKeyMessage, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_prekey_msg<W: Write>(msg: &PreKeyMessage, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_prekey_id(&msg.prekey_id, e));
     try!(enc_public_key(&msg.base_key, e));
     try!(enc_identity_key(&msg.identity_key, e));
     enc_cipher_msg(&msg.message, e)
 }
 
-pub fn dec_prekey_msg<R: Buffer>(d: &mut DecoderReader<R>) -> Result<PreKeyMessage, DecodingError> {
+pub fn dec_prekey_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKeyMessage, DecodingError> {
     let pid = try!(dec_prekey_id(d));
     let bky = try!(dec_public_key(d));
     let iky = try!(dec_identity_key(d));
@@ -81,14 +82,14 @@ pub fn dec_prekey_msg<R: Buffer>(d: &mut DecoderReader<R>) -> Result<PreKeyMessa
 
 // CipherMessage ////////////////////////////////////////////////////////////
 
-pub fn enc_cipher_msg<W: Writer>(m: &CipherMessage, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_cipher_msg<W: Write>(m: &CipherMessage, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_counter(&m.counter, e));
     try!(enc_counter(&m.prev_counter, e));
     try!(enc_public_key(&m.ratchet_key, e));
     m.cipher_text.encode(e)
 }
 
-pub fn dec_cipher_msg<R: Buffer>(d: &mut DecoderReader<R>) -> Result<CipherMessage, DecodingError> {
+pub fn dec_cipher_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<CipherMessage, DecodingError> {
     let ctr = try!(dec_counter(d));
     let pct = try!(dec_counter(d));
     let rky = try!(dec_public_key(d));
@@ -103,13 +104,13 @@ pub fn dec_cipher_msg<R: Buffer>(d: &mut DecoderReader<R>) -> Result<CipherMessa
 
 // Message Envelope /////////////////////////////////////////////////////////
 
-pub fn enc_envelope<W: Writer>(x: &Envelope, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_envelope<W: Write>(x: &Envelope, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_msg_version(&x.version, e));
     try!(enc_mac(&x.mac, e));
     x.message_enc.encode(e)
 }
 
-pub fn dec_envelope<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Envelope, DecodingError> {
+pub fn dec_envelope<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Envelope, DecodingError> {
     let version = try!(dec_msg_version(d));
     let mac     = try!(dec_mac(d));
     let msg_enc: Vec<u8> = try!(Decodable::decode(d));

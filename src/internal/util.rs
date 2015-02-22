@@ -6,17 +6,18 @@
 use bincode::SizeLimit;
 use bincode::{DecoderReader, DecodingError, EncoderWriter, EncodingError};
 use rustc_serialize::{Decodable, Decoder};
-use std::old_io::{Buffer, MemWriter};
+use std::io::BufRead;
+use std::vec::Vec;
 
 pub fn encode<A, F>(a: &A, f: F) -> Result<Vec<u8>, EncodingError>
-where F: Fn(&A, &mut EncoderWriter<MemWriter>) -> Result<(), EncodingError>
+where F: Fn(&A, &mut EncoderWriter<Vec<u8>>) -> Result<(), EncodingError>
 {
-    let mut w = MemWriter::new();
+    let mut w = Vec::new();
     {
-        let mut e = EncoderWriter::new(&mut w, SizeLimit::Infinite);
+        let mut e = EncoderWriter::new(&mut w);
         try!(f(a, &mut e));
     }
-    Ok(w.into_inner())
+    Ok(w)
 }
 
 pub fn decode<'r, A, F>(b: &'r [u8], f: F) -> Result<A, DecodingError>
@@ -32,7 +33,7 @@ where F: Fn(&mut DecoderReader<&'r [u8]>) -> Result<A, DecodingError>
 pub struct Array32 { pub array: [u8; 32] }
 
 impl Array32 {
-    pub fn decode<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Array32, DecodingError> {
+    pub fn decode<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Array32, DecodingError> {
         if 32_u64 != try!(Decodable::decode(d)) {
             return Err(d.error("array length =/= 32"))
         }
@@ -49,7 +50,7 @@ impl Array32 {
 pub struct Array64 { pub array: [u8; 64] }
 
 impl Array64 {
-    pub fn decode<R: Buffer>(d: &mut DecoderReader<R>) -> Result<Array64, DecodingError> {
+    pub fn decode<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Array64, DecodingError> {
         if 64_u64 != try!(Decodable::decode(d)) {
             return Err(d.error("array length =/= 64"))
         }
