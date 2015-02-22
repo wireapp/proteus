@@ -1,29 +1,27 @@
-# Proteus
+[![Build Status](https://travis-ci.org/twittner/proteus.svg?branch=master)][1]
 
-`proteus` is an implementation of the [axolotl protocol](https://github.com/trevp/axolotl/wiki) without header keys [1].
-It is suitable for use in asynchronous environments through its use of [prekeys](https://whispersystems.org/blog/asynchronous-security/
-) [2].
+`libproteus` is an implementation of the [axolotl protocol][2] without header
+keys. It is suitable for use in asynchronous environments through its use of
+[prekeys][3].
 
-## Implementation Details
-
-### Roles
-
-The roles of the axolotl protocol for a particular session are fixed through the use of prekeys:
+The roles of the axolotl protocol for a particular session are fixed through
+the use of prekeys:
 
   * The side that obtains a prekey and uses it to initiate a session is `Alice`.
   * The side that receives a prekey message and uses it to initiate a session is `Bob`.
 
-### Cryptographic Building Blocks
+All cryptographic primitives used in the implementation of the protocol are
+provided by [libsodium][4]:
 
-All cryptographic primitives used in the implementation of the protocol are provided by [libsodium](https://github.com/jedisct1/libsodium).
+  * Cipher: [XSalsa20][5]
+  * Diffie-Hellman: [Curve25519][6]
+  * KDF: [HKDF][7] ([implementation][8])
 
-  * Cipher: [XSalsa20](http://en.wikipedia.org/wiki/Salsa20)
-  * Diffie-Hellman: [Curve25519](http://en.wikipedia.org/wiki/Curve25519)
-  * KDF: [HKDF](https://tools.ietf.org/html/rfc5869) ([implementation](https://github.com/twittner/hkdf))
-
-## References
-
-[1] https://github.com/trevp/axolotl/wiki
-
-[2] https://whispersystems.org/blog/asynchronous-security/
-
+[1]: https://travis-ci.org/twittner/proteus
+[2]: https://github.com/trevp/axolotl/wiki
+[3]: https://whispersystems.org/blog/asynchronous-security/
+[4]: https://github.com/jedisct1/libsodium
+[5]: http://en.wikipedia.org/wiki/Salsa20
+[6]: http://en.wikipedia.org/wiki/Curve25519
+[7]: https://tools.ietf.org/html/rfc5869
+[8]: https://github.com/twittner/hkdf
