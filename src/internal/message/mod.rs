@@ -86,14 +86,14 @@ impl Envelope {
 
         Envelope {
             version:     Version::V1,
-            mac:         k.sign(v.as_slice()),
+            mac:         k.sign(&v),
             message:     m,
             message_enc: v
         }
     }
 
     pub fn verify(&self, k: &MacKey) -> bool {
-        k.verify(&self.mac, self.message_enc.as_slice())
+        k.verify(&self.mac, &self.message_enc)
     }
 
     pub fn version(&self) -> Version {

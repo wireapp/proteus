@@ -85,7 +85,7 @@ fn enc_session_version<W: Write>(_: &Version, e: &mut EncoderWriter<W>) -> Resul
 fn dec_session_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
     match try!(Decodable::decode(d)) {
         1u32 => Ok(Version::V1),
-        vers => Err(d.error(format!("Unknow session version {}", vers).as_slice()))
+        vers => Err(d.error(&format!("Unknow session version {}", vers)))
     }
 }
 

@@ -192,15 +192,15 @@ impl Eq for PublicKey {}
 
 impl PartialEq for PublicKey {
     fn eq(&self, other: &PublicKey) -> bool {
-        self.pub_edward.0.as_slice() == other.pub_edward.0.as_slice()
+        &self.pub_edward.0 == &other.pub_edward.0
             &&
-        self.pub_curve.0.as_slice() == other.pub_curve.0.as_slice()
+        &self.pub_curve.0 == &other.pub_curve.0
     }
 }
 
 impl Debug for PublicKey {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "{:?}", self.pub_edward.0.as_slice())
+        write!(f, "{:?}", &self.pub_edward.0)
     }
 }
 
@@ -232,7 +232,7 @@ pub struct Signature {
 pub fn from_ed25519_pk(k: &sign::PublicKey) -> [u8; ecdh::BYTES] {
     let mut ep = [0u8; ecdh::BYTES];
     unsafe {
-        ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), k.0.as_slice().as_ptr());
+        ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr());
     }
     ep
 }
@@ -240,7 +240,7 @@ pub fn from_ed25519_pk(k: &sign::PublicKey) -> [u8; ecdh::BYTES] {
 pub fn from_ed25519_sk(k: &sign::SecretKey) -> [u8; ecdh::SCALARBYTES] {
     let mut es = [0u8; ecdh::SCALARBYTES];
     unsafe {
-        ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), k.0.as_slice().as_ptr());
+        ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr());
     }
     es
 }
@@ -257,7 +257,7 @@ mod tests {
         let b  = KeyPair::new();
         let sa = a.secret_key.shared_secret(&b.public_key);
         let sb = b.secret_key.shared_secret(&a.public_key);
-        assert_eq!(sa.as_slice(), sb.as_slice())
+        assert_eq!(&sa, &sb)
     }
 
     #[test]

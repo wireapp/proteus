@@ -33,9 +33,7 @@ impl RootKey {
 
     pub fn dh_ratchet(&self, ours: &KeyPair, theirs: &PublicKey) -> (RootKey, ChainKey) {
         let secret = ours.secret_key.shared_secret(theirs);
-        let dsecs  = DerivedSecrets::kdf(Input(secret.as_slice()),
-                                         Salt(self.key.as_slice()),
-                                         Info(b"dh_ratchet"));
+        let dsecs  = DerivedSecrets::kdf(Input(&secret), Salt(&self.key), Info(b"dh_ratchet"));
         (RootKey::from_cipher_key(dsecs.cipher_key), ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()))
     }
 }
@@ -62,8 +60,7 @@ impl ChainKey {
 
     pub fn message_keys(&self) -> MessageKeys {
         let base  = self.key.sign(b"0");
-        let dsecs = DerivedSecrets::kdf_without_salt(Input(base.as_slice()),
-                                                     Info(b"hash_ratchet"));
+        let dsecs = DerivedSecrets::kdf_without_salt(Input(&base), Info(b"hash_ratchet"));
         MessageKeys {
             cipher_key: dsecs.cipher_key,
             mac_key:    dsecs.mac_key,
@@ -316,7 +313,7 @@ impl SessionState {
             buf
         };
 
-        let dsecs = DerivedSecrets::kdf_without_salt(Input(master_key.as_slice()), Info(b"handshake"));
+        let dsecs = DerivedSecrets::kdf_without_salt(Input(&master_key), Info(b"handshake"));
 
         // receiving chain
         let rootkey  = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -348,7 +345,7 @@ impl SessionState {
             buf
         };
 
-        let dsecs = DerivedSecrets::kdf_without_salt(Input(master_key.as_slice()), Info(b"handshake"));
+        let dsecs = DerivedSecrets::kdf_without_salt(Input(&master_key), Info(b"handshake"));
 
         // sending chain
         let rootkey    = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -434,7 +431,7 @@ impl SessionState {
                 if !env.verify(&mk.mac_key) {
                     return Err(DecryptError::InvalidSignature)
                 }
-                let plain = mk.decrypt(m.cipher_text.as_slice());
+                let plain = mk.decrypt(&m.cipher_text);
                 self.recv_chains[i].chain_key = chk.next();
                 self.commit_skipped_message_keys(mks);
                 Ok(plain)
@@ -444,7 +441,7 @@ impl SessionState {
                 if !env.verify(&mks.mac_key) {
                     return Err(DecryptError::InvalidSignature)
                 }
-                let plain = mks.decrypt(m.cipher_text.as_slice());
+                let plain = mks.decrypt(&m.cipher_text);
                 self.recv_chains[i].chain_key = self.recv_chains[i].chain_key.next();
                 Ok(plain)
             }
@@ -464,7 +461,7 @@ impl SessionState {
             Some(i) => {
                 let mk = self.skipped_msgkeys.remove(i).unwrap();
                 if env.verify(&mk.mac_key) {
-                    Ok(mk.decrypt(mesg.cipher_text.as_slice()))
+                    Ok(mk.decrypt(&mesg.cipher_text))
                 } else {
                     Err(DecryptError::InvalidMessage)
                 }
@@ -593,7 +590,7 @@ mod tests {
 
     impl TestStore {
         pub fn prekey_slice(&self) -> &[PreKey] {
-            self.prekeys.as_slice()
+            &self.prekeys
         }
     }
 
@@ -830,7 +827,7 @@ mod tests {
         let alice = Session::init_from_prekey(&alice_ident, bob_bundle);
         let bytes = alice.encode();
 
-        match Session::decode(bytes.as_slice()) {
+        match Session::decode(&bytes) {
             None                => panic!("Failed to decode session"),
             Some(s@Session{..}) => assert_eq!(bytes, s.encode())
         };

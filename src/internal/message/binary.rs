@@ -21,7 +21,7 @@ pub fn enc_msg_version<W: Write>(_: &Version, e: &mut EncoderWriter<W>) -> Resul
 pub fn dec_msg_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
     match try!(Decodable::decode(d)) {
         1u32 => Ok(Version::V1),
-        vers => Err(d.error(format!("Unknow session version {}", vers).as_slice()))
+        vers => Err(d.error(&format!("Unknow session version {}", vers)))
     }
 }
 
@@ -54,7 +54,7 @@ pub fn dec_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Message, Decoding
     match try!(Decodable::decode(d)) {
         1u32 => dec_cipher_msg(d).map(Message::Plain),
         2u32 => dec_prekey_msg(d).map(Message::Keyed),
-        tag  => Err(d.error(format!("Unknow message type {}", tag).as_slice()))
+        tag  => Err(d.error(&format!("Unknow message type {}", tag)))
     }
 }
 
@@ -172,7 +172,7 @@ mod tests {
         let env1_bytes = env1.encode();
         let env2_bytes = env2.encode();
 
-        match Envelope::decode(env1_bytes.as_slice()) {
+        match Envelope::decode(&env1_bytes) {
             None                 => panic!("Failed to decode envelope"),
             Some(e@Envelope{..}) => {
                 assert!(e.verify(&mk));
@@ -180,7 +180,7 @@ mod tests {
             }
         }
 
-        match Envelope::decode(env2_bytes.as_slice()) {
+        match Envelope::decode(&env2_bytes) {
             None                 => panic!("Failed to decode envelope"),
             Some(e@Envelope{..}) => {
                 assert!(e.verify(&mk));

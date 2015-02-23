@@ -6,6 +6,7 @@
 use hkdf::{Info, Input, Len, Salt, hkdf};
 use sodiumoxide::crypto::stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
+use std::ops::Deref;
 use std::slice::bytes::copy_memory;
 use std::vec::Vec;
 
@@ -60,9 +61,13 @@ impl CipherKey {
     pub fn decrypt(&self, text: &[u8], nonce: &Nonce) -> Vec<u8> {
         stream::stream_xor(text, &nonce.0, &self.key)
     }
+}
 
-    pub fn as_slice(&self) -> &[u8] {
-        self.key.0.as_slice()
+impl Deref for CipherKey {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.key.0
     }
 }
 
@@ -109,9 +114,13 @@ impl Mac {
     pub fn to_bytes(self) -> [u8; 32] {
         self.sig.0
     }
+}
 
-    pub fn as_slice(&self) -> &[u8] {
-        self.sig.0.as_slice()
+impl Deref for Mac {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.sig.0
     }
 }
 
@@ -124,5 +133,5 @@ fn derive_secrets() {
     let ct = ds.cipher_key.encrypt(b"plaintext", &nc);
     assert_eq!(ct.len(), b"plaintext".len());
     assert!(ct != b"plaintext");
-    assert_eq!(b"plaintext", ds.cipher_key.decrypt(ct.as_slice(), &nc));
+    assert_eq!(b"plaintext", ds.cipher_key.decrypt(&ct, &nc));
 }
