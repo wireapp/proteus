@@ -4,11 +4,12 @@
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
 use internal::ffi;
-use internal::util;
+use internal::util::{self, DecodeError};
 use rustc_serialize::hex::ToHex;
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
+use std::error::FromError;
 use std::fmt::{Debug, Formatter, Error};
 use std::iter::iterate;
 use std::u16;
@@ -32,7 +33,6 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-#[derive(Clone)]
 pub struct IdentityKeyPair {
     pub secret_key: SecretKey,
     pub public_key: IdentityKey
@@ -51,8 +51,8 @@ impl IdentityKeyPair {
         util::encode(self, binary::enc_identity_keypair).unwrap()
     }
 
-    pub fn decode(b: &[u8]) -> Option<IdentityKeyPair> {
-        util::decode(b, binary::dec_identity_keypair).ok()
+    pub fn decode(b: &[u8]) -> Result<IdentityKeyPair, DecodeError> {
+        util::decode(b, binary::dec_identity_keypair).map_err(FromError::from_error)
     }
 }
 
@@ -77,8 +77,8 @@ impl PreKey {
         util::encode(self, binary::enc_prekey).unwrap()
     }
 
-    pub fn decode(b: &[u8]) -> Option<PreKey> {
-        util::decode(b, binary::dec_prekey).ok()
+    pub fn decode(b: &[u8]) -> Result<PreKey, DecodeError> {
+        util::decode(b, binary::dec_prekey).map_err(FromError::from_error)
     }
 }
 
@@ -111,8 +111,8 @@ impl PreKeyBundle {
         util::encode(self, binary::enc_prekey_bundle).unwrap()
     }
 
-    pub fn decode(b: &[u8]) -> Option<PreKeyBundle> {
-        util::decode(b, binary::dec_prekey_bundle).ok()
+    pub fn decode(b: &[u8]) -> Result<PreKeyBundle, DecodeError> {
+        util::decode(b, binary::dec_prekey_bundle).map_err(FromError::from_error)
     }
 }
 

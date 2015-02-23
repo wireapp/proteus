@@ -3,13 +3,14 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
+use bincode::{DecoderReader, SizeLimit};
 use hkdf::{Input, Info, Salt};
 use internal::derived::{DerivedSecrets, CipherKey, MacKey};
 use internal::keys;
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyId};
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage};
-use internal::util;
+use internal::util::{self, DecodeError};
 use std::cmp::{Ord, Ordering};
 use std::collections::VecDeque;
 use std::error::{Error, FromError};
@@ -132,9 +133,9 @@ const MAX_SESSION_STATES: usize = 100;
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Version { V1 }
 
-pub struct Session {
+pub struct Session<'r> {
     version:         Version,
-    local_identity:  IdentityKeyPair,
+    local_identity:  &'r IdentityKeyPair,
     remote_identity: IdentityKey,
     pending_prekey:  Option<(PreKeyId, PublicKey)>,
     session_states:  VecDeque<SessionState>
@@ -153,8 +154,8 @@ struct BobParams<'r> {
     alice_base:    &'r PublicKey
 }
 
-impl Session {
-    pub fn init_from_prekey<'r>(alice: &'r IdentityKeyPair, pk: PreKeyBundle) -> Session {
+impl<'r> Session<'r> {
+    pub fn init_from_prekey(alice: &'r IdentityKeyPair, pk: PreKeyBundle) -> Session<'r> {
         let alice_base = KeyPair::new();
         let mut states = VecDeque::new();
         states.push_front(SessionState::init_as_alice(AliceParams {
@@ -165,14 +166,14 @@ impl Session {
 
         Session {
             version:         Version::V1,
-            local_identity:  alice.clone(),
+            local_identity:  alice,
             remote_identity: pk.identity_key,
             pending_prekey:  Some((pk.prekey_id, alice_base.public_key)),
             session_states:  states,
         }
     }
 
-    pub fn init_from_message<'r, E: Error>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<(Session, Vec<u8>), DecryptError<E>> {
+    pub fn init_from_message<E: Error>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<(Session<'r>, Vec<u8>), DecryptError<E>> {
         let pkmsg = match *env.message() {
             Message::Plain(_)     => return Err(DecryptError::InvalidMessage),
             Message::Keyed(ref m) => m
@@ -180,7 +181,7 @@ impl Session {
 
         let mut session = Session {
             version:         Version::V1,
-            local_identity:  ours.clone(),
+            local_identity:  ours,
             remote_identity: pkmsg.identity_key,
             pending_prekey:  None,
             session_states:  VecDeque::new()
@@ -259,7 +260,7 @@ impl Session {
     fn unpack<'s, E: Error>(&mut self, store: &mut PreKeyStore<E>, m: &'s PreKeyMessage) -> Result<&'s CipherMessage, DecryptError<E>> {
         try!(store.prekey(m.prekey_id)).map(|prekey| {
             let new_state = SessionState::init_as_bob(BobParams {
-                bob_ident:   &self.local_identity,
+                bob_ident:   self.local_identity,
                 bob_prekey:  prekey.key_pair,
                 alice_ident: &m.identity_key,
                 alice_base:  &m.base_key
@@ -279,8 +280,10 @@ impl Session {
         util::encode(self, binary::enc_session).unwrap()
     }
 
-    pub fn decode(b: &[u8]) -> Option<Session> {
-        util::decode(b, binary::dec_session).ok()
+    pub fn decode(ident: &'r IdentityKeyPair, b: &[u8]) -> Result<Session<'r>, DecodeError> {
+        let mut b = b;
+        let mut d = DecoderReader::new(&mut b, SizeLimit::Infinite);
+        binary::dec_session(ident, &mut d).map_err(FromError::from_error)
     }
 
     pub fn local_identity(&self) -> &IdentityKey {
@@ -510,7 +513,7 @@ impl SessionState {
 
 // Decrypt Error ////////////////////////////////////////////////////////////
 
-#[derive(Copy, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum DecryptError<E> {
     RemoteIdentityChanged,
     InvalidSignature,
@@ -619,7 +622,8 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        alice = Session::decode(&alice.encode()).unwrap();
+        alice = Session::decode(&alice_ident, &alice.encode())
+                        .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, alice.session_states[0].recv_chains.len());
 
         let hello_bob = alice.encrypt(b"Hello Bob!");
@@ -628,7 +632,8 @@ mod tests {
         assert_eq!(1, alice.session_states[0].recv_chains.len());
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
-        bob = Session::decode(&bob.encode()).unwrap();
+        bob = Session::decode(&bob_ident, &bob.encode())
+                      .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, bob.session_states.len());
         assert_eq!(1, bob.session_states[0].recv_chains.len());
         assert_eq!(bob.remote_identity.fingerprint(), alice.local_identity.public_key.fingerprint());
@@ -827,9 +832,9 @@ mod tests {
         let alice = Session::init_from_prekey(&alice_ident, bob_bundle);
         let bytes = alice.encode();
 
-        match Session::decode(&bytes) {
-            None                => panic!("Failed to decode session"),
-            Some(s@Session{..}) => assert_eq!(bytes, s.encode())
+        match Session::decode(&alice_ident, &bytes) {
+            Err(ref e)        => panic!("Failed to decode session: {}", e),
+            Ok(s@Session{..}) => assert_eq!(bytes, s.encode())
         };
     }
 
@@ -890,7 +895,7 @@ mod tests {
         }
     }
 
-    fn assert_init_from_message<'r, E: Error>(i: &'r IdentityKeyPair, s: &mut PreKeyStore<E>, m: &Envelope, t: &[u8]) -> Session {
+    fn assert_init_from_message<'r, E: Error>(i: &'r IdentityKeyPair, s: &mut PreKeyStore<E>, m: &Envelope, t: &[u8]) -> Session<'r> {
         match Session::init_from_message(i, s, m) {
             Ok((s, b)) => { assert_eq!(t, b.as_slice()); s },
             Err(e)     => {

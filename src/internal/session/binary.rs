@@ -5,6 +5,7 @@
 
 use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
 use internal::derived::binary::*;
+use internal::keys::IdentityKeyPair;
 use internal::keys::binary::*;
 use internal::message::binary::*;
 use rustc_serialize::{Decodable, Decoder, Encodable};
@@ -85,7 +86,7 @@ fn enc_session_version<W: Write>(_: &Version, e: &mut EncoderWriter<W>) -> Resul
 fn dec_session_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
     match try!(Decodable::decode(d)) {
         1u32 => Ok(Version::V1),
-        vers => Err(d.error(&format!("Unknow session version {}", vers)))
+        vers => Err(d.error(&format!("Unknown session version {}", vers)))
     }
 }
 
@@ -93,7 +94,7 @@ fn dec_session_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, 
 
 pub fn enc_session<W: Write>(s: &Session, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_session_version(&s.version, e));
-    try!(enc_identity_keypair(&s.local_identity, e));
+    try!(enc_identity_key(&s.local_identity.public_key, e));
     try!(enc_identity_key(&s.remote_identity, e));
     match s.pending_prekey {
         None           => try!(1u32.encode(e)),
@@ -110,9 +111,12 @@ pub fn enc_session<W: Write>(s: &Session, e: &mut EncoderWriter<W>) -> Result<()
     Ok(())
 }
 
-pub fn dec_session<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Session, DecodingError> {
+pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderReader<R>) -> Result<Session<'r>, DecodingError> {
     let vs = try!(dec_session_version(d));
-    let li = try!(dec_identity_keypair(d));
+    let li = try!(dec_identity_key(d));
+    if li != ident.public_key {
+        return Err(d.error("Local identity changed"))
+    }
     let ri = try!(dec_identity_key(d));
     let pp = match try!(Decodable::decode(d)) {
         1u32 => None,
@@ -130,7 +134,7 @@ pub fn dec_session<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Session, Deco
     }
     Ok(Session {
         version:         vs,
-        local_identity:  li,
+        local_identity:  ident,
         remote_identity: ri,
         pending_prekey:  pp,
         session_states:  rb

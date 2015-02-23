@@ -6,7 +6,8 @@
 use bincode::EncoderWriter;
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey};
-use internal::util;
+use internal::util::{self, DecodeError};
+use std::error::FromError;
 use std::old_io::extensions::u64_to_be_bytes;
 use std::slice::bytes::copy_memory;
 use std::vec::Vec;
@@ -112,7 +113,7 @@ impl Envelope {
         util::encode(self, binary::enc_envelope).unwrap()
     }
 
-    pub fn decode(b: &[u8]) -> Option<Envelope> {
-        util::decode(b, binary::dec_envelope).ok()
+    pub fn decode(b: &[u8]) -> Result<Envelope, DecodeError> {
+        util::decode(b, binary::dec_envelope).map_err(FromError::from_error)
     }
 }

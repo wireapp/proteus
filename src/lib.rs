@@ -20,3 +20,5 @@ pub mod message;
 pub fn init() {
     sodiumoxide::init();
 }
+
+pub use internal::util::DecodeError;

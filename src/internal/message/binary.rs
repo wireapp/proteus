@@ -173,16 +173,16 @@ mod tests {
         let env2_bytes = env2.encode();
 
         match Envelope::decode(&env1_bytes) {
-            None                 => panic!("Failed to decode envelope"),
-            Some(e@Envelope{..}) => {
+            Err(ref e)         => panic!("Failed to decode envelope: {}", e),
+            Ok(e@Envelope{..}) => {
                 assert!(e.verify(&mk));
                 assert_eq!(env1_bytes, env1.encode());
             }
         }
 
         match Envelope::decode(&env2_bytes) {
-            None                 => panic!("Failed to decode envelope"),
-            Some(e@Envelope{..}) => {
+            Err(ref e)         => panic!("Failed to decode envelope: {}", e),
+            Ok(e@Envelope{..}) => {
                 assert!(e.verify(&mk));
                 assert_eq!(env2_bytes, env2.encode());
             }

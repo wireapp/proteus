@@ -6,8 +6,47 @@
 use bincode::SizeLimit;
 use bincode::{DecoderReader, DecodingError, EncoderWriter, EncodingError};
 use rustc_serialize::{Decodable, Decoder};
+use std::error::{Error, FromError};
+use std::fmt;
 use std::io::BufRead;
 use std::vec::Vec;
+
+// DecodeError //////////////////////////////////////////////////////////////
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct DecodeError {
+    cause: DecodingError
+}
+
+impl fmt::Debug for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "DecodeError: {:?}", self.cause)
+    }
+}
+
+impl fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "DecodeError: {}", self.cause)
+    }
+}
+
+impl Error for DecodeError {
+    fn description(&self) -> &str {
+        "DecodeError"
+    }
+
+    fn cause(&self) -> Option<&Error> {
+        Some(&self.cause)
+    }
+}
+
+impl FromError<DecodingError> for DecodeError {
+    fn from_error(err: DecodingError) -> DecodeError {
+        DecodeError { cause: err }
+    }
+}
+
+// encode ///////////////////////////////////////////////////////////////////
 
 pub fn encode<A, F>(a: &A, f: F) -> Result<Vec<u8>, EncodingError>
 where F: Fn(&A, &mut EncoderWriter<Vec<u8>>) -> Result<(), EncodingError>
@@ -19,6 +58,8 @@ where F: Fn(&A, &mut EncoderWriter<Vec<u8>>) -> Result<(), EncodingError>
     }
     Ok(w)
 }
+
+// decode ///////////////////////////////////////////////////////////////////
 
 pub fn decode<'r, A, F>(b: &'r [u8], f: F) -> Result<A, DecodingError>
 where F: Fn(&mut DecoderReader<&'r [u8]>) -> Result<A, DecodingError>
