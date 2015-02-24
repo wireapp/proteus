@@ -5,7 +5,7 @@
 
 use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
 use internal::util::Array32;
-use rustc_serialize::{Encodable};
+use rustc_serialize::Encodable;
 use sodiumoxide::crypto::stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
 use std::io::{BufRead, Write};

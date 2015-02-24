@@ -9,13 +9,11 @@ repository   = "git@github.com:twittner/proteus.git"
 license      = "MPL-2.0"
 
 [dependencies]
-rustc-serialize = "0.2"
+rustc-serialize = "> 0.2"
+bincode         = "> 0.0.9"
 
 [dependencies.sodiumoxide]
 git = "https://github.com/dnaq/sodiumoxide"
 
 [dependencies.hkdf]
 git = "https://github.com/twittner/hkdf"
-
-[dependencies.bincode]
-git = "https://github.com/TyOverby/bincode"
