@@ -5,11 +5,14 @@
 
 use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
 use internal::derived::binary::*;
-use internal::keys::IdentityKeyPair;
+use internal::keys::{IdentityKey, IdentityKeyPair};
 use internal::keys::binary::*;
 use internal::message::binary::*;
+use internal::util::DecodeError;
 use rustc_serialize::{Decodable, Decoder, Encodable};
 use std::collections::VecDeque;
+use std::error::{Error, FromError};
+use std::fmt;
 use std::io::{BufRead, Write};
 use super::*;
 
@@ -111,11 +114,11 @@ pub fn enc_session<W: Write>(s: &Session, e: &mut EncoderWriter<W>) -> Result<()
     Ok(())
 }
 
-pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderReader<R>) -> Result<Session<'r>, DecodingError> {
+pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderReader<R>) -> Result<Session<'r>, DecodeSessionError> {
     let vs = try!(dec_session_version(d));
     let li = try!(dec_identity_key(d));
     if li != ident.public_key {
-        return Err(d.error("Local identity changed"))
+        return Err(DecodeSessionError::LocalIdentityChanged(li))
     }
     let ri = try!(dec_identity_key(d));
     let pp = match try!(Decodable::decode(d)) {
@@ -125,7 +128,7 @@ pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderRe
             let pk = try!(dec_public_key(d));
             Some((id, pk))
         }
-        _ => return Err(d.error("Invalid pending prekeys"))
+        _ => return Err(FromError::from_error(d.error("Invalid pending prekeys")))
     };
     let ls: usize = try!(Decodable::decode(d));
     let mut rb = VecDeque::with_capacity(ls);
@@ -179,4 +182,42 @@ pub fn dec_session_state<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Session
         prev_counter:    ct,
         skipped_msgkeys: vm
     })
+}
+
+// DecodeSessionError ///////////////////////////////////////////////////////
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DecodeSessionError {
+    LocalIdentityChanged(IdentityKey),
+    Other(DecodeError)
+}
+
+impl fmt::Display for DecodeSessionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            DecodeSessionError::LocalIdentityChanged(_) =>
+                write!(f, "DecodeSessionError: local identity changed"),
+            DecodeSessionError::Other(ref e) =>
+                write!(f, "DecodeSessionError: {}", e)
+        }
+    }
+}
+
+impl Error for DecodeSessionError {
+    fn description(&self) -> &str {
+        "DecodeSessionError"
+    }
+
+    fn cause(&self) -> Option<&Error> {
+        match *self {
+            DecodeSessionError::LocalIdentityChanged(_) => None,
+            DecodeSessionError::Other(ref e) => Some(e)
+        }
+    }
+}
+
+impl FromError<DecodingError> for DecodeSessionError {
+    fn from_error(e: DecodingError) -> DecodeSessionError {
+        DecodeSessionError::Other(FromError::from_error(e))
+    }
 }

@@ -13,15 +13,9 @@ use std::vec::Vec;
 
 // DecodeError //////////////////////////////////////////////////////////////
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecodeError {
     cause: DecodingError
-}
-
-impl fmt::Debug for DecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "DecodeError: {:?}", self.cause)
-    }
 }
 
 impl fmt::Display for DecodeError {
