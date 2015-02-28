@@ -10,7 +10,7 @@ use internal::keys;
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyId};
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage};
-use internal::util::{self, DecodeError};
+use internal::util;
 use std::cmp::{Ord, Ordering};
 use std::collections::VecDeque;
 use std::error::{Error, FromError};
@@ -280,10 +280,10 @@ impl<'r> Session<'r> {
         util::encode(self, binary::enc_session).unwrap()
     }
 
-    pub fn decode(ident: &'r IdentityKeyPair, b: &[u8]) -> Result<Session<'r>, DecodeError> {
+    pub fn decode(ident: &'r IdentityKeyPair, b: &[u8]) -> Result<Session<'r>, binary::DecodeSessionError> {
         let mut b = b;
         let mut d = DecoderReader::new(&mut b, SizeLimit::Infinite);
-        binary::dec_session(ident, &mut d).map_err(FromError::from_error)
+        binary::dec_session(ident, &mut d)
     }
 
     pub fn local_identity(&self) -> &IdentityKey {
