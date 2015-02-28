@@ -22,3 +22,4 @@ pub fn init() {
 }
 
 pub use internal::util::DecodeError;
+pub use internal::session::binary::DecodeSessionError;
