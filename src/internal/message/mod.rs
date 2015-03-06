@@ -3,13 +3,12 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
+use byteorder::{BigEndian, WriteBytesExt};
 use bincode::EncoderWriter;
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey};
 use internal::util::{self, DecodeError};
 use std::error::FromError;
-use std::old_io::extensions::u64_to_be_bytes;
-use std::slice::bytes::copy_memory;
 use std::vec::Vec;
 
 pub mod binary;
@@ -39,9 +38,7 @@ impl Counter {
 
     pub fn as_nonce(&self) -> Nonce {
         let mut nonce = [0; 24];
-        u64_to_be_bytes(self.0 as u64, 4, |x| {
-            copy_memory(nonce.as_mut_slice(), x)
-        });
+        nonce.as_mut_slice().write_u32::<BigEndian>(self.0).unwrap();
         Nonce::new(nonce)
     }
 }

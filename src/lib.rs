@@ -3,9 +3,10 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-#![feature(collections, core, old_io, io, libc)]
+#![feature(collections, core, io, libc)]
 
 extern crate bincode;
+extern crate byteorder;
 extern crate hkdf;
 extern crate libc;
 extern crate sodiumoxide;
