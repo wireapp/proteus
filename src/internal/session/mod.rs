@@ -15,7 +15,6 @@ use std::cmp::{Ord, Ordering};
 use std::collections::VecDeque;
 use std::error::{Error, FromError};
 use std::fmt;
-use std::iter::count;
 use std::vec::Vec;
 
 pub mod binary;
@@ -236,7 +235,7 @@ impl<'r> Session<'r> {
 
         // try remaining session states
         let result =
-            self.session_states.iter().skip(1).zip(count(1, 1)).map(|(s0, i)| {
+            self.session_states.iter().skip(1).zip(1..).map(|(s0, i)| {
                 let mut s1 = s0.clone();
                 let result = s1.decrypt(env, msg);
                 if result.is_ok() {
