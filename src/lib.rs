@@ -10,7 +10,7 @@ extern crate byteorder;
 extern crate hkdf;
 extern crate libc;
 extern crate sodiumoxide;
-extern crate "rustc-serialize" as rustc_serialize;
+extern crate rustc_serialize;
 
 mod internal;
 
