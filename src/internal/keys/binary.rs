@@ -139,7 +139,7 @@ mod tests {
             Err(e) => panic!("Failed to encode public key: {}", e),
             _      => w
         };
-        match dec_public_key(&mut decoder(&mut b.as_slice())) {
+        match dec_public_key(&mut decoder(&mut b.as_ref())) {
             Err(e) => panic!("Failed to decode public key: {}", e),
             Ok(p)  => assert_eq!(k.public_key, p)
         }
@@ -153,11 +153,11 @@ mod tests {
             Err(e) => panic!("Failed to encode secret key: {}", e),
             _      => w
         };
-        match dec_secret_key(&mut decoder(&mut b.as_slice())) {
+        match dec_secret_key(&mut decoder(&mut b.as_ref())) {
             Err(e) => panic!("failed to decode secret key: {}", e),
             Ok(s)  => {
-                assert_eq!(k.secret_key.sec_edward.0.as_slice(), s.sec_edward.0.as_slice());
-                assert_eq!(k.secret_key.sec_curve.0.as_slice(), s.sec_curve.0.as_slice())
+                assert_eq!(k.secret_key.sec_edward.0.as_ref(), s.sec_edward.0.as_ref());
+                assert_eq!(k.secret_key.sec_curve.0.as_ref(), s.sec_curve.0.as_ref())
             }
         }
     }

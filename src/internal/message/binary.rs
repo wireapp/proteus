@@ -117,7 +117,7 @@ pub fn dec_envelope<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Envelope, De
     match version {
         Version::V1 => {
             let msg = {
-                let mut msl = msg_enc.as_slice();
+                let mut msl = msg_enc.as_ref();
                 let mut drd = DecoderReader::new(&mut msl, bincode::SizeLimit::Infinite);
                 try!(dec_msg(&mut drd))
             };

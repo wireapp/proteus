@@ -889,15 +889,22 @@ mod tests {
 
     fn assert_decrypt<E: Error>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>) {
         match actual {
-            Ok(b)  => assert_eq!(expected, b.as_slice()),
+            Ok(b)  => {
+                let r: &[u8] = b.as_ref();
+                assert_eq!(expected, r)
+            },
             Err(e) => assert!(false, format!("{}", e))
         }
     }
 
     fn assert_init_from_message<'r, E: Error>(i: &'r IdentityKeyPair, s: &mut PreKeyStore<E>, m: &Envelope, t: &[u8]) -> Session<'r> {
         match Session::init_from_message(i, s, m) {
-            Ok((s, b)) => { assert_eq!(t, b.as_slice()); s },
-            Err(e)     => {
+            Ok((s, b)) => {
+                let r: &[u8] = b.as_ref();
+                assert_eq!(t, r);
+                s
+            },
+            Err(e) => {
                 assert!(false, format!("{}", e));
                 unreachable!()
             }
