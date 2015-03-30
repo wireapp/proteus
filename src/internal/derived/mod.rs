@@ -28,8 +28,8 @@ impl DerivedSecrets {
         let len = Len::new(64).expect("Unexpected hkdf::HASH_LEN.");
         let okm = hkdf(salt, input, info, len);
 
-        copy_memory(ck.as_mut_slice(), &okm[0  .. 32]);
-        copy_memory(mk.as_mut_slice(), &okm[32 .. 64]);
+        copy_memory(&mut ck, &okm[0  .. 32]);
+        copy_memory(&mut mk, &okm[32 .. 64]);
 
         DerivedSecrets {
             cipher_key: CipherKey::new(ck),

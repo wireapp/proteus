@@ -38,7 +38,7 @@ impl Counter {
 
     pub fn as_nonce(&self) -> Nonce {
         let mut nonce = [0; 24];
-        nonce.as_mut_slice().write_u32::<BigEndian>(self.0).unwrap();
+        nonce.as_mut().write_u32::<BigEndian>(self.0).unwrap();
         Nonce::new(nonce)
     }
 }
