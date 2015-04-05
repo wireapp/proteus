@@ -6,14 +6,14 @@
 use bincode::SizeLimit;
 use bincode::{DecoderReader, DecodingError, EncoderWriter, EncodingError};
 use rustc_serialize::{Decodable, Decoder};
-use std::error::{Error, FromError};
+use std::error::Error;
 use std::fmt;
 use std::io::BufRead;
 use std::vec::Vec;
 
 // DecodeError //////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct DecodeError {
     cause: DecodingError
 }
@@ -34,8 +34,8 @@ impl Error for DecodeError {
     }
 }
 
-impl FromError<DecodingError> for DecodeError {
-    fn from_error(err: DecodingError) -> DecodeError {
+impl From<DecodingError> for DecodeError {
+    fn from(err: DecodingError) -> DecodeError {
         DecodeError { cause: err }
     }
 }

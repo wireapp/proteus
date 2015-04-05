@@ -9,7 +9,6 @@ use rustc_serialize::hex::ToHex;
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
-use std::error::FromError;
 use std::fmt::{Debug, Formatter, Error};
 use std::iter::iterate;
 use std::u16;
@@ -52,7 +51,7 @@ impl IdentityKeyPair {
     }
 
     pub fn decode(b: &[u8]) -> Result<IdentityKeyPair, DecodeError> {
-        util::decode(b, binary::dec_identity_keypair).map_err(FromError::from_error)
+        util::decode(b, binary::dec_identity_keypair).map_err(From::from)
     }
 }
 
@@ -78,7 +77,7 @@ impl PreKey {
     }
 
     pub fn decode(b: &[u8]) -> Result<PreKey, DecodeError> {
-        util::decode(b, binary::dec_prekey).map_err(FromError::from_error)
+        util::decode(b, binary::dec_prekey).map_err(From::from)
     }
 }
 
@@ -91,7 +90,7 @@ pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
 
 // Prekey bundle ////////////////////////////////////////////////////////////
 
-#[derive(Copy, PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct PreKeyBundle {
     pub prekey_id:    PreKeyId,
     pub public_key:   PublicKey,
@@ -112,7 +111,7 @@ impl PreKeyBundle {
     }
 
     pub fn decode(b: &[u8]) -> Result<PreKeyBundle, DecodeError> {
-        util::decode(b, binary::dec_prekey_bundle).map_err(FromError::from_error)
+        util::decode(b, binary::dec_prekey_bundle).map_err(From::from)
     }
 }
 

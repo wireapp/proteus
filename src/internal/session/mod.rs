@@ -13,7 +13,7 @@ use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage
 use internal::util;
 use std::cmp::{Ord, Ordering};
 use std::collections::VecDeque;
-use std::error::{Error, FromError};
+use std::error::Error;
 use std::fmt;
 use std::vec::Vec;
 
@@ -172,7 +172,7 @@ impl<'r> Session<'r> {
         }
     }
 
-    pub fn init_from_message<E: Error>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<(Session<'r>, Vec<u8>), DecryptError<E>> {
+    pub fn init_from_message<E>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<(Session<'r>, Vec<u8>), DecryptError<E>> {
         let pkmsg = match *env.message() {
             Message::Plain(_)     => return Err(DecryptError::InvalidMessage),
             Message::Keyed(ref m) => m
@@ -207,7 +207,7 @@ impl<'r> Session<'r> {
         state.encrypt(identity, &pending, plain)
     }
 
-    pub fn decrypt<E: Error>(&mut self, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<Vec<u8>, DecryptError<E>> {
+    pub fn decrypt<E>(&mut self, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<Vec<u8>, DecryptError<E>> {
         let msg = match *env.message() {
             Message::Plain(ref m) => m,
             Message::Keyed(ref m) => {
@@ -220,7 +220,7 @@ impl<'r> Session<'r> {
         self.decrypt_msg(env, msg)
     }
 
-    fn decrypt_msg<E: Error>(&mut self, env: &Envelope, msg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
+    fn decrypt_msg<E>(&mut self, env: &Envelope, msg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
         assert!(!self.session_states.is_empty());
 
         // try first session state
@@ -256,7 +256,7 @@ impl<'r> Session<'r> {
         }
     }
 
-    fn unpack<'s, E: Error>(&mut self, store: &mut PreKeyStore<E>, m: &'s PreKeyMessage) -> Result<&'s CipherMessage, DecryptError<E>> {
+    fn unpack<'s, E>(&mut self, store: &mut PreKeyStore<E>, m: &'s PreKeyMessage) -> Result<&'s CipherMessage, DecryptError<E>> {
         try!(store.prekey(m.prekey_id)).map(|prekey| {
             let new_state = SessionState::init_as_bob(BobParams {
                 bob_ident:   self.local_identity,
@@ -568,9 +568,9 @@ impl<E: Error> Error for DecryptError<E> {
     }
 }
 
-impl<E: Error> FromError<E> for DecryptError<E> {
-    fn from_error(err: E) -> DecryptError<E> {
-        DecryptError::PreKeyStoreError(err)
+impl<E> From<E> for DecryptError<E> {
+    fn from(e: E) -> DecryptError<E> {
+        DecryptError::PreKeyStoreError(e)
     }
 }
 
@@ -581,8 +581,7 @@ mod tests {
     use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle};
     use internal::keys::gen_prekeys;
     use internal::message::Envelope;
-    use std::error::Error;
-    use std::io;
+    use std::fmt;
     use std::vec::Vec;
     use super::*;
 
@@ -596,12 +595,12 @@ mod tests {
         }
     }
 
-    impl PreKeyStore<io::Error> for TestStore {
-        fn prekey(&self, id: PreKeyId) -> io::Result<Option<PreKey>> {
+    impl PreKeyStore<()> for TestStore {
+        fn prekey(&self, id: PreKeyId) -> Result<Option<PreKey>, ()> {
             Ok(self.prekeys.iter().find(|k| k.key_id == id).map(|k| k.clone()))
         }
 
-        fn remove(&mut self, id: PreKeyId) -> io::Result<()> {
+        fn remove(&mut self, id: PreKeyId) -> Result<(), ()> {
             self.prekeys.iter()
                 .position(|k| k.key_id == id)
                 .map(|ix| self.prekeys.swap_remove(ix));
@@ -882,22 +881,22 @@ mod tests {
         // the prekey will be gone and a retry cause an error (and thus a lost message).
         match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob) {
             Err(DecryptError::InvalidMessage) => {} // expected
-            Err(e) => { panic!(format!("{}", e)) }
+            Err(e) => { panic!(format!("{:?}", e)) }
             Ok(_)  => { panic!("Unexpected success on retrying init_from_message") }
         }
     }
 
-    fn assert_decrypt<E: Error>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>) {
+    fn assert_decrypt<E: fmt::Debug>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>) {
         match actual {
             Ok(b)  => {
                 let r: &[u8] = b.as_ref();
                 assert_eq!(expected, r)
             },
-            Err(e) => assert!(false, format!("{}", e))
+            Err(e) => assert!(false, format!("{:?}", e))
         }
     }
 
-    fn assert_init_from_message<'r, E: Error>(i: &'r IdentityKeyPair, s: &mut PreKeyStore<E>, m: &Envelope, t: &[u8]) -> Session<'r> {
+    fn assert_init_from_message<'r, E: fmt::Debug>(i: &'r IdentityKeyPair, s: &mut PreKeyStore<E>, m: &Envelope, t: &[u8]) -> Session<'r> {
         match Session::init_from_message(i, s, m) {
             Ok((s, b)) => {
                 let r: &[u8] = b.as_ref();
@@ -905,7 +904,7 @@ mod tests {
                 s
             },
             Err(e) => {
-                assert!(false, format!("{}", e));
+                assert!(false, format!("{:?}", e));
                 unreachable!()
             }
         }

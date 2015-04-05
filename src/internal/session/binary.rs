@@ -11,7 +11,7 @@ use internal::message::binary::*;
 use internal::util::DecodeError;
 use rustc_serialize::{Decodable, Decoder, Encodable};
 use std::collections::VecDeque;
-use std::error::{Error, FromError};
+use std::error::Error;
 use std::fmt;
 use std::io::{BufRead, Write};
 use super::*;
@@ -128,7 +128,7 @@ pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderRe
             let pk = try!(dec_public_key(d));
             Some((id, pk))
         }
-        _ => return Err(FromError::from_error(d.error("Invalid pending prekeys")))
+        _ => return Err(From::from(d.error("Invalid pending prekeys")))
     };
     let ls: usize = try!(Decodable::decode(d));
     let mut rb = VecDeque::with_capacity(ls);
@@ -186,7 +186,7 @@ pub fn dec_session_state<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Session
 
 // DecodeSessionError ///////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum DecodeSessionError {
     LocalIdentityChanged(IdentityKey),
     Other(DecodeError)
@@ -216,8 +216,8 @@ impl Error for DecodeSessionError {
     }
 }
 
-impl FromError<DecodingError> for DecodeSessionError {
-    fn from_error(e: DecodingError) -> DecodeSessionError {
-        DecodeSessionError::Other(FromError::from_error(e))
+impl From<DecodingError> for DecodeSessionError {
+    fn from(e: DecodingError) -> DecodeSessionError {
+        DecodeSessionError::Other(From::from(e))
     }
 }

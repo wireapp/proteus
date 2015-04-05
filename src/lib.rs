@@ -3,7 +3,7 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-#![feature(collections, convert, core, libc)]
+#![feature(collections, core, libc)]
 
 extern crate bincode;
 extern crate byteorder;

@@ -8,7 +8,6 @@ use bincode::EncoderWriter;
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey};
 use internal::util::{self, DecodeError};
-use std::error::FromError;
 use std::vec::Vec;
 
 pub mod binary;
@@ -111,6 +110,6 @@ impl Envelope {
     }
 
     pub fn decode(b: &[u8]) -> Result<Envelope, DecodeError> {
-        util::decode(b, binary::dec_envelope).map_err(FromError::from_error)
+        util::decode(b, binary::dec_envelope).map_err(From::from)
     }
 }
