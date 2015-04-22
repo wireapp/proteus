@@ -187,8 +187,6 @@ pub struct PublicKey {
     pub_curve:  ecdh::GroupElement
 }
 
-impl Eq for PublicKey {}
-
 impl PartialEq for PublicKey {
     fn eq(&self, other: &PublicKey) -> bool {
         &self.pub_edward.0 == &other.pub_edward.0
@@ -196,6 +194,8 @@ impl PartialEq for PublicKey {
         &self.pub_curve.0 == &other.pub_curve.0
     }
 }
+
+impl Eq for PublicKey {}
 
 impl Debug for PublicKey {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
@@ -211,6 +211,10 @@ impl PublicKey {
     pub fn fingerprint(&self) -> String {
         self.pub_edward.0.to_hex()
     }
+
+    pub fn fingerprint_bytes(&self) -> &[u8] {
+        &self.pub_edward.0
+    }
 }
 
 // Random ///////////////////////////////////////////////////////////////////
@@ -221,7 +225,7 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 
 // Signature ////////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Signature {
     sig: sign::Signature
 }

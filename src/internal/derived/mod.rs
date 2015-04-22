@@ -73,7 +73,7 @@ impl Deref for CipherKey {
 
 // Nonce ////////////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Nonce(stream::Nonce);
 
 impl Nonce {
@@ -105,7 +105,7 @@ impl MacKey {
 
 // MAC //////////////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Mac {
     sig: mac::Tag
 }

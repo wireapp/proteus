@@ -7,12 +7,23 @@ use bincode;
 use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
 use internal::derived::binary::*;
 use internal::keys::binary::*;
+use internal::util::Array64;
 use rustc_serialize::{Decodable, Decoder, Encodable};
 use std::io::{BufRead, Write};
 use std::vec::Vec;
 use super::*;
 
-// Version ////////////////////////////////////////////////////////////////////
+// SessionTag ////////////////////////////////////////////////////////////////
+
+pub fn enc_session_tag<W: Write>(s: &SessionTag, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+    s.tag.encode(e)
+}
+
+pub fn dec_session_tag<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SessionTag, DecodingError> {
+    Array64::decode(d).map(|v| SessionTag { tag: v.array })
+}
+
+// Version ///////////////////////////////////////////////////////////////////
 
 pub fn enc_msg_version<W: Write>(_: &Version, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     1u32.encode(e)
@@ -25,7 +36,7 @@ pub fn dec_msg_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, 
     }
 }
 
-// Counter ////////////////////////////////////////////////////////////////////
+// Counter ///////////////////////////////////////////////////////////////////
 
 pub fn enc_counter<W: Write>(c: &Counter, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     c.0.encode(e)
@@ -35,7 +46,7 @@ pub fn dec_counter<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Counter, Deco
     Decodable::decode(d).map(Counter)
 }
 
-// Message //////////////////////////////////////////////////////////////////
+// Message ///////////////////////////////////////////////////////////////////
 
 pub fn enc_msg<W: Write>(msg: &Message, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     match *msg {
@@ -58,7 +69,7 @@ pub fn dec_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Message, Decoding
     }
 }
 
-// Prekey Message ///////////////////////////////////////////////////////////
+// Prekey Message ////////////////////////////////////////////////////////////
 
 pub fn enc_prekey_msg<W: Write>(msg: &PreKeyMessage, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_prekey_id(&msg.prekey_id, e));
@@ -80,9 +91,10 @@ pub fn dec_prekey_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKeyMess
     })
 }
 
-// CipherMessage ////////////////////////////////////////////////////////////
+// CipherMessage /////////////////////////////////////////////////////////////
 
 pub fn enc_cipher_msg<W: Write>(m: &CipherMessage, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+    try!(enc_session_tag(&m.session_tag, e));
     try!(enc_counter(&m.counter, e));
     try!(enc_counter(&m.prev_counter, e));
     try!(enc_public_key(&m.ratchet_key, e));
@@ -90,11 +102,13 @@ pub fn enc_cipher_msg<W: Write>(m: &CipherMessage, e: &mut EncoderWriter<W>) -> 
 }
 
 pub fn dec_cipher_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<CipherMessage, DecodingError> {
+    let tag = try!(dec_session_tag(d));
     let ctr = try!(dec_counter(d));
     let pct = try!(dec_counter(d));
     let rky = try!(dec_public_key(d));
     let txt = try!(Decodable::decode(d));
     Ok(CipherMessage {
+        session_tag:  tag,
         counter:      ctr,
         prev_counter: pct,
         ratchet_key:  rky,
@@ -102,7 +116,7 @@ pub fn dec_cipher_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<CipherMess
     })
 }
 
-// Message Envelope /////////////////////////////////////////////////////////
+// Message Envelope //////////////////////////////////////////////////////////
 
 pub fn enc_envelope<W: Write>(x: &Envelope, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_msg_version(&x.version, e));
@@ -131,14 +145,14 @@ pub fn dec_envelope<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Envelope, De
     }
 }
 
-// Tests ////////////////////////////////////////////////////////////////////
+// Tests /////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
     use internal::derived::MacKey;
     use internal::keys::{KeyPair, PreKeyId, IdentityKey};
     use internal::message::{Counter, Message, PreKeyMessage};
-    use internal::message::{CipherMessage, Envelope};
+    use internal::message::{CipherMessage, Envelope, SessionTag};
 
     #[test]
     fn enc_dec_envelope() {
@@ -147,11 +161,13 @@ mod tests {
         let ik = IdentityKey::new(KeyPair::new().public_key);
         let rk = KeyPair::new().public_key;
 
+        let tg = SessionTag::new(&bk, &rk);
         let m1 = Message::Keyed(PreKeyMessage {
             prekey_id:    PreKeyId::new(42),
             base_key:     bk,
             identity_key: ik,
             message:      CipherMessage {
+                session_tag:  tg.clone(),
                 counter:      Counter(42),
                 prev_counter: Counter(43),
                 ratchet_key:  rk,
@@ -160,6 +176,7 @@ mod tests {
         });
 
         let m2 = Message::Plain(CipherMessage {
+            session_tag:  tg,
             counter:      Counter(42),
             prev_counter: Counter(3),
             ratchet_key:  rk,

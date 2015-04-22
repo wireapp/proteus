@@ -10,7 +10,7 @@ use internal::keys::binary::*;
 use internal::message::binary::*;
 use internal::util::DecodeError;
 use rustc_serialize::{Decodable, Decoder, Encodable};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::io::{BufRead, Write};
@@ -97,6 +97,7 @@ fn dec_session_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, 
 
 pub fn enc_session<W: Write>(s: &Session, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
     try!(enc_session_version(&s.version, e));
+    try!(enc_session_tag(&s.session_tag, e));
     try!(enc_identity_key(&s.local_identity.public_key, e));
     try!(enc_identity_key(&s.remote_identity, e));
     match s.pending_prekey {
@@ -108,14 +109,15 @@ pub fn enc_session<W: Write>(s: &Session, e: &mut EncoderWriter<W>) -> Result<()
         }
     }
     try!(s.session_states.len().encode(e));
-    for t in s.session_states.iter() {
-        try!(enc_session_state(t, e))
+    for t in s.session_states.values() {
+        try!(enc_session_state(&t.val, e))
     }
     Ok(())
 }
 
 pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderReader<R>) -> Result<Session<'r>, DecodeSessionError> {
     let vs = try!(dec_session_version(d));
+    let tg = try!(dec_session_tag(d));
     let li = try!(dec_identity_key(d));
     if li != ident.public_key {
         return Err(DecodeSessionError::LocalIdentityChanged(li))
@@ -131,12 +133,17 @@ pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderRe
         _ => return Err(From::from(d.error("Invalid pending prekeys")))
     };
     let ls: usize = try!(Decodable::decode(d));
-    let mut rb = VecDeque::with_capacity(ls);
+    let mut rb = BTreeMap::new();
+    let mut counter = 0;
     for _ in 0 .. ls {
-        rb.push_back(try!(dec_session_state(d)))
+        let s = try!(dec_session_state(d));
+        rb.insert(s.session_tag.clone(), Indexed::new(counter, s));
+        counter = counter + 1
     }
     Ok(Session {
         version:         vs,
+        session_tag:     tg,
+        counter:         counter,
         local_identity:  ident,
         remote_identity: ri,
         pending_prekey:  pp,
@@ -147,6 +154,7 @@ pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderRe
 // Session State ////////////////////////////////////////////////////////////
 
 pub fn enc_session_state<W: Write>(s: &SessionState, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+    try!(enc_session_tag(&s.session_tag, e));
     try!(s.recv_chains.len().encode(e));
     for r in s.recv_chains.iter() {
         try!(enc_recv_chain(r, e))
@@ -162,6 +170,7 @@ pub fn enc_session_state<W: Write>(s: &SessionState, e: &mut EncoderWriter<W>) -
 }
 
 pub fn dec_session_state<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SessionState, DecodingError> {
+    let tg = try!(dec_session_tag(d));
     let lr: usize = try!(Decodable::decode(d));
     let mut rr = VecDeque::with_capacity(lr);
     for _ in 0 .. lr {
@@ -173,9 +182,10 @@ pub fn dec_session_state<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Session
     let lv: usize = try!(Decodable::decode(d));
     let mut vm = VecDeque::with_capacity(lv);
     for _ in 0 .. lv {
-        vm.push_front(try!(dec_msg_keys(d)))
+        vm.push_back(try!(dec_msg_keys(d)))
     }
     Ok(SessionState {
+        session_tag:     tg,
         recv_chains:     rr,
         send_chain:      sc,
         root_key:        rk,

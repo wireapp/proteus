@@ -8,6 +8,10 @@ use bincode::EncoderWriter;
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey};
 use internal::util::{self, DecodeError};
+use rustc_serialize::hex::ToHex;
+use std::cmp::{Ord, Ordering};
+use std::fmt;
+use std::slice::bytes;
 use std::vec::Vec;
 
 pub mod binary;
@@ -42,6 +46,51 @@ impl Counter {
     }
 }
 
+// Session Tag //////////////////////////////////////////////////////////////
+
+pub struct SessionTag { tag: [u8; 64] }
+
+impl SessionTag {
+    pub fn new(prekey: &PublicKey, base: &PublicKey) -> SessionTag {
+        let mut v = [0; 64];
+        bytes::copy_memory(prekey.fingerprint_bytes(), &mut v);
+        bytes::copy_memory(base.fingerprint_bytes(), &mut v[32 ..]);
+        SessionTag { tag: v }
+    }
+}
+
+impl Clone for SessionTag {
+    fn clone(&self) -> SessionTag {
+        SessionTag { tag: self.tag }
+    }
+}
+
+impl fmt::Debug for SessionTag {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{:?}", self.tag.to_hex())
+    }
+}
+
+impl PartialEq for SessionTag {
+    fn eq(&self, other: &SessionTag) -> bool {
+        self.tag.as_ref() == other.tag.as_ref()
+    }
+}
+
+impl Eq for SessionTag {}
+
+impl PartialOrd for SessionTag {
+    fn partial_cmp(&self, other: &SessionTag) -> Option<Ordering> {
+        self.tag.as_ref().partial_cmp(other.tag.as_ref())
+    }
+}
+
+impl Ord for SessionTag {
+    fn cmp(&self, other: &SessionTag) -> Ordering {
+        self.tag.as_ref().cmp(other.tag.as_ref())
+    }
+}
+
 // Message //////////////////////////////////////////////////////////////////
 
 pub enum Message {
@@ -61,6 +110,7 @@ pub struct PreKeyMessage {
 // CipherMessage ////////////////////////////////////////////////////////////
 
 pub struct CipherMessage {
+    pub session_tag:  SessionTag,
     pub counter:      Counter,
     pub prev_counter: Counter,
     pub ratchet_key:  PublicKey,
