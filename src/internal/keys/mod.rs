@@ -211,10 +211,6 @@ impl PublicKey {
     pub fn fingerprint(&self) -> String {
         self.pub_edward.0.to_hex()
     }
-
-    pub fn fingerprint_bytes(&self) -> &[u8] {
-        &self.pub_edward.0
-    }
 }
 
 // Random ///////////////////////////////////////////////////////////////////

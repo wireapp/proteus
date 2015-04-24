@@ -163,7 +163,8 @@ struct BobParams<'r> {
     bob_ident:     &'r IdentityKeyPair,
     bob_prekey:    KeyPair,
     alice_ident:   &'r IdentityKey,
-    alice_base:    &'r PublicKey
+    alice_base:    &'r PublicKey,
+    session_tag:   &'r SessionTag
 }
 
 impl<'r> Session<'r> {
@@ -253,7 +254,8 @@ impl<'r> Session<'r> {
                 bob_ident:   self.local_identity,
                 bob_prekey:  prekey.key_pair,
                 alice_ident: &m.identity_key,
-                alice_base:  &m.base_key
+                alice_base:  &m.base_key,
+                session_tag: &m.message.session_tag
             });
             self.add_session_state(new_state);
         });
@@ -347,10 +349,8 @@ impl SessionState {
         let (rok, chk)   = rootkey.dh_ratchet(&send_ratchet, &p.bob.public_key);
         let send_chain   = SendChain::new(chk, send_ratchet);
 
-        let stag = SessionTag::new(&p.bob.public_key, &p.alice_base.public_key);
-
         SessionState {
-            session_tag:     stag,
+            session_tag:     SessionTag::new(),
             recv_chains:     recv_chains,
             send_chain:      send_chain,
             root_key:        rok,
@@ -369,7 +369,6 @@ impl SessionState {
         };
 
         let dsecs = DerivedSecrets::kdf_without_salt(Input(&master_key), Info(b"handshake"));
-        let stag  = SessionTag::new(&p.bob_prekey.public_key, &p.alice_base);
 
         // sending chain
         let rootkey    = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -377,7 +376,7 @@ impl SessionState {
         let send_chain = SendChain::new(chainkey, p.bob_prekey);
 
         SessionState {
-            session_tag:     stag,
+            session_tag:     p.session_tag.clone(),
             recv_chains:     VecDeque::with_capacity(MAX_RECV_CHAINS + 1),
             send_chain:      send_chain,
             root_key:        rootkey,

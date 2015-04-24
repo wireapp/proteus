@@ -7,7 +7,6 @@ use bincode;
 use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
 use internal::derived::binary::*;
 use internal::keys::binary::*;
-use internal::util::Array64;
 use rustc_serialize::{Decodable, Decoder, Encodable};
 use std::io::{BufRead, Write};
 use std::vec::Vec;
@@ -20,7 +19,7 @@ pub fn enc_session_tag<W: Write>(s: &SessionTag, e: &mut EncoderWriter<W>) -> Re
 }
 
 pub fn dec_session_tag<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SessionTag, DecodingError> {
-    Array64::decode(d).map(|v| SessionTag { tag: v.array })
+    Decodable::decode(d).map(|v| SessionTag { tag: v })
 }
 
 // Version ///////////////////////////////////////////////////////////////////
@@ -161,7 +160,7 @@ mod tests {
         let ik = IdentityKey::new(KeyPair::new().public_key);
         let rk = KeyPair::new().public_key;
 
-        let tg = SessionTag::new(&bk, &rk);
+        let tg = SessionTag::new();
         let m1 = Message::Keyed(PreKeyMessage {
             prekey_id:    PreKeyId::new(42),
             base_key:     bk,
