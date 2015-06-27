@@ -329,9 +329,9 @@ impl SessionState {
     fn init_as_alice(p: AliceParams) -> SessionState {
         let master_key = {
             let mut buf = Vec::new();
-            buf.push_all(&p.alice_ident.secret_key.shared_secret(&p.bob.public_key));
-            buf.push_all(&p.alice_base.secret_key.shared_secret(&p.bob.identity_key.public_key));
-            buf.push_all(&p.alice_base.secret_key.shared_secret(&p.bob.public_key));
+            buf.extend(&p.alice_ident.secret_key.shared_secret(&p.bob.public_key));
+            buf.extend(&p.alice_base.secret_key.shared_secret(&p.bob.identity_key.public_key));
+            buf.extend(&p.alice_base.secret_key.shared_secret(&p.bob.public_key));
             buf
         };
 
@@ -362,9 +362,9 @@ impl SessionState {
     fn init_as_bob(p: BobParams) -> SessionState {
         let master_key = {
             let mut buf = Vec::new();
-            buf.push_all(&p.bob_prekey.secret_key.shared_secret(&p.alice_ident.public_key));
-            buf.push_all(&p.bob_ident.secret_key.shared_secret(p.alice_base));
-            buf.push_all(&p.bob_prekey.secret_key.shared_secret(p.alice_base));
+            buf.extend(&p.bob_prekey.secret_key.shared_secret(&p.alice_ident.public_key));
+            buf.extend(&p.bob_ident.secret_key.shared_secret(p.alice_base));
+            buf.extend(&p.bob_prekey.secret_key.shared_secret(p.alice_base));
             buf
         };
 

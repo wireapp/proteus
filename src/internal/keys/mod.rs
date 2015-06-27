@@ -10,7 +10,6 @@ use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
 use std::fmt::{Debug, Formatter, Error};
-use std::iter::iterate;
 use std::u16;
 
 pub mod binary;
@@ -82,10 +81,10 @@ impl PreKey {
 }
 
 pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
-    iterate(start.value(), |i| (i + 1) % MAX_PREKEY_ID.value())
-        .map(|i| PreKey::new(PreKeyId::new(i)))
-        .take(size as usize)
-        .collect()
+    (1 ..).map(|i| ((start.value() as u32 + i) % (MAX_PREKEY_ID.value() as u32)))
+          .map(|i| PreKey::new(PreKeyId::new(i as u16)))
+          .take(size as usize)
+          .collect()
 }
 
 // Prekey bundle ////////////////////////////////////////////////////////////
@@ -249,6 +248,15 @@ pub fn from_ed25519_sk(k: &sign::SecretKey) -> [u8; ecdh::SCALARBYTES] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prekey_generation() {
+        let k = gen_prekeys(PreKeyId::new(0xFFFC), 5)
+                .iter()
+                .map(|k| k.key_id.value())
+                .collect::<Vec<_>>();
+        assert_eq!(vec![0xFFFD, 0xFFFE, 0, 1, 2], k)
+    }
 
     #[test]
     fn dh_agreement() {
