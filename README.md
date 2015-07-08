@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/twittner/proteus.svg?branch=master)][1]
+[![Build Status](https://travis-ci.org/twittner/proteus.svg?branch=develop)][1]
 
 `libproteus` is an implementation of the [axolotl protocol][2] without header
 keys. It is suitable for use in asynchronous environments through its use of
