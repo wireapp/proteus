@@ -187,7 +187,7 @@ impl<'r> Session<'r> {
             session_states:  BTreeMap::new()
         };
 
-        session.add_session_state(state);
+        session.insert_session_state(state);
         session
     }
 
@@ -245,7 +245,7 @@ impl<'r> Session<'r> {
         let result          = try!(state.decrypt(env, msg));
         self.pending_prekey = None;
         self.session_tag    = state.session_tag.clone();
-        self.add_session_state(state);
+        self.insert_session_state(state);
         Ok(result)
     }
 
@@ -258,7 +258,7 @@ impl<'r> Session<'r> {
                 alice_base:  &m.base_key,
                 session_tag: &m.message.session_tag
             });
-            self.add_session_state(new_state);
+            self.insert_session_state(new_state);
         });
         if m.prekey_id != keys::MAX_PREKEY_ID {
             try!(store.remove(m.prekey_id));
@@ -266,7 +266,7 @@ impl<'r> Session<'r> {
         Ok(&m.message)
     }
 
-    fn add_session_state(&mut self, s: SessionState) {
+    fn insert_session_state(&mut self, s: SessionState) {
         let tag = s.session_tag.clone();
         match self.session_states.get(&tag).map(|x| x.idx) {
             Some(ix) => {
