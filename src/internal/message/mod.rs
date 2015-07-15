@@ -98,16 +98,16 @@ pub struct Envelope {
 }
 
 impl Envelope {
-    pub fn new(k: &MacKey, m: Message) -> Envelope {
+    pub fn new(k: &MacKey, m: Message) -> EncodeResult<Envelope> {
         let mut c = Cursor::new(Vec::new());
-        binary::enc_msg(&m, &mut Encoder::new(&mut c)).unwrap();
+        try!(binary::enc_msg(&m, &mut Encoder::new(&mut c)));
 
-        Envelope {
+        Ok(Envelope {
             version:     Version::V1,
             mac:         k.sign(c.get_ref()),
             message:     m,
             message_enc: c.into_inner()
-        }
+        })
     }
 
     pub fn verify(&self, k: &MacKey) -> bool {

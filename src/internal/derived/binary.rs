@@ -45,4 +45,3 @@ pub fn dec_mac<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Mac> {
         Mac { sig: mac::Tag(v.array) }
     })
 }
-

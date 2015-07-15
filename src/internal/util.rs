@@ -52,7 +52,7 @@ pub enum DecodeError {
     InvalidArrayLen(usize),
     InvalidVersion(String),
     LocalIdentityChanged(IdentityKey),
-    Other(String)
+    InvalidMessage(String)
 }
 
 impl fmt::Display for DecodeError {
@@ -62,7 +62,7 @@ impl fmt::Display for DecodeError {
             DecodeError::InvalidArrayLen(n)      => write!(f, "CBOR array length mismatch: {}", n),
             DecodeError::InvalidVersion(ref s)   => write!(f, "Invalid version: {}", s),
             DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
-            DecodeError::Other(ref s)            => write!(f, "{}", s)
+            DecodeError::InvalidMessage(ref s)   => write!(f, "Invalid message: {}", s)
         }
     }
 }

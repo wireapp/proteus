@@ -217,7 +217,7 @@ impl<'r> Session<'r> {
         Ok((session, plain))
     }
 
-    pub fn encrypt(&mut self, plain: &[u8]) -> Envelope {
+    pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
         let     pending  = self.pending_prekey;
         let ref identity = self.local_identity.public_key;
         let     state    = self.session_states.get_mut(&self.session_tag).unwrap();
@@ -416,7 +416,7 @@ impl SessionState {
         }
     }
 
-    fn encrypt(&mut self, ident: &IdentityKey, pending: &Option<(PreKeyId, PublicKey)>, plain: &[u8]) -> Envelope {
+    fn encrypt(&mut self, ident: &IdentityKey, pending: &Option<(PreKeyId, PublicKey)>, plain: &[u8]) -> EncodeResult<Envelope> {
         let msgkeys = self.send_chain.chain_key.message_keys();
 
         let cmessage = CipherMessage {
@@ -648,20 +648,20 @@ mod tests {
 
         assert_eq!(total_size, alices.len());
 
-        let mut bob = Session::init_from_message(&bob_ident, &mut bob_store, &alices[0].encrypt(b"hello")).unwrap().0;
+        let mut bob = Session::init_from_message(&bob_ident, &mut bob_store, &alices[0].encrypt(b"hello").unwrap()).unwrap().0;
 
         for a in &mut alices {
             for _ in 0 .. 900 { // Inflate `MessageKeys` vector
-                let _ = a.encrypt(b"hello");
+                let _ = a.encrypt(b"hello").unwrap();
             }
-            let hello_bob = a.encrypt(b"Hello Bob!");
+            let hello_bob = a.encrypt(b"Hello Bob!").unwrap();
             assert!(bob.decrypt(&mut bob_store, &hello_bob).is_ok())
         }
 
         assert_eq!(total_size, bob.session_states.len());
 
         for a in &mut alices {
-            assert!(bob.decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!")).is_ok());
+            assert!(bob.decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap()).is_ok());
         }
     }
 
@@ -681,8 +681,8 @@ mod tests {
                         .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
 
-        let hello_bob = alice.encrypt(b"Hello Bob!");
-        let hello_bob_delayed = alice.encrypt(b"Hello delay!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
+        let hello_bob_delayed = alice.encrypt(b"Hello delay!").unwrap();
         assert_eq!(1, alice.session_states.len());
         assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
 
@@ -693,14 +693,14 @@ mod tests {
         assert_eq!(1, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
         assert_eq!(bob.remote_identity.fingerprint(), alice.local_identity.public_key.fingerprint());
 
-        let hello_alice = bob.encrypt(b"Hello Alice!");
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
 
         // Alice
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
         assert_eq!(2, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
         assert_eq!(alice.remote_identity.fingerprint(), bob.local_identity.public_key.fingerprint());
-        let ping_bob_1 = alice.encrypt(b"Ping1!");
-        let ping_bob_2 = alice.encrypt(b"Ping2!");
+        let ping_bob_1 = alice.encrypt(b"Ping1!").unwrap();
+        let ping_bob_2 = alice.encrypt(b"Ping2!").unwrap();
         assert_prev_count(&alice, 2);
 
         // Bob
@@ -708,7 +708,7 @@ mod tests {
         assert_eq!(2, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
         assert_decrypt(b"Ping2!", bob.decrypt(&mut bob_store, &ping_bob_2));
         assert_eq!(2, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
-        let pong_alice = bob.encrypt(b"Pong!");
+        let pong_alice = bob.encrypt(b"Pong!").unwrap();
         assert_prev_count(&bob, 1);
 
         // Alice
@@ -734,15 +734,15 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
 
-        let hello1 = bob.encrypt(b"Hello1");
-        let hello2 = bob.encrypt(b"Hello2");
-        let hello3 = bob.encrypt(b"Hello3");
-        let hello4 = bob.encrypt(b"Hello4");
-        let hello5 = bob.encrypt(b"Hello5");
+        let hello1 = bob.encrypt(b"Hello1").unwrap();
+        let hello2 = bob.encrypt(b"Hello2").unwrap();
+        let hello3 = bob.encrypt(b"Hello3").unwrap();
+        let hello4 = bob.encrypt(b"Hello4").unwrap();
+        let hello5 = bob.encrypt(b"Hello5").unwrap();
 
         assert_decrypt(b"Hello2", alice.decrypt(&mut alice_store, &hello2));
         assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
@@ -775,9 +775,9 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice  = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob1 = alice.encrypt(b"Hello Bob1!");
-        let hello_bob2 = alice.encrypt(b"Hello Bob2!");
-        let hello_bob3 = alice.encrypt(b"Hello Bob3!");
+        let hello_bob1 = alice.encrypt(b"Hello Bob1!").unwrap();
+        let hello_bob2 = alice.encrypt(b"Hello Bob2!").unwrap();
+        let hello_bob3 = alice.encrypt(b"Hello Bob3!").unwrap();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob1, b"Hello Bob1!");
         assert_eq!(1, bob.session_states.len());
@@ -803,10 +803,10 @@ mod tests {
 
         // Initial simultaneous prekey message
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         let mut bob     = Session::init_from_prekey(&bob_ident, alice_bundle);
-        let hello_alice = bob.encrypt(b"Hello Alice!");
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
 
         assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
         assert_eq!(2, bob.session_states.len());
@@ -815,10 +815,10 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Non-simultaneous answer, which results in agreement of a session.
-        let greet_bob = alice.encrypt(b"That was fast!");
+        let greet_bob = alice.encrypt(b"That was fast!").unwrap();
         assert_decrypt(b"That was fast!", bob.decrypt(&mut bob_store, &greet_bob));
 
-        let answer_alice = bob.encrypt(b":-)");
+        let answer_alice = bob.encrypt(b":-)").unwrap();
         assert_decrypt(b":-)", alice.decrypt(&mut alice_store, &answer_alice));
     }
 
@@ -838,17 +838,17 @@ mod tests {
 
         // Initial simultaneous prekey message
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         let mut bob     = Session::init_from_prekey(&bob_ident, alice_bundle);
-        let hello_alice = bob.encrypt(b"Hello Alice!");
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
 
         assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
 
         // Second simultaneous message
-        let echo_bob1   = alice.encrypt(b"Echo Bob1!");
-        let echo_alice1 = bob.encrypt(b"Echo Alice1!");
+        let echo_bob1   = alice.encrypt(b"Echo Bob1!").unwrap();
+        let echo_alice1 = bob.encrypt(b"Echo Alice1!").unwrap();
 
         assert_decrypt(b"Echo Bob1!", bob.decrypt(&mut bob_store, &echo_bob1));
         assert_eq!(2, bob.session_states.len());
@@ -857,8 +857,8 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Third simultaneous message
-        let echo_bob2   = alice.encrypt(b"Echo Bob2!");
-        let echo_alice2 = bob.encrypt(b"Echo Alice2!");
+        let echo_bob2   = alice.encrypt(b"Echo Bob2!").unwrap();
+        let echo_alice2 = bob.encrypt(b"Echo Alice2!").unwrap();
 
         assert_decrypt(b"Echo Bob2!", bob.decrypt(&mut bob_store, &echo_bob2));
         assert_eq!(2, bob.session_states.len());
@@ -867,10 +867,10 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Non-simultaneous answer, which results in agreement of a session.
-        let stop_bob = alice.encrypt(b"Stop it!");
+        let stop_bob = alice.encrypt(b"Stop it!").unwrap();
         assert_decrypt(b"Stop it!", bob.decrypt(&mut bob_store, &stop_bob));
 
-        let answer_alice = bob.encrypt(b"OK");
+        let answer_alice = bob.encrypt(b"OK").unwrap();
         assert_decrypt(b"OK", alice.decrypt(&mut alice_store, &answer_alice));
     }
 
@@ -905,13 +905,13 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
 
         let mut buffer = Vec::with_capacity(1000);
         for _ in 0 .. 1000 {
-            buffer.push(bob.encrypt(b"Hello Alice!").encode().unwrap())
+            buffer.push(bob.encrypt(b"Hello Alice!").unwrap().encode().unwrap())
         }
 
         for msg in buffer.iter() {
@@ -930,7 +930,7 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
         // The behavior on retry depends on the PreKeyStore implementation.

@@ -62,7 +62,7 @@ pub fn dec_msg<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Message> {
     match try!(d.u32()) {
         1 => dec_cipher_msg(d).map(Message::Plain),
         2 => dec_prekey_msg(d).map(Message::Keyed),
-        t => Err(DecodeError::Other(format!("unknown message type {}", t)))
+        t => Err(DecodeError::InvalidMessage(format!("unknown message type {}", t)))
     }
 }
 
@@ -180,8 +180,8 @@ mod tests {
             cipher_text:  vec![1, 2, 3, 4, 5]
         });
 
-        let env1 = Envelope::new(&mk, m1);
-        let env2 = Envelope::new(&mk, m2);
+        let env1 = Envelope::new(&mk, m1).unwrap();
+        let env2 = Envelope::new(&mk, m2).unwrap();
 
         let env1_bytes = env1.encode().unwrap();
         let env2_bytes = env2.encode().unwrap();
