@@ -3,37 +3,34 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
-use internal::derived::binary::*;
-use internal::keys::{IdentityKey, IdentityKeyPair};
-use internal::keys::binary::*;
+use cbor::{Decoder, Encoder};
+use internal::keys::IdentityKeyPair;
 use internal::message::binary::*;
-use internal::util::DecodeError;
-use rustc_serialize::{Decodable, Decoder, Encodable};
+use internal::derived::binary::*;
+use internal::keys::binary::*;
+use internal::util::{DecodeError, DecodeResult, EncodeResult};
 use std::collections::{BTreeMap, VecDeque};
-use std::error::Error;
-use std::fmt;
-use std::io::{BufRead, Write};
+use std::io::{Read, Write};
 use super::*;
 
 // Root key /////////////////////////////////////////////////////////////////
 
-pub fn enc_root_key<W: Write>(k: &RootKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_root_key<W: Write>(k: &RootKey, e: &mut Encoder<W>) -> EncodeResult<()> {
     enc_cipher_key(&k.key, e)
 }
 
-pub fn dec_root_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<RootKey, DecodingError> {
+pub fn dec_root_key<R: Read>(d: &mut Decoder<R>) -> DecodeResult<RootKey> {
     dec_cipher_key(d).map(|k| RootKey { key: k } )
 }
 
 // Chain key /////////////////////////////////////////////////////////////////
 
-pub fn enc_chain_key<W: Write>(k: &ChainKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_chain_key<W: Write>(k: &ChainKey, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_mac_key(&k.key, e));
     enc_counter(&k.idx, e)
 }
 
-pub fn dec_chain_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<ChainKey, DecodingError> {
+pub fn dec_chain_key<R: Read>(d: &mut Decoder<R>) -> DecodeResult<ChainKey> {
     let k = try!(dec_mac_key(d));
     let c = try!(dec_counter(d));
     Ok(ChainKey { key: k, idx: c })
@@ -41,12 +38,12 @@ pub fn dec_chain_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<ChainKey, D
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-pub fn enc_send_chain<W: Write>(s: &SendChain, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_send_chain<W: Write>(s: &SendChain, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_chain_key(&s.chain_key, e));
     enc_keypair(&s.ratchet_key, e)
 }
 
-pub fn dec_send_chain<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SendChain, DecodingError> {
+pub fn dec_send_chain<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SendChain> {
     let k = try!(dec_chain_key(d));
     let c = try!(dec_keypair(d));
     Ok(SendChain { chain_key: k, ratchet_key: c })
@@ -54,12 +51,12 @@ pub fn dec_send_chain<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SendChain,
 
 // Receive Chain ////////////////////////////////////////////////////////////
 
-pub fn enc_recv_chain<W: Write>(r: &RecvChain, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_recv_chain<W: Write>(r: &RecvChain, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_chain_key(&r.chain_key, e));
     enc_public_key(&r.ratchet_key, e)
 }
 
-pub fn dec_recv_chain<R: BufRead>(d: &mut DecoderReader<R>) -> Result<RecvChain, DecodingError> {
+pub fn dec_recv_chain<R: Read>(d: &mut Decoder<R>) -> DecodeResult<RecvChain> {
     let k = try!(dec_chain_key(d));
     let c = try!(dec_public_key(d));
     Ok(RecvChain { chain_key: k, ratchet_key: c })
@@ -67,13 +64,13 @@ pub fn dec_recv_chain<R: BufRead>(d: &mut DecoderReader<R>) -> Result<RecvChain,
 
 // Message Keys /////////////////////////////////////////////////////////////
 
-pub fn enc_msg_keys<W: Write>(k: &MessageKeys, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_msg_keys<W: Write>(k: &MessageKeys, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_cipher_key(&k.cipher_key, e));
     try!(enc_mac_key(&k.mac_key, e));
     enc_counter(&k.counter, e)
 }
 
-pub fn dec_msg_keys<R: BufRead>(d: &mut DecoderReader<R>) -> Result<MessageKeys, DecodingError> {
+pub fn dec_msg_keys<R: Read>(d: &mut Decoder<R>) -> DecodeResult<MessageKeys> {
     let k = try!(dec_cipher_key(d));
     let m = try!(dec_mac_key(d));
     let c = try!(dec_counter(d));
@@ -82,57 +79,56 @@ pub fn dec_msg_keys<R: BufRead>(d: &mut DecoderReader<R>) -> Result<MessageKeys,
 
 // Version //////////////////////////////////////////////////////////////////
 
-fn enc_session_version<W: Write>(_: &Version, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
-    1u32.encode(e)
+fn enc_session_version<W: Write>(_: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
+    e.u16(1).map_err(From::from)
 }
 
-fn dec_session_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
-    match try!(Decodable::decode(d)) {
-        1u32 => Ok(Version::V1),
-        vers => Err(d.error(&format!("Unknown session version {}", vers)))
+fn dec_session_version<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Version> {
+    match try!(d.u16()) {
+        1 => Ok(Version::V1),
+        v => Err(DecodeError::InvalidVersion(format!("unknow session version {}", v)))
     }
 }
 
 // Session //////////////////////////////////////////////////////////////////
 
-pub fn enc_session<W: Write>(s: &Session, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_session<W: Write>(s: &Session, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_session_version(&s.version, e));
     try!(enc_session_tag(&s.session_tag, e));
     try!(enc_identity_key(&s.local_identity.public_key, e));
     try!(enc_identity_key(&s.remote_identity, e));
     match s.pending_prekey {
-        None           => try!(1u32.encode(e)),
+        None           => try!(e.bool(false)),
         Some((id, pk)) => {
-            try!(2u32.encode(e));
+            try!(e.bool(true));
             try!(enc_prekey_id(&id, e));
             try!(enc_public_key(&pk, e))
         }
     }
-    try!(s.session_states.len().encode(e));
+    try!(e.u32(s.session_states.len() as u32));
     for t in s.session_states.values() {
         try!(enc_session_state(&t.val, e))
     }
     Ok(())
 }
 
-pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderReader<R>) -> Result<Session<'r>, DecodeSessionError> {
+pub fn dec_session<'r, R: Read>(ident: &'r IdentityKeyPair, d: &mut Decoder<R>) -> DecodeResult<Session<'r>> {
     let vs = try!(dec_session_version(d));
     let tg = try!(dec_session_tag(d));
     let li = try!(dec_identity_key(d));
     if li != ident.public_key {
-        return Err(DecodeSessionError::LocalIdentityChanged(li))
+        return Err(DecodeError::LocalIdentityChanged(li))
     }
     let ri = try!(dec_identity_key(d));
-    let pp = match try!(Decodable::decode(d)) {
-        1u32 => None,
-        2u32 => {
+    let pp = match try!(d.bool()) {
+        false => None,
+        true  => {
             let id = try!(dec_prekey_id(d));
             let pk = try!(dec_public_key(d));
             Some((id, pk))
         }
-        _ => return Err(From::from(d.error("Invalid pending prekeys")))
     };
-    let ls: usize = try!(Decodable::decode(d));
+    let ls = try!(d.u32());
     let mut rb = BTreeMap::new();
     let mut counter = 0;
     for _ in 0 .. ls {
@@ -153,34 +149,34 @@ pub fn dec_session<'r, R: BufRead>(ident: &'r IdentityKeyPair, d: &mut DecoderRe
 
 // Session State ////////////////////////////////////////////////////////////
 
-pub fn enc_session_state<W: Write>(s: &SessionState, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_session_state<W: Write>(s: &SessionState, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_session_tag(&s.session_tag, e));
-    try!(s.recv_chains.len().encode(e));
+    try!(e.u32(s.recv_chains.len() as u32));
     for r in s.recv_chains.iter() {
         try!(enc_recv_chain(r, e))
     }
     try!(enc_send_chain(&s.send_chain, e));
     try!(enc_root_key(&s.root_key, e));
     try!(enc_counter(&s.prev_counter, e));
-    try!(s.skipped_msgkeys.len().encode(e));
+    try!(e.u32(s.skipped_msgkeys.len() as u32));
     for m in s.skipped_msgkeys.iter() {
         try!(enc_msg_keys(m, e))
     }
     Ok(())
 }
 
-pub fn dec_session_state<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SessionState, DecodingError> {
+pub fn dec_session_state<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionState> {
     let tg = try!(dec_session_tag(d));
-    let lr: usize = try!(Decodable::decode(d));
-    let mut rr = VecDeque::with_capacity(lr);
+    let lr = try!(d.u32());
+    let mut rr = VecDeque::with_capacity(lr as usize);
     for _ in 0 .. lr {
         rr.push_back(try!(dec_recv_chain(d)))
     }
     let sc = try!(dec_send_chain(d));
     let rk = try!(dec_root_key(d));
     let ct = try!(dec_counter(d));
-    let lv: usize = try!(Decodable::decode(d));
-    let mut vm = VecDeque::with_capacity(lv);
+    let lv = try!(d.u32());
+    let mut vm = VecDeque::with_capacity(lv as usize);
     for _ in 0 .. lv {
         vm.push_back(try!(dec_msg_keys(d)))
     }
@@ -192,42 +188,4 @@ pub fn dec_session_state<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Session
         prev_counter:    ct,
         skipped_msgkeys: vm
     })
-}
-
-// DecodeSessionError ///////////////////////////////////////////////////////
-
-#[derive(Debug)]
-pub enum DecodeSessionError {
-    LocalIdentityChanged(IdentityKey),
-    Other(DecodeError)
-}
-
-impl fmt::Display for DecodeSessionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            DecodeSessionError::LocalIdentityChanged(_) =>
-                write!(f, "DecodeSessionError: local identity changed"),
-            DecodeSessionError::Other(ref e) =>
-                write!(f, "DecodeSessionError: {}", e)
-        }
-    }
-}
-
-impl Error for DecodeSessionError {
-    fn description(&self) -> &str {
-        "DecodeSessionError"
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        match *self {
-            DecodeSessionError::LocalIdentityChanged(_) => None,
-            DecodeSessionError::Other(ref e) => Some(e)
-        }
-    }
-}
-
-impl From<DecodingError> for DecodeSessionError {
-    fn from(e: DecodingError) -> DecodeSessionError {
-        DecodeSessionError::Other(From::from(e))
-    }
 }

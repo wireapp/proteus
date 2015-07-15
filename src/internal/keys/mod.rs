@@ -3,14 +3,17 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
+use cbor::{Config, Decoder, Encoder};
 use internal::ffi;
-use internal::util::{self, DecodeError};
+use internal::util::{EncodeResult, DecodeResult};
 use rustc_serialize::hex::ToHex;
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
 use std::fmt::{Debug, Formatter, Error};
+use std::io::Cursor;
 use std::u16;
+use std::vec::Vec;
 
 pub mod binary;
 
@@ -45,12 +48,14 @@ impl IdentityKeyPair {
         }
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        util::encode(self, binary::enc_identity_keypair).unwrap()
+    pub fn encode(&self) -> EncodeResult<Vec<u8>> {
+        let mut c = Cursor::new(Vec::new());
+        try!(binary::enc_identity_keypair(self, &mut Encoder::new(&mut c)));
+        Ok(c.into_inner())
     }
 
-    pub fn decode(b: &[u8]) -> Result<IdentityKeyPair, DecodeError> {
-        util::decode(b, binary::dec_identity_keypair).map_err(From::from)
+    pub fn decode(b: &[u8]) -> DecodeResult<IdentityKeyPair> {
+        binary::dec_identity_keypair(&mut Decoder::new(Config::default(), b))
     }
 }
 
@@ -71,12 +76,14 @@ impl PreKey {
         PreKey::new(MAX_PREKEY_ID)
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        util::encode(self, binary::enc_prekey).unwrap()
+    pub fn encode(&self) -> EncodeResult<Vec<u8>> {
+        let mut c = Cursor::new(Vec::new());
+        try!(binary::enc_prekey(self, &mut Encoder::new(&mut c)));
+        Ok(c.into_inner())
     }
 
-    pub fn decode(b: &[u8]) -> Result<PreKey, DecodeError> {
-        util::decode(b, binary::dec_prekey).map_err(From::from)
+    pub fn decode(b: &[u8]) -> DecodeResult<PreKey> {
+        binary::dec_prekey(&mut Decoder::new(Config::default(), b))
     }
 }
 
@@ -105,12 +112,14 @@ impl PreKeyBundle {
         }
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        util::encode(self, binary::enc_prekey_bundle).unwrap()
+    pub fn encode(&self) -> EncodeResult<Vec<u8>> {
+        let mut c = Cursor::new(Vec::new());
+        try!(binary::enc_prekey_bundle(self, &mut Encoder::new(&mut c)));
+        Ok(c.into_inner())
     }
 
-    pub fn decode(b: &[u8]) -> Result<PreKeyBundle, DecodeError> {
-        util::decode(b, binary::dec_prekey_bundle).map_err(From::from)
+    pub fn decode(b: &[u8]) -> DecodeResult<PreKeyBundle> {
+        binary::dec_prekey_bundle(&mut Decoder::new(Config::default(), b))
     }
 }
 

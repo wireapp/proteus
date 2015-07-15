@@ -3,18 +3,19 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-use bincode::{DecoderReader, SizeLimit};
+use cbor::{Config, Decoder, Encoder};
 use hkdf::{Input, Info, Salt};
 use internal::derived::{DerivedSecrets, CipherKey, MacKey};
 use internal::keys;
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyId};
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
-use internal::util;
+use internal::util::{DecodeResult, EncodeResult};
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::fmt;
+use std::io::Cursor;
 use std::vec::Vec;
 
 pub mod binary;
@@ -294,14 +295,14 @@ impl<'r> Session<'r> {
         rm.map(|k| self.session_states.remove(&k.val));
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        util::encode(self, binary::enc_session).unwrap()
+    pub fn encode(&self) -> EncodeResult<Vec<u8>> {
+        let mut c = Cursor::new(Vec::new());
+        try!(binary::enc_session(self, &mut Encoder::new(&mut c)));
+        Ok(c.into_inner())
     }
 
-    pub fn decode(ident: &'r IdentityKeyPair, b: &[u8]) -> Result<Session<'r>, binary::DecodeSessionError> {
-        let mut b = b;
-        let mut d = DecoderReader::new(&mut b, SizeLimit::Infinite);
-        binary::dec_session(ident, &mut d)
+    pub fn decode(ident: &'r IdentityKeyPair, b: &[u8]) -> DecodeResult<Session<'r>> {
+        binary::dec_session(ident, &mut Decoder::new(Config::default(), b))
     }
 
     pub fn local_identity(&self) -> &IdentityKey {
@@ -676,7 +677,7 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        alice = Session::decode(&alice_ident, &alice.encode())
+        alice = Session::decode(&alice_ident, &alice.encode().unwrap())
                         .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
 
@@ -686,7 +687,7 @@ mod tests {
         assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
-        bob = Session::decode(&bob_ident, &bob.encode())
+        bob = Session::decode(&bob_ident, &bob.encode().unwrap())
                       .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, bob.session_states.len());
         assert_eq!(1, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
@@ -884,11 +885,11 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let bytes = alice.encode();
+        let bytes = alice.encode().unwrap();
 
         match Session::decode(&alice_ident, &bytes) {
             Err(ref e)        => panic!("Failed to decode session: {}", e),
-            Ok(s@Session{..}) => assert_eq!(bytes, s.encode())
+            Ok(s@Session{..}) => assert_eq!(bytes, s.encode().unwrap())
         };
     }
 
@@ -910,7 +911,7 @@ mod tests {
 
         let mut buffer = Vec::with_capacity(1000);
         for _ in 0 .. 1000 {
-            buffer.push(bob.encrypt(b"Hello Alice!").encode())
+            buffer.push(bob.encrypt(b"Hello Alice!").encode().unwrap())
         }
 
         for msg in buffer.iter() {

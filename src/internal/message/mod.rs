@@ -4,19 +4,20 @@
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
 use byteorder::{BigEndian, WriteBytesExt};
-use bincode::EncoderWriter;
+use cbor::{Config, Decoder, Encoder};
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey, rand_bytes};
-use internal::util::{self, DecodeError};
+use internal::util::{DecodeResult, EncodeResult};
 use rustc_serialize::hex::ToHex;
 use std::fmt;
+use std::io::Cursor;
 use std::vec::Vec;
 
 pub mod binary;
 
 // Version ////////////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Version { V1 }
 
 // Counter ////////////////////////////////////////////////////////////////////
@@ -98,14 +99,14 @@ pub struct Envelope {
 
 impl Envelope {
     pub fn new(k: &MacKey, m: Message) -> Envelope {
-        let mut v = Vec::new();
-        binary::enc_msg(&m, &mut EncoderWriter::new(&mut v)).unwrap();
+        let mut c = Cursor::new(Vec::new());
+        binary::enc_msg(&m, &mut Encoder::new(&mut c)).unwrap();
 
         Envelope {
             version:     Version::V1,
-            mac:         k.sign(&v),
+            mac:         k.sign(c.get_ref()),
             message:     m,
-            message_enc: v
+            message_enc: c.into_inner()
         }
     }
 
@@ -125,11 +126,13 @@ impl Envelope {
         &self.message
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        util::encode(self, binary::enc_envelope).unwrap()
+    pub fn encode(&self) -> EncodeResult<Vec<u8>> {
+        let mut c = Cursor::new(Vec::new());
+        try!(binary::enc_envelope(self, &mut Encoder::new(&mut c)));
+        Ok(c.into_inner())
     }
 
-    pub fn decode(b: &[u8]) -> Result<Envelope, DecodeError> {
-        util::decode(b, binary::dec_envelope).map_err(From::from)
+    pub fn decode(b: &[u8]) -> DecodeResult<Envelope> {
+        binary::dec_envelope(&mut Decoder::new(Config::default(), b))
     }
 }

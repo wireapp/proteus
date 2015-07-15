@@ -9,10 +9,12 @@ repository   = "git@github.com:twittner/proteus.git"
 license      = "MPL-2.0"
 
 [dependencies]
-bincode         = "> 0.0.9"
 byteorder       = "> 0.2.0"
 rustc-serialize = "> 0.3.0"
 sodiumoxide     = "> 0.0.4"
 
 [dependencies.hkdf]
 git = "https://github.com/twittner/hkdf"
+
+[dependencies.cbor-codec]
+path = "../cbor-codec"

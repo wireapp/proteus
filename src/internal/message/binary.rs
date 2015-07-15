@@ -3,81 +3,79 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-use bincode;
-use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
+use cbor::{Config, Decoder, Encoder};
 use internal::derived::binary::*;
 use internal::keys::binary::*;
-use rustc_serialize::{Decodable, Decoder, Encodable};
-use std::io::{BufRead, Write};
-use std::vec::Vec;
+use internal::util::{DecodeError, DecodeResult, EncodeResult};
+use std::io::{Cursor, Read, Write};
 use super::*;
 
 // SessionTag ////////////////////////////////////////////////////////////////
 
-pub fn enc_session_tag<W: Write>(s: &SessionTag, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
-    s.tag.encode(e)
+pub fn enc_session_tag<W: Write>(s: &SessionTag, e: &mut Encoder<W>) -> EncodeResult<()> {
+    e.bytes(&s.tag[..]).map_err(From::from)
 }
 
-pub fn dec_session_tag<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SessionTag, DecodingError> {
-    Decodable::decode(d).map(|v| SessionTag { tag: v })
+pub fn dec_session_tag<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionTag> {
+    d.bytes().map(|v| SessionTag { tag: v }).map_err(From::from)
 }
 
 // Version ///////////////////////////////////////////////////////////////////
 
-pub fn enc_msg_version<W: Write>(_: &Version, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
-    1u32.encode(e)
+pub fn enc_msg_version<W: Write>(_: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
+    e.u32(1).map_err(From::from)
 }
 
-pub fn dec_msg_version<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Version, DecodingError> {
-    match try!(Decodable::decode(d)) {
-        1u32 => Ok(Version::V1),
-        vers => Err(d.error(&format!("Unknow session version {}", vers)))
+pub fn dec_msg_version<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Version> {
+    match try!(d.u32()) {
+        1 => Ok(Version::V1),
+        v => Err(DecodeError::InvalidVersion(format!("unknow message version {}", v)))
     }
 }
 
 // Counter ///////////////////////////////////////////////////////////////////
 
-pub fn enc_counter<W: Write>(c: &Counter, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
-    c.0.encode(e)
+pub fn enc_counter<W: Write>(c: &Counter, e: &mut Encoder<W>) -> EncodeResult<()> {
+    e.u32(c.0).map_err(From::from)
 }
 
-pub fn dec_counter<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Counter, DecodingError> {
-    Decodable::decode(d).map(Counter)
+pub fn dec_counter<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Counter> {
+    d.u32().map(Counter).map_err(From::from)
 }
 
 // Message ///////////////////////////////////////////////////////////////////
 
-pub fn enc_msg<W: Write>(msg: &Message, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_msg<W: Write>(msg: &Message, e: &mut Encoder<W>) -> EncodeResult<()> {
     match *msg {
         Message::Plain(ref m) => {
-            try!(1u32.encode(e));
+            try!(e.u32(1));
             enc_cipher_msg(m, e)
         }
         Message::Keyed(ref m) => {
-            try!(2u32.encode(e));
+            try!(e.u32(2));
             enc_prekey_msg(m, e)
         }
     }
 }
 
-pub fn dec_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Message, DecodingError> {
-    match try!(Decodable::decode(d)) {
-        1u32 => dec_cipher_msg(d).map(Message::Plain),
-        2u32 => dec_prekey_msg(d).map(Message::Keyed),
-        tag  => Err(d.error(&format!("Unknow message type {}", tag)))
+pub fn dec_msg<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Message> {
+    match try!(d.u32()) {
+        1 => dec_cipher_msg(d).map(Message::Plain),
+        2 => dec_prekey_msg(d).map(Message::Keyed),
+        t => Err(DecodeError::Other(format!("unknown message type {}", t)))
     }
 }
 
 // Prekey Message ////////////////////////////////////////////////////////////
 
-pub fn enc_prekey_msg<W: Write>(msg: &PreKeyMessage, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_prekey_msg<W: Write>(msg: &PreKeyMessage, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_prekey_id(&msg.prekey_id, e));
     try!(enc_public_key(&msg.base_key, e));
     try!(enc_identity_key(&msg.identity_key, e));
     enc_cipher_msg(&msg.message, e)
 }
 
-pub fn dec_prekey_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKeyMessage, DecodingError> {
+pub fn dec_prekey_msg<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKeyMessage> {
     let pid = try!(dec_prekey_id(d));
     let bky = try!(dec_public_key(d));
     let iky = try!(dec_identity_key(d));
@@ -92,20 +90,20 @@ pub fn dec_prekey_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKeyMess
 
 // CipherMessage /////////////////////////////////////////////////////////////
 
-pub fn enc_cipher_msg<W: Write>(m: &CipherMessage, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_cipher_msg<W: Write>(m: &CipherMessage, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_session_tag(&m.session_tag, e));
     try!(enc_counter(&m.counter, e));
     try!(enc_counter(&m.prev_counter, e));
     try!(enc_public_key(&m.ratchet_key, e));
-    m.cipher_text.encode(e)
+    e.bytes(&m.cipher_text[..]).map_err(From::from)
 }
 
-pub fn dec_cipher_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<CipherMessage, DecodingError> {
+pub fn dec_cipher_msg<R: Read>(d: &mut Decoder<R>) -> DecodeResult<CipherMessage> {
     let tag = try!(dec_session_tag(d));
     let ctr = try!(dec_counter(d));
     let pct = try!(dec_counter(d));
     let rky = try!(dec_public_key(d));
-    let txt = try!(Decodable::decode(d));
+    let txt = try!(d.bytes());
     Ok(CipherMessage {
         session_tag:  tag,
         counter:      ctr,
@@ -117,21 +115,21 @@ pub fn dec_cipher_msg<R: BufRead>(d: &mut DecoderReader<R>) -> Result<CipherMess
 
 // Message Envelope //////////////////////////////////////////////////////////
 
-pub fn enc_envelope<W: Write>(x: &Envelope, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_envelope<W: Write>(x: &Envelope, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_msg_version(&x.version, e));
     try!(enc_mac(&x.mac, e));
-    x.message_enc.encode(e)
+    e.bytes(&x.message_enc).map_err(From::from)
 }
 
-pub fn dec_envelope<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Envelope, DecodingError> {
+pub fn dec_envelope<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Envelope> {
     let version = try!(dec_msg_version(d));
     let mac     = try!(dec_mac(d));
-    let msg_enc: Vec<u8> = try!(Decodable::decode(d));
+    let msg_enc = try!(d.bytes());
     match version {
         Version::V1 => {
             let msg = {
-                let mut msl = msg_enc.as_ref();
-                let mut drd = DecoderReader::new(&mut msl, bincode::SizeLimit::Infinite);
+                let mut rdr = Cursor::new(&msg_enc[..]);
+                let mut drd = Decoder::new(Config::default(), &mut rdr);
                 try!(dec_msg(&mut drd))
             };
             Ok(Envelope {
@@ -185,14 +183,14 @@ mod tests {
         let env1 = Envelope::new(&mk, m1);
         let env2 = Envelope::new(&mk, m2);
 
-        let env1_bytes = env1.encode();
-        let env2_bytes = env2.encode();
+        let env1_bytes = env1.encode().unwrap();
+        let env2_bytes = env2.encode().unwrap();
 
         match Envelope::decode(&env1_bytes) {
             Err(ref e)         => panic!("Failed to decode envelope: {}", e),
             Ok(e@Envelope{..}) => {
                 assert!(e.verify(&mk));
-                assert_eq!(env1_bytes, env1.encode());
+                assert_eq!(&env1_bytes[..], &env1.encode().unwrap()[..]);
             }
         }
 
@@ -200,7 +198,7 @@ mod tests {
             Err(ref e)         => panic!("Failed to decode envelope: {}", e),
             Ok(e@Envelope{..}) => {
                 assert!(e.verify(&mk));
-                assert_eq!(env2_bytes, env2.encode());
+                assert_eq!(&env2_bytes[..], &env2.encode().unwrap()[..]);
             }
         }
     }

@@ -5,7 +5,7 @@
 
 #![feature(slice_bytes, libc)]
 
-extern crate bincode;
+extern crate cbor;
 extern crate byteorder;
 extern crate hkdf;
 extern crate libc;
@@ -22,5 +22,4 @@ pub fn init() {
     sodiumoxide::init();
 }
 
-pub use internal::util::DecodeError;
-pub use internal::session::binary::DecodeSessionError;
+pub use internal::util::{DecodeError, EncodeError};

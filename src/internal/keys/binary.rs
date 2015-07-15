@@ -3,22 +3,21 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-use bincode::{EncoderWriter, EncodingError, DecoderReader, DecodingError};
-use internal::util::{Array32, Array64};
-use rustc_serialize::{Decodable, Encodable};
+use cbor::{Decoder, Encoder};
+use internal::util::{Bytes64, Bytes32, DecodeResult, EncodeResult};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
-use std::io::{BufRead, Write};
+use std::io::{Read, Write};
 use super::*;
 
 // SecretKey ////////////////////////////////////////////////////////////////
 
-pub fn enc_secret_key<W: Write>(k: &SecretKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
-    k.sec_edward.0.encode(e)
+pub fn enc_secret_key<W: Write>(k: &SecretKey, e: &mut Encoder<W>) -> EncodeResult<()> {
+    e.bytes(&k.sec_edward.0).map_err(From::from)
 }
 
-pub fn dec_secret_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SecretKey, DecodingError> {
-    Array64::decode(d).map(|v| {
+pub fn dec_secret_key<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SecretKey> {
+    Bytes64::decode(d).map(|v| {
         let ed = sign::SecretKey(v.array);
         let ck = ecdh::Scalar(from_ed25519_sk(&ed));
         SecretKey { sec_edward: ed, sec_curve: ck }
@@ -27,12 +26,12 @@ pub fn dec_secret_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<SecretKey,
 
 // PublicKey ////////////////////////////////////////////////////////////////
 
-pub fn enc_public_key<W: Write>(k: &PublicKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
-    k.pub_edward.0.encode(e)
+pub fn enc_public_key<W: Write>(k: &PublicKey, e: &mut Encoder<W>) -> EncodeResult<()> {
+    e.bytes(&k.pub_edward.0).map_err(From::from)
 }
 
-pub fn dec_public_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PublicKey, DecodingError> {
-    Array32::decode(d).map(|v| {
+pub fn dec_public_key<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PublicKey> {
+    Bytes32::decode(d).map(|v| {
         let ed = sign::PublicKey(v.array);
         let ck = ecdh::GroupElement(from_ed25519_pk(&ed));
         PublicKey { pub_edward: ed, pub_curve: ck }
@@ -41,22 +40,22 @@ pub fn dec_public_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PublicKey,
 
 // Identity Key /////////////////////////////////////////////////////////////
 
-pub fn enc_identity_key<W: Write>(k: &IdentityKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_identity_key<W: Write>(k: &IdentityKey, e: &mut Encoder<W>) -> EncodeResult<()> {
     enc_public_key(&k.public_key, e)
 }
 
-pub fn dec_identity_key<R: BufRead>(d: &mut DecoderReader<R>) -> Result<IdentityKey, DecodingError> {
+pub fn dec_identity_key<R: Read>(d: &mut Decoder<R>) -> DecodeResult<IdentityKey> {
     dec_public_key(d).map(|k| IdentityKey { public_key: k })
 }
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-pub fn enc_identity_keypair<W: Write>(k: &IdentityKeyPair, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_identity_keypair<W: Write>(k: &IdentityKeyPair, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_secret_key(&k.secret_key, e));
     enc_identity_key(&k.public_key, e)
 }
 
-pub fn dec_identity_keypair<R: BufRead>(d: &mut DecoderReader<R>) -> Result<IdentityKeyPair, DecodingError> {
+pub fn dec_identity_keypair<R: Read>(d: &mut Decoder<R>) -> DecodeResult<IdentityKeyPair> {
     let sk = try!(dec_secret_key(d));
     let pk = try!(dec_identity_key(d));
     Ok(IdentityKeyPair { secret_key: sk, public_key: pk })
@@ -64,22 +63,22 @@ pub fn dec_identity_keypair<R: BufRead>(d: &mut DecoderReader<R>) -> Result<Iden
 
 // Prekey ID ////////////////////////////////////////////////////////////////
 
-pub fn enc_prekey_id<W: Write>(k: &PreKeyId, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
-    k.0.encode(e)
+pub fn enc_prekey_id<W: Write>(k: &PreKeyId, e: &mut Encoder<W>) -> EncodeResult<()> {
+    e.u16(k.0).map_err(From::from)
 }
 
-pub fn dec_prekey_id<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKeyId, DecodingError> {
-    Decodable::decode(d).map(PreKeyId)
+pub fn dec_prekey_id<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKeyId> {
+    d.u16().map(PreKeyId).map_err(From::from)
 }
 
 // Prekey ///////////////////////////////////////////////////////////////////
 
-pub fn enc_prekey<W: Write>(k: &PreKey, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_prekey<W: Write>(k: &PreKey, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_prekey_id(&k.key_id, e));
     enc_keypair(&k.key_pair, e)
 }
 
-pub fn dec_prekey<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKey, DecodingError> {
+pub fn dec_prekey<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKey> {
     let id = try!(dec_prekey_id(d));
     let kp = try!(dec_keypair(d));
     Ok(PreKey { key_id: id, key_pair: kp })
@@ -87,13 +86,13 @@ pub fn dec_prekey<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKey, Decodi
 
 // Prekey Bundle ////////////////////////////////////////////////////////////
 
-pub fn enc_prekey_bundle<W: Write>(k: &PreKeyBundle, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_prekey_bundle<W: Write>(k: &PreKeyBundle, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_prekey_id(&k.prekey_id, e));
     try!(enc_public_key(&k.public_key, e));
     enc_identity_key(&k.identity_key, e)
 }
 
-pub fn dec_prekey_bundle<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKeyBundle, DecodingError> {
+pub fn dec_prekey_bundle<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKeyBundle> {
     let id = try!(dec_prekey_id(d));
     let pk = try!(dec_public_key(d));
     let ik = try!(dec_identity_key(d));
@@ -102,12 +101,12 @@ pub fn dec_prekey_bundle<R: BufRead>(d: &mut DecoderReader<R>) -> Result<PreKeyB
 
 // Keypair //////////////////////////////////////////////////////////////////
 
-pub fn enc_keypair<W: Write>(k: &KeyPair, e: &mut EncoderWriter<W>) -> Result<(), EncodingError> {
+pub fn enc_keypair<W: Write>(k: &KeyPair, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_secret_key(&k.secret_key, e));
     enc_public_key(&k.public_key, e)
 }
 
-pub fn dec_keypair<R: BufRead>(d: &mut DecoderReader<R>) -> Result<KeyPair, DecodingError> {
+pub fn dec_keypair<R: Read>(d: &mut Decoder<R>) -> DecodeResult<KeyPair> {
     let s = try!(dec_secret_key(d));
     let p = try!(dec_public_key(d));
     Ok(KeyPair { secret_key: s, public_key: p })
@@ -117,48 +116,24 @@ pub fn dec_keypair<R: BufRead>(d: &mut DecoderReader<R>) -> Result<KeyPair, Deco
 
 #[cfg(test)]
 mod tests {
-    use bincode::*;
     use internal::keys::KeyPair;
-    use std::io::{BufRead, Write};
-    use std::vec::Vec;
+    use internal::util::roundtrip;
     use super::*;
-
-    fn encoder<W: Write>(w: &mut W) -> EncoderWriter<W> {
-        EncoderWriter::new(w)
-    }
-
-    fn decoder<R: BufRead>(b: &mut R) -> DecoderReader<R> {
-        DecoderReader::new(b, SizeLimit::Infinite)
-    }
 
     #[test]
     fn enc_dec_pubkey() {
         let k = KeyPair::new();
-        let mut w = Vec::new();
-        let b = match enc_public_key(&k.public_key, &mut encoder(&mut w)) {
-            Err(e) => panic!("Failed to encode public key: {}", e),
-            _      => w
-        };
-        match dec_public_key(&mut decoder(&mut b.as_ref())) {
-            Err(e) => panic!("Failed to decode public key: {}", e),
-            Ok(p)  => assert_eq!(k.public_key, p)
-        }
+        let r = roundtrip(|mut e| enc_public_key(&k.public_key, &mut e),
+                          |mut d| dec_public_key(&mut d));
+        assert_eq!(k.public_key, r)
     }
 
     #[test]
     fn enc_dec_seckey() {
         let k = KeyPair::new();
-        let mut w = Vec::new();
-        let b = match enc_secret_key(&k.secret_key, &mut encoder(&mut w)) {
-            Err(e) => panic!("Failed to encode secret key: {}", e),
-            _      => w
-        };
-        match dec_secret_key(&mut decoder(&mut b.as_ref())) {
-            Err(e) => panic!("failed to decode secret key: {}", e),
-            Ok(s)  => {
-                assert_eq!(k.secret_key.sec_edward.0.as_ref(), s.sec_edward.0.as_ref());
-                assert_eq!(k.secret_key.sec_curve.0.as_ref(), s.sec_curve.0.as_ref())
-            }
-        }
+        let r = roundtrip(|mut e| enc_secret_key(&k.secret_key, &mut e),
+                          |mut d| dec_secret_key(&mut d));
+        assert_eq!(&k.secret_key.sec_edward.0[..], &r.sec_edward.0[..]);
+        assert_eq!(&k.secret_key.sec_curve.0[..], &r.sec_curve.0[..])
     }
 }
