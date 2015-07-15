@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::io::Cursor;
+use std::usize;
 use std::vec::Vec;
 
 pub mod binary;
@@ -273,6 +274,10 @@ impl<'r> Session<'r> {
                 self.session_states.insert(tag, Indexed::new(ix, s));
             }
             None => {
+                if self.counter == usize::MAX {
+                    self.session_states.clear();
+                    self.counter = 0;
+                }
                 self.session_states.insert(tag, Indexed::new(self.counter, s));
                 self.counter = self.counter + 1;
             }
