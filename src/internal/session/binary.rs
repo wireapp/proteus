@@ -79,8 +79,10 @@ pub fn dec_msg_keys<R: Read>(d: &mut Decoder<R>) -> DecodeResult<MessageKeys> {
 
 // Version //////////////////////////////////////////////////////////////////
 
-fn enc_session_version<W: Write>(_: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
-    e.u16(1).map_err(From::from)
+fn enc_session_version<W: Write>(v: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
+    match *v {
+        Version::V1 => e.u16(1).map_err(From::from)
+    }
 }
 
 fn dec_session_version<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Version> {

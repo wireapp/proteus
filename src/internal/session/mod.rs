@@ -130,7 +130,7 @@ const MAX_RECV_CHAINS:    usize = 5;
 const MAX_COUNTER_GAP:    usize = 1000;
 const MAX_SESSION_STATES: usize = 100;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Version { V1 }
 
 pub struct Indexed<A> {

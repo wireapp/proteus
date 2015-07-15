@@ -22,12 +22,14 @@ pub fn dec_session_tag<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionTag> 
 
 // Version ///////////////////////////////////////////////////////////////////
 
-pub fn enc_msg_version<W: Write>(_: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
-    e.u32(1).map_err(From::from)
+pub fn enc_msg_version<W: Write>(v: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
+    match *v {
+        Version::V1 => e.u16(1).map_err(From::from)
+    }
 }
 
 pub fn dec_msg_version<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Version> {
-    match try!(d.u32()) {
+    match try!(d.u16()) {
         1 => Ok(Version::V1),
         v => Err(DecodeError::InvalidVersion(format!("unknow message version {}", v)))
     }
