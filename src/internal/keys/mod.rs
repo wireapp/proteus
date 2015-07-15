@@ -17,6 +17,13 @@ use std::vec::Vec;
 
 pub mod binary;
 
+// Version //////////////////////////////////////////////////////////////////
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Version { V1 }
+
+// Identity Key /////////////////////////////////////////////////////////////
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct IdentityKey {
     pub public_key: PublicKey
@@ -34,11 +41,8 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum IdentityVersion { V1 }
-
 pub struct IdentityKeyPair {
-    pub version:    IdentityVersion,
+    pub version:    Version,
     pub secret_key: SecretKey,
     pub public_key: IdentityKey
 }
@@ -47,7 +51,7 @@ impl IdentityKeyPair {
     pub fn new() -> IdentityKeyPair {
         let k = KeyPair::new();
         IdentityKeyPair {
-            version:    IdentityVersion::V1,
+            version:    Version::V1,
             secret_key: k.secret_key,
             public_key: IdentityKey { public_key: k.public_key }
         }
@@ -66,12 +70,9 @@ impl IdentityKeyPair {
 
 // Prekey ///////////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum PreKeyVersion { V1 }
-
 #[derive(Clone)]
 pub struct PreKey {
-    pub version:  PreKeyVersion,
+    pub version:  Version,
     pub key_id:   PreKeyId,
     pub key_pair: KeyPair
 }
@@ -79,7 +80,7 @@ pub struct PreKey {
 impl PreKey {
     pub fn new(i: PreKeyId) -> PreKey {
         PreKey {
-            version: PreKeyVersion::V1,
+            version: Version::V1,
             key_id: i,
             key_pair: KeyPair::new()
         }

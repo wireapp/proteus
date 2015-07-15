@@ -48,31 +48,31 @@ pub fn dec_identity_key<R: Read>(d: &mut Decoder<R>) -> DecodeResult<IdentityKey
     dec_public_key(d).map(|k| IdentityKey { public_key: k })
 }
 
-// Identity Version /////////////////////////////////////////////////////////
+// Version //////////////////////////////////////////////////////////////////
 
-pub fn enc_identity_version<W: Write>(v: &IdentityVersion, e: &mut Encoder<W>) -> EncodeResult<()> {
+pub fn enc_version<W: Write>(v: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
     match *v {
-        IdentityVersion::V1 => e.u16(1).map_err(From::from)
+        Version::V1 => e.u16(1).map_err(From::from)
     }
 }
 
-pub fn dec_identity_version<R: Read>(d: &mut Decoder<R>) -> DecodeResult<IdentityVersion> {
+pub fn dec_version<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Version> {
     match try!(d.u16()) {
-        1 => Ok(IdentityVersion::V1),
-        v => Err(DecodeError::InvalidVersion(format!("unknow identity keypair version {}", v)))
+        1 => Ok(Version::V1),
+        v => Err(DecodeError::InvalidVersion(format!("unknown key version {}", v)))
     }
 }
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
 pub fn enc_identity_keypair<W: Write>(k: &IdentityKeyPair, e: &mut Encoder<W>) -> EncodeResult<()> {
-    try!(enc_identity_version(&k.version, e));
+    try!(enc_version(&k.version, e));
     try!(enc_secret_key(&k.secret_key, e));
     enc_identity_key(&k.public_key, e)
 }
 
 pub fn dec_identity_keypair<R: Read>(d: &mut Decoder<R>) -> DecodeResult<IdentityKeyPair> {
-    let vs = try!(dec_identity_version(d));
+    let vs = try!(dec_version(d));
     let sk = try!(dec_secret_key(d));
     let pk = try!(dec_identity_key(d));
     Ok(IdentityKeyPair { version: vs, secret_key: sk, public_key: pk })
@@ -88,31 +88,16 @@ pub fn dec_prekey_id<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKeyId> {
     d.u16().map(PreKeyId).map_err(From::from)
 }
 
-// Prekey Version //////////////////////////////////////////////////////////
-
-pub fn enc_prekey_version<W: Write>(v: &PreKeyVersion, e: &mut Encoder<W>) -> EncodeResult<()> {
-    match *v {
-        PreKeyVersion::V1 => e.u16(1).map_err(From::from)
-    }
-}
-
-pub fn dec_prekey_version<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKeyVersion> {
-    match try!(d.u16()) {
-        1 => Ok(PreKeyVersion::V1),
-        v => Err(DecodeError::InvalidVersion(format!("unknow prekey version {}", v)))
-    }
-}
-
 // Prekey ///////////////////////////////////////////////////////////////////
 
 pub fn enc_prekey<W: Write>(k: &PreKey, e: &mut Encoder<W>) -> EncodeResult<()> {
-    try!(enc_prekey_version(&k.version, e));
+    try!(enc_version(&k.version, e));
     try!(enc_prekey_id(&k.key_id, e));
     enc_keypair(&k.key_pair, e)
 }
 
 pub fn dec_prekey<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKey> {
-    let vs = try!(dec_prekey_version(d));
+    let vs = try!(dec_version(d));
     let id = try!(dec_prekey_id(d));
     let kp = try!(dec_keypair(d));
     Ok(PreKey { version: vs, key_id: id, key_pair: kp })

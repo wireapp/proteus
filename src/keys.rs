@@ -3,6 +3,7 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
+pub use internal::keys::Version;
 pub use internal::keys::KeyPair;
 pub use internal::keys::SecretKey;
 pub use internal::keys::PublicKey;
