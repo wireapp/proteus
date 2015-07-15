@@ -1,7 +1,7 @@
 [package]
 
-name         = "libproteus"
-version      = "0.0.1"
+name         = "proteus"
+version      = "0.1.0"
 authors      = ["Toralf Wittner <tw@dtex.org>", "Roman S. Borschel <roman@pkaboo.org>"]
 description  = "Axolotl protocol implementation"
 homepage     = "https://github.com/twittner/proteus"
@@ -17,4 +17,4 @@ sodiumoxide     = "> 0.0.4"
 git = "https://github.com/twittner/hkdf"
 
 [dependencies.cbor-codec]
-path = "../cbor-codec"
+git = "https://github.com/twittner/cbor-codec"
