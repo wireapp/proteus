@@ -145,6 +145,16 @@ impl<A> Indexed<A> {
     }
 }
 
+// Note [session_tag]
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// The session tag denotes the session state which is used to encrypt
+// messages. Messages contain the session tag which was used for their
+// encryption, which allows the receiving end to perform an efficient
+// lookup. It is imperative to ensure that the session tag *always*
+// denotes a value in the session's map of session states, otherwise
+// `Session::encrypt` can not succeed. The only places where we change
+// it after initialisation is in `Session::insert_session_state` which
+// sets it to the value of the state which is inserted.
 pub struct Session<'r> {
     version:         Version,
     session_tag:     SessionTag,
@@ -208,96 +218,131 @@ impl<'r> Session<'r> {
             session_states:  BTreeMap::new()
         };
 
-        let msg = try!(session.unpack(store, pkmsg));
-
-        if session.session_states.is_empty() {
-            return Err(DecryptError::InvalidMessage)
+        match try!(session.new_state(store, pkmsg)) {
+            Some(mut s) => {
+                let plain = try!(s.decrypt(env, &pkmsg.message));
+                session.insert_session_state(s);
+                Ok((session, plain))
+            }
+            None => Err(DecryptError::InvalidMessage)
         }
-
-        let plain = try!(session.decrypt_msg(env, msg));
-        Ok((session, plain))
     }
 
     pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
         let     pending  = self.pending_prekey;
         let ref identity = self.local_identity.public_key;
-        let     state    = self.session_states.get_mut(&self.session_tag).unwrap();
+        let     state    = self.session_states.get_mut(&self.session_tag).unwrap(); // See note [session_tag]
         state.val.encrypt(identity, &pending, plain)
     }
 
+    // Note [no_new_state]
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // In case we are given a prekey message but did not find a prekey for the
+    // given prekey ID, we assume the prekey has been used before to create
+    // a session state which we already have. Thus, we attempt encryption
+    // of the inner cipher message.
     pub fn decrypt<E>(&mut self, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<Vec<u8>, DecryptError<E>> {
-        let msg = match *env.message() {
-            Message::Plain(ref m) => m,
+        match *env.message() {
+            Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
             Message::Keyed(ref m) => {
                 if m.identity_key != self.remote_identity {
                     return Err(DecryptError::RemoteIdentityChanged)
                 }
-                try!(self.unpack(store, m))
+                match try!(self.new_state(store, m)) {
+                    Some(mut s) => {
+                        let plain = try!(s.decrypt(env, &m.message));
+                        self.pending_prekey = None;
+                        self.insert_session_state(s);
+                        Ok(plain)
+                    }
+                    None => self.decrypt_cipher_message(env, &m.message) // See note [no_new_state]
+                }
             }
-        };
-        self.decrypt_msg(env, msg)
+        }
     }
 
-    fn decrypt_msg<E>(&mut self, env: &Envelope, msg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
-        let mut state = match self.session_states.get_mut(&msg.session_tag) {
+    fn decrypt_cipher_message<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
+        let mut s = match self.session_states.get_mut(&m.session_tag) {
             Some(s) => s.val.clone(),
             None    => return Err(DecryptError::InvalidMessage)
         };
-        let result          = try!(state.decrypt(env, msg));
-        self.pending_prekey = None;
-        self.session_tag    = state.session_tag.clone();
-        self.insert_session_state(state);
-        Ok(result)
+        let plain = try!(s.decrypt(env, &m));
+        self.insert_session_state(s);
+        Ok(plain)
     }
 
-    fn unpack<'s, E>(&mut self, store: &mut PreKeyStore<E>, m: &'s PreKeyMessage) -> Result<&'s CipherMessage, DecryptError<E>> {
-        try!(store.prekey(m.prekey_id)).map(|prekey| {
-            let new_state = SessionState::init_as_bob(BobParams {
+    // Attempt to create a new session state based on the prekey that we
+    // attempt to lookup in our prekey store. If successful we return the
+    // newly created state and--unless the last prekey was used--remove the
+    // prekey from the store.
+    // Only the first of n prekey messages which use the same prekey ID will
+    // therefore return `Ok(Some(...))`.
+    // See note [no_new_state] for those cases where no prekey has been found.
+    fn new_state<E>(&mut self, store: &mut PreKeyStore<E>, m: &PreKeyMessage) -> Result<Option<SessionState>, DecryptError<E>> {
+        let s = try!(store.prekey(m.prekey_id)).map(|prekey| {
+            SessionState::init_as_bob(BobParams {
                 bob_ident:   self.local_identity,
                 bob_prekey:  prekey.key_pair,
                 alice_ident: &m.identity_key,
                 alice_base:  &m.base_key,
                 session_tag: &m.message.session_tag
-            });
-            self.insert_session_state(new_state);
+            })
         });
         if m.prekey_id != keys::MAX_PREKEY_ID {
             try!(store.remove(m.prekey_id));
         }
-        Ok(&m.message)
+        Ok(s)
     }
 
+    // Here we either replace a session state we already have with a clone
+    // that has ratcheted forward, or we add a new session state. In any
+    // case we ensure, that the session's `session_tag` value is equal to
+    // the `SessionState`'s one.
+    //
+    // Note [counter_overflow]
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Theoretically the session counter--which is used to give newer session
+    // states a higher number than older ones--can overflow. While unlikely,
+    // we better handle this gracefully (if somewhat brutal) by clearing all
+    // states and resetting the counter to 0. This means that the only session
+    // state left is the one to be inserted, but if Alice and Bob do not
+    // manage to agree on a session state within `usize::MAX` it is probably
+    // of least concern.
     fn insert_session_state(&mut self, s: SessionState) {
         let tag = s.session_tag.clone();
         match self.session_states.get(&tag).map(|x| x.idx) {
-            Some(ix) => {
-                self.session_states.insert(tag, Indexed::new(ix, s));
+            Some(i) => {
+                self.session_states.insert(tag.clone(), Indexed::new(i, s));
             }
             None => {
-                if self.counter == usize::MAX {
+                if self.counter == usize::MAX { // See note [counter_overflow]
                     self.session_states.clear();
                     self.counter = 0;
                 }
-                self.session_states.insert(tag, Indexed::new(self.counter, s));
+                self.session_states.insert(tag.clone(), Indexed::new(self.counter, s));
                 self.counter = self.counter + 1;
             }
         }
 
-        if self.session_states.len() <= MAX_SESSION_STATES {
+        // See note [session_tag]
+        if &self.session_tag != &tag {
+            self.session_tag = tag;
+        }
+
+        if self.session_states.len() < MAX_SESSION_STATES {
             return ()
         }
 
-        let rm: Option<Indexed<SessionTag>> =
-            self.session_states.iter().fold(None, |x, (k, v)| {
+        self.session_states.iter()
+            .filter(|s| s.0 != &self.session_tag)
+            .fold(None, |x, (k, v)| {
                 match x {
-                    Some(ref s) if v.idx < s.idx =>
-                        Some(Indexed::new(v.idx, k.clone())),
+                    Some(ref s) if v.idx < s.idx => Some(Indexed::new(v.idx, k.clone())),
                     Some(_) => x,
                     None    => Some(Indexed::new(v.idx, k.clone()))
                 }
-            });
-
-        rm.map(|k| self.session_states.remove(&k.val));
+            })
+            .map(|k| self.session_states.remove(&k.val));
     }
 
     pub fn encode(&self) -> EncodeResult<Vec<u8>> {
