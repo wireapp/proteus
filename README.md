@@ -13,7 +13,7 @@ the use of prekeys:
 All cryptographic primitives used in the implementation of the protocol are
 provided by [libsodium][4]:
 
-  * Cipher: [XSalsa20][5]
+  * Cipher: [ChaCha20][5]
   * Diffie-Hellman: [Curve25519][6]
   * KDF: [HKDF][7] ([implementation][8])
 
@@ -21,7 +21,7 @@ provided by [libsodium][4]:
 [2]: https://github.com/trevp/axolotl/wiki
 [3]: https://whispersystems.org/blog/asynchronous-security/
 [4]: https://github.com/jedisct1/libsodium
-[5]: http://en.wikipedia.org/wiki/Salsa20
-[6]: http://en.wikipedia.org/wiki/Curve25519
+[5]: https://en.wikipedia.org/wiki/Salsa20#ChaCha_variant
+[6]: https://en.wikipedia.org/wiki/Curve25519
 [7]: https://tools.ietf.org/html/rfc5869
 [8]: https://github.com/twittner/hkdf
