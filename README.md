@@ -14,6 +14,7 @@ All cryptographic primitives used in the implementation of the protocol are
 provided by [libsodium][4]:
 
   * Cipher: [ChaCha20][5]
+  * MAC: [HMAC-SHA256][9]
   * Diffie-Hellman: [Curve25519][6]
   * KDF: [HKDF][7] ([implementation][8])
 
@@ -25,3 +26,4 @@ provided by [libsodium][4]:
 [6]: https://en.wikipedia.org/wiki/Curve25519
 [7]: https://tools.ietf.org/html/rfc5869
 [8]: https://github.com/twittner/hkdf
+[9]: https://en.wikipedia.org/wiki/Hash-based_message_authentication_code
