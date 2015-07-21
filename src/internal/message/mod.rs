@@ -3,7 +3,7 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-use byteorder::{BigEndian, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use cbor::{Config, Decoder, Encoder};
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey, rand_bytes};
@@ -39,8 +39,8 @@ impl Counter {
     }
 
     pub fn as_nonce(&self) -> Nonce {
-        let mut nonce = [0; 24];
-        nonce.as_mut().write_u32::<BigEndian>(self.0).unwrap();
+        let mut nonce = [0; 8];
+        BigEndian::write_u32(&mut nonce, self.0);
         Nonce::new(nonce)
     }
 }

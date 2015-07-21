@@ -5,7 +5,7 @@
 
 use cbor::{Decoder, Encoder};
 use internal::util::{Bytes32, DecodeResult, EncodeResult};
-use sodiumoxide::crypto::stream;
+use sodiumoxide::crypto::stream::chacha20 as stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
 use std::io::{Read, Write};
 use super::*;

@@ -4,7 +4,7 @@
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
 use hkdf::{Info, Input, Len, Salt, hkdf};
-use sodiumoxide::crypto::stream;
+use sodiumoxide::crypto::stream::chacha20 as stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
 use std::ops::Deref;
 use std::slice::bytes::copy_memory;
@@ -77,7 +77,7 @@ impl Deref for CipherKey {
 pub struct Nonce(stream::Nonce);
 
 impl Nonce {
-    pub fn new(b: [u8; 24]) -> Nonce {
+    pub fn new(b: [u8; 8]) -> Nonce {
         Nonce(stream::Nonce(b))
     }
 }
@@ -128,7 +128,7 @@ impl Deref for Mac {
 
 #[test]
 fn derive_secrets() {
-    let nc = Nonce::new([0; 24]);
+    let nc = Nonce::new([0; 8]);
     let ds = DerivedSecrets::kdf_without_salt(Input(b"346234876"), Info(b"foobar"));
     let ct = ds.cipher_key.encrypt(b"plaintext", &nc);
     assert_eq!(ct.len(), b"plaintext".len());

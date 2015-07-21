@@ -11,10 +11,14 @@ license      = "MPL-2.0"
 [dependencies]
 byteorder       = "> 0.2.0"
 rustc-serialize = "> 0.3.0"
-sodiumoxide     = "> 0.0.4"
+
+[dependencies.sodiumoxide]
+git    = "https://github.com/twittner/sodiumoxide"
+branch = "toml"
 
 [dependencies.hkdf]
-git = "https://github.com/twittner/hkdf"
+git    = "https://github.com/twittner/hkdf"
+branch = "toml"
 
 [dependencies.cbor-codec]
 git = "https://github.com/twittner/cbor-codec"
