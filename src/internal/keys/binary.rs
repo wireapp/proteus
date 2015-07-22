@@ -132,16 +132,31 @@ pub fn dec_prekey<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKey> {
 // Prekey Bundle ////////////////////////////////////////////////////////////
 
 pub fn enc_prekey_bundle<W: Write>(k: &PreKeyBundle, e: &mut Encoder<W>) -> EncodeResult<()> {
-    try!(enc_prekey_id(&k.prekey_id, e));
-    try!(enc_public_key(&k.public_key, e));
-    enc_identity_key(&k.identity_key, e)
+    match k.version {
+        Version::V1 => {
+            try!(e.array(4));
+            try!(enc_version(k.version, e));
+            try!(enc_prekey_id(&k.prekey_id, e));
+            try!(enc_public_key(&k.public_key, e));
+            enc_identity_key(&k.identity_key, e)
+        }
+    }
 }
 
 pub fn dec_prekey_bundle<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKeyBundle> {
-    let id = try!(dec_prekey_id(d));
-    let pk = try!(dec_public_key(d));
-    let ik = try!(dec_identity_key(d));
-    Ok(PreKeyBundle { prekey_id: id, public_key: pk, identity_key: ik })
+    let n = try!(d.array());
+    let v = try!(dec_version(d));
+    match v {
+        Version::V1 => {
+            if n != 4 {
+                return Err(DecodeError::InvalidArrayLen(n))
+            }
+            let id = try!(dec_prekey_id(d));
+            let pk = try!(dec_public_key(d));
+            let ik = try!(dec_identity_key(d));
+            Ok(PreKeyBundle { version: v, prekey_id: id, public_key: pk, identity_key: ik })
+        }
+    }
 }
 
 // Keypair //////////////////////////////////////////////////////////////////

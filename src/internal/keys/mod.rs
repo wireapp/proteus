@@ -112,6 +112,7 @@ pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct PreKeyBundle {
+    pub version:      Version,
     pub prekey_id:    PreKeyId,
     pub public_key:   PublicKey,
     pub identity_key: IdentityKey
@@ -120,6 +121,7 @@ pub struct PreKeyBundle {
 impl PreKeyBundle {
     pub fn new(ident: IdentityKey, key: &PreKey) -> PreKeyBundle {
         PreKeyBundle {
+            version:      Version::V1,
             prekey_id:    key.key_id,
             public_key:   key.key_pair.public_key,
             identity_key: ident
