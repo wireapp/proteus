@@ -22,8 +22,8 @@ pub fn dec_session_tag<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionTag> 
 
 // Version ///////////////////////////////////////////////////////////////////
 
-pub fn enc_msg_version<W: Write>(v: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
-    match *v {
+pub fn enc_msg_version<W: Write>(v: Version, e: &mut Encoder<W>) -> EncodeResult<()> {
+    match v {
         Version::V1 => e.u16(1).map_err(From::from)
     }
 }
@@ -118,24 +118,33 @@ pub fn dec_cipher_msg<R: Read>(d: &mut Decoder<R>) -> DecodeResult<CipherMessage
 // Message Envelope //////////////////////////////////////////////////////////
 
 pub fn enc_envelope<W: Write>(x: &Envelope, e: &mut Encoder<W>) -> EncodeResult<()> {
-    try!(enc_msg_version(&x.version, e));
-    try!(enc_mac(&x.mac, e));
-    e.bytes(&x.message_enc).map_err(From::from)
+    match x.version {
+        Version::V1 => {
+            try!(e.array(3));
+            try!(enc_msg_version(x.version, e));
+            try!(enc_mac(&x.mac, e));
+            e.bytes(&x.message_enc).map_err(From::from)
+        }
+    }
 }
 
 pub fn dec_envelope<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Envelope> {
-    let version = try!(dec_msg_version(d));
-    let mac     = try!(dec_mac(d));
-    let msg_enc = try!(d.bytes());
-    match version {
+    let n = try!(d.array());
+    let v = try!(dec_msg_version(d));
+    match v {
         Version::V1 => {
+            if n != 3 {
+                return Err(DecodeError::InvalidArrayLen(n))
+            }
+            let mac     = try!(dec_mac(d));
+            let msg_enc = try!(d.bytes());
             let msg = {
                 let mut rdr = Cursor::new(&msg_enc[..]);
                 let mut drd = Decoder::new(Config::default(), &mut rdr);
                 try!(dec_msg(&mut drd))
             };
             Ok(Envelope {
-                version:     version,
+                version:     v,
                 message:     msg,
                 message_enc: msg_enc,
                 mac:         mac

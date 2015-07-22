@@ -4,6 +4,7 @@
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
 use cbor::{Decoder, Encoder};
+use cbor::decoder::opt;
 use internal::keys::IdentityKeyPair;
 use internal::message::binary::*;
 use internal::derived::binary::*;
@@ -79,8 +80,8 @@ pub fn dec_msg_keys<R: Read>(d: &mut Decoder<R>) -> DecodeResult<MessageKeys> {
 
 // Version //////////////////////////////////////////////////////////////////
 
-fn enc_session_version<W: Write>(v: &Version, e: &mut Encoder<W>) -> EncodeResult<()> {
-    match *v {
+fn enc_session_version<W: Write>(v: Version, e: &mut Encoder<W>) -> EncodeResult<()> {
+    match v {
         Version::V1 => e.u16(1).map_err(From::from)
     }
 }
@@ -95,58 +96,67 @@ fn dec_session_version<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Version> {
 // Session //////////////////////////////////////////////////////////////////
 
 pub fn enc_session<W: Write>(s: &Session, e: &mut Encoder<W>) -> EncodeResult<()> {
-    try!(enc_session_version(&s.version, e));
-    try!(enc_session_tag(&s.session_tag, e));
-    try!(enc_identity_key(&s.local_identity.public_key, e));
-    try!(enc_identity_key(&s.remote_identity, e));
-    match s.pending_prekey {
-        None           => try!(e.bool(false)),
-        Some((id, pk)) => {
-            try!(e.bool(true));
-            try!(enc_prekey_id(&id, e));
-            try!(enc_public_key(&pk, e))
+    match s.version {
+        Version::V1 => {
+            try!(e.array(6));
+            try!(enc_session_version(s.version, e));
+            try!(enc_session_tag(&s.session_tag, e));
+            try!(enc_identity_key(&s.local_identity.public_key, e));
+            try!(enc_identity_key(&s.remote_identity, e));
+            match s.pending_prekey {
+                None           => try!(e.null()),
+                Some((id, pk)) => {
+                    try!(e.array(2));
+                    try!(enc_prekey_id(&id, e).and(enc_public_key(&pk, e)))
+                }
+            }
+            try!(e.array(s.session_states.len()));
+            for t in s.session_states.values() {
+                try!(enc_session_state(&t.val, e))
+            }
+            Ok(())
         }
     }
-    try!(e.u32(s.session_states.len() as u32));
-    for t in s.session_states.values() {
-        try!(enc_session_state(&t.val, e))
-    }
-    Ok(())
 }
 
 pub fn dec_session<'r, R: Read>(ident: &'r IdentityKeyPair, d: &mut Decoder<R>) -> DecodeResult<Session<'r>> {
-    let vs = try!(dec_session_version(d));
-    let tg = try!(dec_session_tag(d));
-    let li = try!(dec_identity_key(d));
-    if li != ident.public_key {
-        return Err(DecodeError::LocalIdentityChanged(li))
-    }
-    let ri = try!(dec_identity_key(d));
-    let pp = match try!(d.bool()) {
-        false => None,
-        true  => {
-            let id = try!(dec_prekey_id(d));
-            let pk = try!(dec_public_key(d));
-            Some((id, pk))
+    let n = try!(d.array());
+    let v = try!(dec_session_version(d));
+    match v {
+        Version::V1 => {
+            if n != 6 {
+                return Err(DecodeError::InvalidArrayLen(n))
+            }
+            let tg = try!(dec_session_tag(d));
+            let li = try!(dec_identity_key(d));
+            if li != ident.public_key {
+                return Err(DecodeError::LocalIdentityChanged(li))
+            }
+            let ri = try!(dec_identity_key(d));
+            let pp = match try!(opt(d.array())) {
+                None    => None,
+                Some(2) => Some((try!(dec_prekey_id(d)), try!(dec_public_key(d)))),
+                Some(n) => return Err(DecodeError::InvalidArrayLen(n))
+            };
+            let ls = try!(d.array());
+            let mut rb = BTreeMap::new();
+            let mut counter = 0;
+            for _ in 0 .. ls {
+                let s = try!(dec_session_state(d));
+                rb.insert(s.session_tag.clone(), Indexed::new(counter, s));
+                counter = counter + 1
+            }
+            Ok(Session {
+                version:         v,
+                session_tag:     tg,
+                counter:         counter,
+                local_identity:  ident,
+                remote_identity: ri,
+                pending_prekey:  pp,
+                session_states:  rb
+            })
         }
-    };
-    let ls = try!(d.u32());
-    let mut rb = BTreeMap::new();
-    let mut counter = 0;
-    for _ in 0 .. ls {
-        let s = try!(dec_session_state(d));
-        rb.insert(s.session_tag.clone(), Indexed::new(counter, s));
-        counter = counter + 1
     }
-    Ok(Session {
-        version:         vs,
-        session_tag:     tg,
-        counter:         counter,
-        local_identity:  ident,
-        remote_identity: ri,
-        pending_prekey:  pp,
-        session_states:  rb
-    })
 }
 
 // Session State ////////////////////////////////////////////////////////////
