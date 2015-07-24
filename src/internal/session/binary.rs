@@ -163,14 +163,14 @@ pub fn dec_session<'r, R: Read>(ident: &'r IdentityKeyPair, d: &mut Decoder<R>) 
 
 pub fn enc_session_state<W: Write>(s: &SessionState, e: &mut Encoder<W>) -> EncodeResult<()> {
     try!(enc_session_tag(&s.session_tag, e));
-    try!(e.u32(s.recv_chains.len() as u32));
+    try!(e.array(s.recv_chains.len()));
     for r in s.recv_chains.iter() {
         try!(enc_recv_chain(r, e))
     }
     try!(enc_send_chain(&s.send_chain, e));
     try!(enc_root_key(&s.root_key, e));
     try!(enc_counter(&s.prev_counter, e));
-    try!(e.u32(s.skipped_msgkeys.len() as u32));
+    try!(e.array(s.skipped_msgkeys.len()));
     for m in s.skipped_msgkeys.iter() {
         try!(enc_msg_keys(m, e))
     }
@@ -179,16 +179,16 @@ pub fn enc_session_state<W: Write>(s: &SessionState, e: &mut Encoder<W>) -> Enco
 
 pub fn dec_session_state<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionState> {
     let tg = try!(dec_session_tag(d));
-    let lr = try!(d.u32());
-    let mut rr = VecDeque::with_capacity(lr as usize);
+    let lr = try!(d.array());
+    let mut rr = VecDeque::with_capacity(lr);
     for _ in 0 .. lr {
         rr.push_back(try!(dec_recv_chain(d)))
     }
     let sc = try!(dec_send_chain(d));
     let rk = try!(dec_root_key(d));
     let ct = try!(dec_counter(d));
-    let lv = try!(d.u32());
-    let mut vm = VecDeque::with_capacity(lv as usize);
+    let lv = try!(d.array());
+    let mut vm = VecDeque::with_capacity(lv);
     for _ in 0 .. lv {
         vm.push_back(try!(dec_msg_keys(d)))
     }
