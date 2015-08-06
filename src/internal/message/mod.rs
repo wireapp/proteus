@@ -7,8 +7,7 @@ use byteorder::{BigEndian, ByteOrder};
 use cbor::{Config, Decoder, Encoder};
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey, rand_bytes};
-use internal::util::{DecodeResult, EncodeResult};
-use rustc_serialize::hex::ToHex;
+use internal::util::{DecodeResult, EncodeResult, fmt_hex};
 use std::fmt;
 use std::io::Cursor;
 use std::vec::Vec;
@@ -58,7 +57,7 @@ impl SessionTag {
 
 impl fmt::Debug for SessionTag {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{:?}", self.tag.to_hex())
+        write!(f, "{:?}", fmt_hex(&self.tag))
     }
 }
 

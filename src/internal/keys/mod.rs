@@ -5,8 +5,7 @@
 
 use cbor::{Config, Decoder, Encoder};
 use internal::ffi;
-use internal::util::{EncodeResult, DecodeResult};
-use rustc_serialize::hex::ToHex;
+use internal::util::{EncodeResult, DecodeResult, fmt_hex};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
@@ -233,7 +232,7 @@ impl PublicKey {
     }
 
     pub fn fingerprint(&self) -> String {
-        self.pub_edward.0.to_hex()
+        fmt_hex(&self.pub_edward.0)
     }
 }
 

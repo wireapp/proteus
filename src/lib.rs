@@ -3,14 +3,13 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-#![feature(slice_bytes, libc)]
+#![feature(slice_bytes)]
 
 extern crate cbor;
 extern crate byteorder;
 extern crate hkdf;
 extern crate libc;
 extern crate sodiumoxide;
-extern crate rustc_serialize;
 
 mod internal;
 
