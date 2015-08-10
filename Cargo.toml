@@ -9,14 +9,10 @@ repository   = "git@github.com:twittner/proteus.git"
 license      = "MPL-2.0"
 
 [dependencies]
-byteorder  = ">  0.2.0"
-cbor-codec = ">= 0.1.0"
-libc       = ">  0.1.0"
-
-[dependencies.sodiumoxide]
-git    = "https://github.com/twittner/sodiumoxide"
-branch = "toml"
+byteorder   = ">  0.2.0"
+cbor-codec  = ">= 0.1.0"
+libc        = ">  0.1.0"
+sodiumoxide = "> 0.0.5"
 
 [dependencies.hkdf]
-git    = "https://github.com/twittner/hkdf"
-branch = "toml"
+git = "https://github.com/twittner/hkdf"
