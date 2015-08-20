@@ -181,17 +181,23 @@ pub struct PreKeyBundle {
     pub version:      u8,
     pub prekey_id:    PreKeyId,
     pub public_key:   PublicKey,
-    pub identity_key: IdentityKey
+    pub identity_key: IdentityKey,
+    pub signature:    Signature
 }
 
 impl PreKeyBundle {
-    pub fn new(ident: IdentityKey, key: &PreKey) -> PreKeyBundle {
+    pub fn new(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
         PreKeyBundle {
             version:      1,
             prekey_id:    key.key_id,
             public_key:   key.key_pair.public_key,
-            identity_key: ident
+            identity_key: ident.public_key,
+            signature:    ident.secret_key.sign(&key.key_pair.public_key.pub_edward.0)
         }
+    }
+
+    pub fn verify(&self) -> bool {
+        self.identity_key.public_key.verify(&self.signature, &self.public_key.pub_edward.0)
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
@@ -205,11 +211,12 @@ impl PreKeyBundle {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(4));
+        try!(e.object(5));
         try!(e.u8(0)); try!(e.u8(self.version));
         try!(e.u8(1)); try!(self.prekey_id.encode(e));
         try!(e.u8(2)); try!(self.public_key.encode(e));
-        try!(e.u8(3)); self.identity_key.encode(e)
+        try!(e.u8(3)); try!(self.identity_key.encode(e));
+        try!(e.u8(4)); self.signature.encode(e)
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyBundle> {
@@ -218,12 +225,14 @@ impl PreKeyBundle {
         let mut prekey_id    = None;
         let mut public_key   = None;
         let mut identity_key = None;
+        let mut signature    = None;
         for _ in 0 .. n {
             match try!(d.u8()) {
                 0 => version      = Some(try!(d.u8())),
                 1 => prekey_id    = Some(try!(PreKeyId::decode(d))),
                 2 => public_key   = Some(try!(PublicKey::decode(d))),
                 3 => identity_key = Some(try!(IdentityKey::decode(d))),
+                4 => signature    = Some(try!(Signature::decode(d))),
                 _ => try!(d.skip())
             }
         }
@@ -231,7 +240,8 @@ impl PreKeyBundle {
             version:      to_field!(version, "PreKeyBundle::version"),
             prekey_id:    to_field!(prekey_id, "PreKeyBundle::prekey_id"),
             public_key:   to_field!(public_key, "PreKeyBundle::public_key"),
-            identity_key: to_field!(identity_key, "PreKeyBundle::identity_key")
+            identity_key: to_field!(identity_key, "PreKeyBundle::identity_key"),
+            signature:    to_field!(signature, "PreKeyBundle::signature")
         })
     }
 }
@@ -417,9 +427,31 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 
 // Signature ////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Signature {
     sig: sign::Signature
+}
+
+impl Signature {
+    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(1));
+        try!(e.u8(0).and(e.bytes(&self.sig.0)));
+        Ok(())
+    }
+
+    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Signature> {
+        let n = try!(d.object());
+        let mut signature = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => signature = Some(try!(Bytes64::decode(d).map(|v| sign::Signature(v.array)))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(Signature {
+            sig: to_field!(signature, "Signature::sig")
+        })
+    }
 }
 
 // Internal /////////////////////////////////////////////////////////////////
