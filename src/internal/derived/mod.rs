@@ -3,14 +3,16 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
+use cbor::{Decoder, Encoder};
+use cbor::skip::Skip;
 use hkdf::{Info, Input, Len, Salt, hkdf};
+use internal::util::{Bytes32, DecodeError, DecodeResult, EncodeResult};
 use sodiumoxide::crypto::stream::chacha20 as stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
+use std::io::{Read, Write};
 use std::ops::Deref;
 use std::slice::bytes::copy_memory;
 use std::vec::Vec;
-
-pub mod binary;
 
 // Derived Secrets //////////////////////////////////////////////////////////
 
@@ -61,6 +63,24 @@ impl CipherKey {
     pub fn decrypt(&self, text: &[u8], nonce: &Nonce) -> Vec<u8> {
         stream::stream_xor(text, &nonce.0, &self.key)
     }
+
+    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(1));
+        try!(e.u8(0).and(e.bytes(&self.key.0)));
+        Ok(())
+    }
+
+    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherKey> {
+        let n = try!(d.object());
+        let mut key = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => key = Some(try!(Bytes32::decode(d).map(|v| stream::Key(v.array)))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(CipherKey { key: to_field!(key, "CipherKey::key") })
+    }
 }
 
 impl Deref for CipherKey {
@@ -101,6 +121,24 @@ impl MacKey {
     pub fn verify(&self, sig: &Mac, msg: &[u8]) -> bool {
         mac::verify(&sig.sig, msg, &self.key)
     }
+
+    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(1));
+        try!(e.u8(0).and(e.bytes(&self.key.0)));
+        Ok(())
+    }
+
+    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MacKey> {
+        let n = try!(d.object());
+        let mut key = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => key = Some(try!(Bytes32::decode(d).map(|v| mac::Key(v.array)))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(MacKey { key: to_field!(key, "MacKey::key") })
+    }
 }
 
 // MAC //////////////////////////////////////////////////////////////////////
@@ -113,6 +151,24 @@ pub struct Mac {
 impl Mac {
     pub fn to_bytes(self) -> [u8; 32] {
         self.sig.0
+    }
+
+    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(1));
+        try!(e.u8(0).and(e.bytes(&self.sig.0)));
+        Ok(())
+    }
+
+    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Mac> {
+        let n = try!(d.object());
+        let mut sig = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => sig = Some(try!(Bytes32::decode(d).map(|v| mac::Tag(v.array)))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(Mac { sig: to_field!(sig, "Mac::sig") })
     }
 }
 

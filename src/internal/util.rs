@@ -12,6 +12,13 @@ use std::io::Read;
 #[cfg(test)]
 use std::io::Cursor;
 
+macro_rules! to_field {
+    ($test: expr, $msg: expr) => (match $test {
+        Some(val) => val,
+        None      => return Err(DecodeError::MissingField($msg))
+    })
+}
+
 pub type EncodeResult<A> = Result<A, EncodeError>;
 pub type DecodeResult<A> = Result<A, DecodeError>;
 
@@ -50,9 +57,9 @@ impl From<cbor::EncodeError> for EncodeError {
 pub enum DecodeError {
     Decoder(cbor::DecodeError),
     InvalidArrayLen(usize),
-    InvalidVersion(String),
     LocalIdentityChanged(IdentityKey),
-    InvalidMessage(String)
+    InvalidMessage(String),
+    MissingField(&'static str)
 }
 
 impl fmt::Display for DecodeError {
@@ -60,9 +67,9 @@ impl fmt::Display for DecodeError {
         match *self {
             DecodeError::Decoder(ref e)          => write!(f, "CBOR decoder error: {}", e),
             DecodeError::InvalidArrayLen(n)      => write!(f, "CBOR array length mismatch: {}", n),
-            DecodeError::InvalidVersion(ref s)   => write!(f, "Invalid version: {}", s),
             DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
-            DecodeError::InvalidMessage(ref s)   => write!(f, "Invalid message: {}", s)
+            DecodeError::InvalidMessage(ref s)   => write!(f, "Invalid message: {}", s),
+            DecodeError::MissingField(ref s)     => write!(f, "Missing field: {}", s)
         }
     }
 }
