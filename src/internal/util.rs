@@ -13,10 +13,12 @@ use std::io::Read;
 use std::io::Cursor;
 
 macro_rules! to_field {
-    ($test: expr, $msg: expr) => (match $test {
-        Some(val) => val,
-        None      => return Err(DecodeError::MissingField($msg))
-    })
+    ($test: expr, $msg: expr) => {
+        match $test {
+            Some(val) => val,
+            None      => return Err(DecodeError::MissingField($msg))
+        }
+    }
 }
 
 pub type EncodeResult<A> = Result<A, EncodeError>;

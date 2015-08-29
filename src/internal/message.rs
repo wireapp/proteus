@@ -260,7 +260,7 @@ impl Envelope {
                 2 => {
                     let msg_enc = try!(d.bytes());
                     message     = Some(try!(Message::decode(&mut Decoder::new(Config::default(), Cursor::new(&msg_enc[..])))));
-                    message_enc = Some(msg_enc);
+                    message_enc = Some(msg_enc)
                 }
                 _ => try!(d.skip())
             }

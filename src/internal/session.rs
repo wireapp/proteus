@@ -136,7 +136,7 @@ impl SendChain {
         let mut ratchet_key = None;
         for _ in 0 .. n {
             match try!(d.u8()) {
-                0 => chain_key = Some(try!(ChainKey::decode(d))),
+                0 => chain_key   = Some(try!(ChainKey::decode(d))),
                 1 => ratchet_key = Some(try!(KeyPair::decode(d))),
                 _ => try!(d.skip())
             }
@@ -173,7 +173,7 @@ impl RecvChain {
         let mut ratchet_key = None;
         for _ in 0 .. n {
             match try!(d.u8()) {
-                0 => chain_key = Some(try!(ChainKey::decode(d))),
+                0 => chain_key   = Some(try!(ChainKey::decode(d))),
                 1 => ratchet_key = Some(try!(PublicKey::decode(d))),
                 _ => try!(d.skip())
             }
@@ -543,7 +543,7 @@ impl<'r> Session<'r> {
                         counter = counter + 1
                     }
                     session_states = Some(rb)
-                },
+                }
                 _ => try!(d.skip())
             }
         }
@@ -819,7 +819,7 @@ impl SessionState {
                         rr.push_back(try!(RecvChain::decode(d)))
                     }
                     recv_chains = Some(rr)
-                },
+                }
                 2 => send_chain   = Some(try!(SendChain::decode(d))),
                 3 => root_key     = Some(try!(RootKey::decode(d))),
                 4 => prev_counter = Some(try!(Counter::decode(d))),
@@ -830,7 +830,7 @@ impl SessionState {
                         vm.push_back(try!(MessageKeys::decode(d)))
                     }
                     skipped_msgkeys = Some(vm)
-                },
+                }
                 _ => try!(d.skip())
             }
         }
