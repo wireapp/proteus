@@ -60,7 +60,7 @@ pub enum DecodeError {
     Decoder(cbor::DecodeError),
     InvalidArrayLen(usize),
     LocalIdentityChanged(IdentityKey),
-    InvalidMessage(String),
+    InvalidType(u8, &'static str),
     MissingField(&'static str)
 }
 
@@ -70,7 +70,7 @@ impl fmt::Display for DecodeError {
             DecodeError::Decoder(ref e)          => write!(f, "CBOR decoder error: {}", e),
             DecodeError::InvalidArrayLen(n)      => write!(f, "CBOR array length mismatch: {}", n),
             DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
-            DecodeError::InvalidMessage(ref s)   => write!(f, "Invalid message: {}", s),
+            DecodeError::InvalidType(t, ref s)   => write!(f, "Invalid type {}: {}", t, s),
             DecodeError::MissingField(ref s)     => write!(f, "Missing field: {}", s)
         }
     }
@@ -92,6 +92,16 @@ impl Error for DecodeError {
 impl From<cbor::DecodeError> for DecodeError {
     fn from(err: cbor::DecodeError) -> DecodeError {
         DecodeError::Decoder(err)
+    }
+}
+
+// Optional Values //////////////////////////////////////////////////////////
+
+pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {
+    match r {
+        Ok(x)  => Ok(Some(x)),
+        Err(DecodeError::Decoder(e)) => cbor::opt(Err(e)).map_err(From::from),
+        Err(e) => Err(e)
     }
 }
 
