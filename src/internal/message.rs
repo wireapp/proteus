@@ -79,7 +79,7 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         match *self {
             Message::Plain(ref m) => {
                 try!(e.u8(1));
@@ -92,7 +92,7 @@ impl Message {
         }
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Message> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Message> {
         match try!(d.u8()) {
             1 => CipherMessage::decode(d).map(Message::Plain),
             2 => PreKeyMessage::decode(d).map(Message::Keyed),
@@ -111,7 +111,7 @@ pub struct PreKeyMessage {
 }
 
 impl PreKeyMessage {
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(4));
         try!(e.u8(0)); try!(self.prekey_id.encode(e));
         try!(e.u8(1)); try!(self.base_key.encode(e));
@@ -119,7 +119,7 @@ impl PreKeyMessage {
         try!(e.u8(3)); self.message.encode(e)
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyMessage> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyMessage> {
         let n = try!(d.object());
         let mut prekey_id    = None;
         let mut base_key     = None;
@@ -154,7 +154,7 @@ pub struct CipherMessage {
 }
 
 impl CipherMessage {
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(5));
         try!(e.u8(0)); try!(self.session_tag.encode(e));
         try!(e.u8(1)); try!(self.counter.encode(e));
@@ -164,7 +164,7 @@ impl CipherMessage {
         Ok(())
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherMessage> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherMessage> {
         let n = try!(d.object());
         let mut session_tag  = None;
         let mut counter      = None;

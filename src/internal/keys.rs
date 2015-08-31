@@ -193,6 +193,7 @@ impl PreKeyBundle {
             identity_key: ident
         }
     }
+
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
         let mut e = Encoder::new(Cursor::new(Vec::new()));
         try!(self.encode(&mut e));

@@ -39,12 +39,12 @@ impl RootKey {
         (RootKey::from_cipher_key(dsecs.cipher_key), ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()))
     }
 
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(1));
         try!(e.u8(0)); self.key.encode(e)
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RootKey> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RootKey> {
         let n = try!(d.object());
         let mut key = None;
         for _ in 0 .. n {
@@ -87,13 +87,13 @@ impl ChainKey {
         }
     }
 
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(2));
         try!(e.u8(0)); try!(self.key.encode(e));
         try!(e.u8(1)); self.idx.encode(e)
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<ChainKey> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<ChainKey> {
         let n = try!(d.object());
         let mut key = None;
         let mut idx = None;
@@ -124,13 +124,13 @@ impl SendChain {
         SendChain { chain_key: ck, ratchet_key: rk }
     }
 
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(2));
         try!(e.u8(0)); try!(self.chain_key.encode(e));
         try!(e.u8(1)); self.ratchet_key.encode(e)
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SendChain> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SendChain> {
         let n = try!(d.object());
         let mut chain_key   = None;
         let mut ratchet_key = None;
@@ -161,13 +161,13 @@ impl RecvChain {
         RecvChain { chain_key: ck, ratchet_key: rk }
     }
 
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(2));
         try!(e.u8(0)); try!(self.chain_key.encode(e));
         try!(e.u8(1)); self.ratchet_key.encode(e)
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RecvChain> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RecvChain> {
         let n = try!(d.object());
         let mut chain_key   = None;
         let mut ratchet_key = None;
@@ -203,14 +203,14 @@ impl MessageKeys {
         self.cipher_key.decrypt(cipher_text, &self.counter.as_nonce())
     }
 
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(3));
         try!(e.u8(0)); try!(self.cipher_key.encode(e));
         try!(e.u8(1)); try!(self.mac_key.encode(e));
         try!(e.u8(2)); self.counter.encode(e)
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MessageKeys> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MessageKeys> {
         let n = try!(d.object());
         let mut cipher_key = None;
         let mut mac_key    = None;
@@ -778,7 +778,7 @@ impl SessionState {
         assert!(self.skipped_msgkeys.len() <= MAX_COUNTER_GAP);
     }
 
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(6));
         try!(e.u8(0)); try!(self.session_tag.encode(e));
         try!(e.u8(1));
@@ -801,7 +801,7 @@ impl SessionState {
         Ok(())
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SessionState> {
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SessionState> {
         let n = try!(d.object());
         let mut session_tag     = None;
         let mut recv_chains     = None;
