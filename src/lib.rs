@@ -3,14 +3,13 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-#![feature(collections, core, libc)]
+#![feature(slice_bytes)]
 
-extern crate bincode;
+extern crate cbor;
 extern crate byteorder;
 extern crate hkdf;
 extern crate libc;
 extern crate sodiumoxide;
-extern crate rustc_serialize;
 
 mod internal;
 
@@ -22,5 +21,4 @@ pub fn init() {
     sodiumoxide::init();
 }
 
-pub use internal::util::DecodeError;
-pub use internal::session::binary::DecodeSessionError;
+pub use internal::util::{DecodeError, EncodeError};

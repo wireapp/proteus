@@ -3,21 +3,23 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-use bincode::{DecoderReader, SizeLimit};
+use cbor::{Config, Decoder, Encoder};
+use cbor::decoder::opt;
+use cbor::skip::Skip;
 use hkdf::{Input, Info, Salt};
 use internal::derived::{DerivedSecrets, CipherKey, MacKey};
 use internal::keys;
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyId};
 use internal::keys::{KeyPair, PublicKey};
-use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage};
-use internal::util;
+use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
+use internal::util::{DecodeError, DecodeResult, EncodeResult};
 use std::cmp::{Ord, Ordering};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::fmt;
+use std::io::{Cursor, Read, Write};
+use std::usize;
 use std::vec::Vec;
-
-pub mod binary;
 
 // Root key /////////////////////////////////////////////////////////////////
 
@@ -35,6 +37,23 @@ impl RootKey {
         let secret = ours.secret_key.shared_secret(theirs);
         let dsecs  = DerivedSecrets::kdf(Input(&secret), Salt(&self.key), Info(b"dh_ratchet"));
         (RootKey::from_cipher_key(dsecs.cipher_key), ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()))
+    }
+
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(1));
+        try!(e.u8(0)); self.key.encode(e)
+    }
+
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RootKey> {
+        let n = try!(d.object());
+        let mut key = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => key = Some(try!(CipherKey::decode(d))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(RootKey { key: to_field!(key, "RootKey::key") })
     }
 }
 
@@ -67,6 +86,29 @@ impl ChainKey {
             counter:    self.idx
         }
     }
+
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(2));
+        try!(e.u8(0)); try!(self.key.encode(e));
+        try!(e.u8(1)); self.idx.encode(e)
+    }
+
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<ChainKey> {
+        let n = try!(d.object());
+        let mut key = None;
+        let mut idx = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => key = Some(try!(MacKey::decode(d))),
+                1 => idx = Some(try!(Counter::decode(d))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(ChainKey {
+            key: to_field!(key, "ChainKey::key"),
+            idx: to_field!(idx, "ChainKey::idx")
+        })
+    }
 }
 
 // Send Chain ///////////////////////////////////////////////////////////////
@@ -81,6 +123,29 @@ impl SendChain {
     pub fn new(ck: ChainKey, rk: KeyPair) -> SendChain {
         SendChain { chain_key: ck, ratchet_key: rk }
     }
+
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(2));
+        try!(e.u8(0)); try!(self.chain_key.encode(e));
+        try!(e.u8(1)); self.ratchet_key.encode(e)
+    }
+
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SendChain> {
+        let n = try!(d.object());
+        let mut chain_key   = None;
+        let mut ratchet_key = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => chain_key   = Some(try!(ChainKey::decode(d))),
+                1 => ratchet_key = Some(try!(KeyPair::decode(d))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(SendChain {
+            chain_key:   to_field!(chain_key, "SendChain::chain_key"),
+            ratchet_key: to_field!(ratchet_key, "SendChain::ratchet_key")
+        })
+    }
 }
 
 // Receive Chain ////////////////////////////////////////////////////////////
@@ -94,6 +159,29 @@ pub struct RecvChain {
 impl RecvChain {
     pub fn new(ck: ChainKey, rk: PublicKey) -> RecvChain {
         RecvChain { chain_key: ck, ratchet_key: rk }
+    }
+
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(2));
+        try!(e.u8(0)); try!(self.chain_key.encode(e));
+        try!(e.u8(1)); self.ratchet_key.encode(e)
+    }
+
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RecvChain> {
+        let n = try!(d.object());
+        let mut chain_key   = None;
+        let mut ratchet_key = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => chain_key   = Some(try!(ChainKey::decode(d))),
+                1 => ratchet_key = Some(try!(PublicKey::decode(d))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(RecvChain {
+            chain_key:   to_field!(chain_key, "RecvChain::chain_key"),
+            ratchet_key: to_field!(ratchet_key, "RecvChain::ratchet_key")
+        })
     }
 }
 
@@ -114,6 +202,33 @@ impl MessageKeys {
     fn decrypt(&self, cipher_text: &[u8]) -> Vec<u8> {
         self.cipher_key.decrypt(cipher_text, &self.counter.as_nonce())
     }
+
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(3));
+        try!(e.u8(0)); try!(self.cipher_key.encode(e));
+        try!(e.u8(1)); try!(self.mac_key.encode(e));
+        try!(e.u8(2)); self.counter.encode(e)
+    }
+
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MessageKeys> {
+        let n = try!(d.object());
+        let mut cipher_key = None;
+        let mut mac_key    = None;
+        let mut counter    = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => cipher_key = Some(try!(CipherKey::decode(d))),
+                1 => mac_key    = Some(try!(MacKey::decode(d))),
+                2 => counter    = Some(try!(Counter::decode(d))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(MessageKeys {
+            cipher_key: to_field!(cipher_key, "MessageKeys::cipher_key"),
+            mac_key:    to_field!(mac_key, "MessageKeys::mac_key"),
+            counter:    to_field!(counter, "MessageKeys::counter")
+        })
+    }
 }
 
 // Store ////////////////////////////////////////////////////////////////////
@@ -129,15 +244,35 @@ const MAX_RECV_CHAINS:    usize = 5;
 const MAX_COUNTER_GAP:    usize = 1000;
 const MAX_SESSION_STATES: usize = 100;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub enum Version { V1 }
+pub struct Indexed<A> {
+    pub idx: usize,
+    pub val: A
+}
 
+impl<A> Indexed<A> {
+    pub fn new(i: usize, a: A) -> Indexed<A> {
+        Indexed { idx: i, val: a }
+    }
+}
+
+// Note [session_tag]
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// The session tag denotes the session state which is used to encrypt
+// messages. Messages contain the session tag which was used for their
+// encryption, which allows the receiving end to perform an efficient
+// lookup. It is imperative to ensure that the session tag *always*
+// denotes a value in the session's map of session states, otherwise
+// `Session::encrypt` can not succeed. The only places where we change
+// it after initialisation is in `Session::insert_session_state` which
+// sets it to the value of the state which is inserted.
 pub struct Session<'r> {
-    version:         Version,
+    version:         u8,
+    session_tag:     SessionTag,
+    counter:         usize,
     local_identity:  &'r IdentityKeyPair,
     remote_identity: IdentityKey,
     pending_prekey:  Option<(PreKeyId, PublicKey)>,
-    session_states:  VecDeque<SessionState>
+    session_states:  BTreeMap<SessionTag, Indexed<SessionState>>
 }
 
 struct AliceParams<'r> {
@@ -150,26 +285,31 @@ struct BobParams<'r> {
     bob_ident:     &'r IdentityKeyPair,
     bob_prekey:    KeyPair,
     alice_ident:   &'r IdentityKey,
-    alice_base:    &'r PublicKey
+    alice_base:    &'r PublicKey,
+    session_tag:   &'r SessionTag
 }
 
 impl<'r> Session<'r> {
     pub fn init_from_prekey(alice: &'r IdentityKeyPair, pk: PreKeyBundle) -> Session<'r> {
         let alice_base = KeyPair::new();
-        let mut states = VecDeque::new();
-        states.push_front(SessionState::init_as_alice(AliceParams {
-            alice_ident:   alice,
-            alice_base:    &alice_base,
-            bob:           &pk
-        }));
+        let state      = SessionState::init_as_alice(AliceParams {
+            alice_ident: alice,
+            alice_base:  &alice_base,
+            bob:         &pk
+        });
 
-        Session {
-            version:         Version::V1,
+        let mut session = Session {
+            version:         1,
+            session_tag:     state.session_tag.clone(),
+            counter:         0,
             local_identity:  alice,
             remote_identity: pk.identity_key,
             pending_prekey:  Some((pk.prekey_id, alice_base.public_key)),
-            session_states:  states,
-        }
+            session_states:  BTreeMap::new()
+        };
+
+        session.insert_session_state(state);
+        session
     }
 
     pub fn init_from_message<E>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<(Session<'r>, Vec<u8>), DecryptError<E>> {
@@ -179,110 +319,140 @@ impl<'r> Session<'r> {
         };
 
         let mut session = Session {
-            version:         Version::V1,
+            version:         1,
+            session_tag:     pkmsg.message.session_tag.clone(),
+            counter:         0,
             local_identity:  ours,
-            remote_identity: pkmsg.identity_key,
+            remote_identity: pkmsg.identity_key.clone(),
             pending_prekey:  None,
-            session_states:  VecDeque::new()
+            session_states:  BTreeMap::new()
         };
 
-        let msg = try!(session.unpack(store, pkmsg));
-
-        if session.session_states.is_empty() {
-            return Err(DecryptError::InvalidMessage)
+        match try!(session.new_state(store, pkmsg)) {
+            Some(mut s) => {
+                let plain = try!(s.decrypt(env, &pkmsg.message));
+                session.insert_session_state(s);
+                Ok((session, plain))
+            }
+            None => Err(DecryptError::InvalidMessage)
         }
-
-        let plain = try!(session.decrypt_msg(env, msg));
-
-        Ok((session, plain))
     }
 
-    pub fn encrypt(&mut self, plain: &[u8]) -> Envelope {
-        assert!(!self.session_states.is_empty());
-
-        let pending  = self.pending_prekey;
-        let identity = self.local_identity.public_key;
-        let state    = self.session_states.front_mut().unwrap();
-
-        state.encrypt(identity, &pending, plain)
+    pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
+        let     pending  = self.pending_prekey;
+        let ref identity = self.local_identity.public_key;
+        let     state    = self.session_states.get_mut(&self.session_tag).unwrap(); // See note [session_tag]
+        state.val.encrypt(identity, &pending, plain)
     }
 
+    // Note [no_new_state]
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // In case we are given a prekey message but did not find a prekey for the
+    // given prekey ID, we assume the prekey has been used before to create
+    // a session state which we already have. Thus, we attempt encryption
+    // of the inner cipher message.
     pub fn decrypt<E>(&mut self, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<Vec<u8>, DecryptError<E>> {
-        let msg = match *env.message() {
-            Message::Plain(ref m) => m,
+        match *env.message() {
+            Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
             Message::Keyed(ref m) => {
                 if m.identity_key != self.remote_identity {
                     return Err(DecryptError::RemoteIdentityChanged)
                 }
-                try!(self.unpack(store, m))
-            }
-        };
-        self.decrypt_msg(env, msg)
-    }
-
-    fn decrypt_msg<E>(&mut self, env: &Envelope, msg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
-        assert!(!self.session_states.is_empty());
-
-        // try first session state
-        let mut first_state = self.session_states[0].clone();
-        let first_result    = first_state.decrypt(env, msg);
-
-        if first_result.is_ok() {
-            self.session_states[0] = first_state;
-            self.pending_prekey    = None;
-            return first_result
-        }
-
-        // try remaining session states
-        let result =
-            self.session_states.iter().skip(1).zip(1..).map(|(s0, i)| {
-                let mut s1 = s0.clone();
-                let result = s1.decrypt(env, msg);
-                if result.is_ok() {
-                    Some((result, s1, i))
-                } else {
-                    None
+                match try!(self.new_state(store, m)) {
+                    Some(mut s) => {
+                        let plain = try!(s.decrypt(env, &m.message));
+                        self.pending_prekey = None;
+                        self.insert_session_state(s);
+                        Ok(plain)
+                    }
+                    None => self.decrypt_cipher_message(env, &m.message) // See note [no_new_state]
                 }
-            }).find(|x| x.is_some()).and_then(|x| x);
-
-        match result {
-            Some((plain, new_state, ix)) => {
-                self.session_states.remove(ix);
-                self.session_states.push_front(new_state);
-                self.pending_prekey = None;
-                plain
             }
-            None => first_result
         }
     }
 
-    fn unpack<'s, E>(&mut self, store: &mut PreKeyStore<E>, m: &'s PreKeyMessage) -> Result<&'s CipherMessage, DecryptError<E>> {
-        try!(store.prekey(m.prekey_id)).map(|prekey| {
-            let new_state = SessionState::init_as_bob(BobParams {
+    fn decrypt_cipher_message<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
+        let mut s = match self.session_states.get_mut(&m.session_tag) {
+            Some(s) => s.val.clone(),
+            None    => return Err(DecryptError::InvalidMessage)
+        };
+        let plain = try!(s.decrypt(env, &m));
+        self.insert_session_state(s);
+        Ok(plain)
+    }
+
+    // Attempt to create a new session state based on the prekey that we
+    // attempt to lookup in our prekey store. If successful we return the
+    // newly created state and--unless the last prekey was used--remove the
+    // prekey from the store.
+    // Only the first of n prekey messages which use the same prekey ID will
+    // therefore return `Ok(Some(...))`.
+    // See note [no_new_state] for those cases where no prekey has been found.
+    fn new_state<E>(&mut self, store: &mut PreKeyStore<E>, m: &PreKeyMessage) -> Result<Option<SessionState>, DecryptError<E>> {
+        let s = try!(store.prekey(m.prekey_id)).map(|prekey| {
+            SessionState::init_as_bob(BobParams {
                 bob_ident:   self.local_identity,
                 bob_prekey:  prekey.key_pair,
                 alice_ident: &m.identity_key,
-                alice_base:  &m.base_key
-            });
-            self.session_states.push_front(new_state);
-            if self.session_states.len() > MAX_SESSION_STATES {
-                self.session_states.pop_back();
-            }
+                alice_base:  &m.base_key,
+                session_tag: &m.message.session_tag
+            })
         });
         if m.prekey_id != keys::MAX_PREKEY_ID {
             try!(store.remove(m.prekey_id));
         }
-        Ok(&m.message)
+        Ok(s)
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        util::encode(self, binary::enc_session).unwrap()
-    }
+    // Here we either replace a session state we already have with a clone
+    // that has ratcheted forward, or we add a new session state. In any
+    // case we ensure, that the session's `session_tag` value is equal to
+    // the `SessionState`'s one.
+    //
+    // Note [counter_overflow]
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Theoretically the session counter--which is used to give newer session
+    // states a higher number than older ones--can overflow. While unlikely,
+    // we better handle this gracefully (if somewhat brutal) by clearing all
+    // states and resetting the counter to 0. This means that the only session
+    // state left is the one to be inserted, but if Alice and Bob do not
+    // manage to agree on a session state within `usize::MAX` it is probably
+    // of least concern.
+    fn insert_session_state(&mut self, s: SessionState) {
+        let tag = s.session_tag.clone();
+        match self.session_states.get(&tag).map(|x| x.idx) {
+            Some(i) => {
+                self.session_states.insert(tag.clone(), Indexed::new(i, s));
+            }
+            None => {
+                if self.counter == usize::MAX { // See note [counter_overflow]
+                    self.session_states.clear();
+                    self.counter = 0;
+                }
+                self.session_states.insert(tag.clone(), Indexed::new(self.counter, s));
+                self.counter = self.counter + 1;
+            }
+        }
 
-    pub fn decode(ident: &'r IdentityKeyPair, b: &[u8]) -> Result<Session<'r>, binary::DecodeSessionError> {
-        let mut b = b;
-        let mut d = DecoderReader::new(&mut b, SizeLimit::Infinite);
-        binary::dec_session(ident, &mut d)
+        // See note [session_tag]
+        if &self.session_tag != &tag {
+            self.session_tag = tag;
+        }
+
+        if self.session_states.len() < MAX_SESSION_STATES {
+            return ()
+        }
+
+        self.session_states.iter()
+            .filter(|s| s.0 != &self.session_tag)
+            .fold(None, |x, (k, v)| {
+                match x {
+                    Some(ref s) if v.idx < s.idx => Some(Indexed::new(v.idx, k.clone())),
+                    Some(_) => x,
+                    None    => Some(Indexed::new(v.idx, k.clone()))
+                }
+            })
+            .map(|k| self.session_states.remove(&k.val));
     }
 
     pub fn local_identity(&self) -> &IdentityKey {
@@ -292,12 +462,108 @@ impl<'r> Session<'r> {
     pub fn remote_identity(&self) -> &IdentityKey {
         &self.remote_identity
     }
+
+    pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
+        let mut e = Encoder::new(Cursor::new(Vec::new()));
+        try!(self.encode(&mut e));
+        Ok(e.into_writer().into_inner())
+    }
+
+    pub fn deserialise(ident: &'r IdentityKeyPair, b: &[u8]) -> DecodeResult<Session<'r>> {
+        Session::decode(ident, &mut Decoder::new(Config::default(), Cursor::new(b)))
+    }
+
+    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(6));
+        try!(e.u8(0)); try!(e.u8(self.version));
+        try!(e.u8(1)); try!(self.session_tag.encode(e));
+        try!(e.u8(2)); try!(self.local_identity.public_key.encode(e));
+        try!(e.u8(3)); try!(self.remote_identity.encode(e));
+        try!(e.u8(4));
+        {
+            match self.pending_prekey {
+                None           => try!(e.null()),
+                Some((id, pk)) => {
+                    try!(e.object(2));
+                    try!(e.u8(0)); try!(id.encode(e));
+                    try!(e.u8(1)); try!(pk.encode(e))
+                }
+            }
+        }
+        try!(e.u8(5));
+        {
+            try!(e.array(self.session_states.len()));
+            for t in self.session_states.values() {
+                try!(t.val.encode(e))
+            }
+        }
+        Ok(())
+    }
+
+    pub fn decode<'s, R: Read + Skip>(ident: &'s IdentityKeyPair, d: &mut Decoder<R>) -> DecodeResult<Session<'s>> {
+        let n = try!(d.object());
+        let mut version         = None;
+        let mut session_tag     = None;
+        let mut counter         = 0;
+        let mut remote_identity = None;
+        let mut pending_prekey  = None;
+        let mut session_states  = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => version     = Some(try!(d.u8())),
+                1 => session_tag = Some(try!(SessionTag::decode(d))),
+                2 => {
+                    let li = try!(IdentityKey::decode(d));
+                    if ident.public_key != li {
+                        return Err(DecodeError::LocalIdentityChanged(li))
+                    }
+                }
+                3 => remote_identity = Some(try!(IdentityKey::decode(d))),
+                4 => if let Some(n) = try!(opt(d.object())) {
+                        let mut id = None;
+                        let mut pk = None;
+                        for _ in 0 .. n {
+                            match try!(d.u8()) {
+                                0 => id = Some(try!(PreKeyId::decode(d))),
+                                1 => pk = Some(try!(PublicKey::decode(d))),
+                                _ => try!(d.skip())
+                            }
+                        }
+                        pending_prekey = Some((
+                            to_field!(id, "Session::pending_prekey_id"),
+                            to_field!(pk, "Session::pending_prekey")
+                        ))
+                },
+                5 => {
+                    let ls = try!(d.array());
+                    let mut rb = BTreeMap::new();
+                    for _ in 0 .. ls {
+                        let s = try!(SessionState::decode(d));
+                        rb.insert(s.session_tag.clone(), Indexed::new(counter, s));
+                        counter = counter + 1
+                    }
+                    session_states = Some(rb)
+                }
+                _ => try!(d.skip())
+            }
+        }
+        Ok(Session {
+            version:         to_field!(version, "Session::version"),
+            session_tag:     to_field!(session_tag, "Session::session_tag"),
+            counter:         counter,
+            local_identity:  ident,
+            remote_identity: to_field!(remote_identity, "Session::remote_identity"),
+            pending_prekey:  pending_prekey,
+            session_states:  to_field!(session_states, "Session::session_states")
+        })
+    }
 }
 
 // Session State ////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
 pub struct SessionState {
+    session_tag:     SessionTag,
     recv_chains:     VecDeque<RecvChain>,
     send_chain:      SendChain,
     root_key:        RootKey,
@@ -309,9 +575,9 @@ impl SessionState {
     fn init_as_alice(p: AliceParams) -> SessionState {
         let master_key = {
             let mut buf = Vec::new();
-            buf.push_all(&p.alice_ident.secret_key.shared_secret(&p.bob.public_key));
-            buf.push_all(&p.alice_base.secret_key.shared_secret(&p.bob.identity_key.public_key));
-            buf.push_all(&p.alice_base.secret_key.shared_secret(&p.bob.public_key));
+            buf.extend(&p.alice_ident.secret_key.shared_secret(&p.bob.public_key));
+            buf.extend(&p.alice_base.secret_key.shared_secret(&p.bob.identity_key.public_key));
+            buf.extend(&p.alice_base.secret_key.shared_secret(&p.bob.public_key));
             buf
         };
 
@@ -330,6 +596,7 @@ impl SessionState {
         let send_chain   = SendChain::new(chk, send_ratchet);
 
         SessionState {
+            session_tag:     SessionTag::new(),
             recv_chains:     recv_chains,
             send_chain:      send_chain,
             root_key:        rok,
@@ -341,9 +608,9 @@ impl SessionState {
     fn init_as_bob(p: BobParams) -> SessionState {
         let master_key = {
             let mut buf = Vec::new();
-            buf.push_all(&p.bob_prekey.secret_key.shared_secret(&p.alice_ident.public_key));
-            buf.push_all(&p.bob_ident.secret_key.shared_secret(p.alice_base));
-            buf.push_all(&p.bob_prekey.secret_key.shared_secret(p.alice_base));
+            buf.extend(&p.bob_prekey.secret_key.shared_secret(&p.alice_ident.public_key));
+            buf.extend(&p.bob_ident.secret_key.shared_secret(p.alice_base));
+            buf.extend(&p.bob_prekey.secret_key.shared_secret(p.alice_base));
             buf
         };
 
@@ -355,6 +622,7 @@ impl SessionState {
         let send_chain = SendChain::new(chainkey, p.bob_prekey);
 
         SessionState {
+            session_tag:     p.session_tag.clone(),
             recv_chains:     VecDeque::with_capacity(MAX_RECV_CHAINS + 1),
             send_chain:      send_chain,
             root_key:        rootkey,
@@ -393,10 +661,11 @@ impl SessionState {
         }
     }
 
-    fn encrypt(&mut self, ident: IdentityKey, pending: &Option<(PreKeyId, PublicKey)>, plain: &[u8]) -> Envelope {
+    fn encrypt(&mut self, ident: &IdentityKey, pending: &Option<(PreKeyId, PublicKey)>, plain: &[u8]) -> EncodeResult<Envelope> {
         let msgkeys = self.send_chain.chain_key.message_keys();
 
         let cmessage = CipherMessage {
+            session_tag:  self.session_tag.clone(),
             ratchet_key:  self.send_chain.ratchet_key.public_key,
             counter:      self.send_chain.chain_key.idx,
             prev_counter: self.prev_counter,
@@ -408,7 +677,7 @@ impl SessionState {
             Some(pp) => Message::Keyed(PreKeyMessage {
                 prekey_id:    pp.0,
                 base_key:     pp.1,
-                identity_key: ident,
+                identity_key: ident.clone(),
                 message:      cmessage
             })
         };
@@ -507,6 +776,72 @@ impl SessionState {
         }
 
         assert!(self.skipped_msgkeys.len() <= MAX_COUNTER_GAP);
+    }
+
+    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(6));
+        try!(e.u8(0)); try!(self.session_tag.encode(e));
+        try!(e.u8(1));
+        {
+            try!(e.array(self.recv_chains.len()));
+            for r in self.recv_chains.iter() {
+                try!(r.encode(e))
+            }
+        }
+        try!(e.u8(2)); try!(self.send_chain.encode(e));
+        try!(e.u8(3)); try!(self.root_key.encode(e));
+        try!(e.u8(4)); try!(self.prev_counter.encode(e));
+        try!(e.u8(5));
+        {
+            try!(e.array(self.skipped_msgkeys.len()));
+            for m in self.skipped_msgkeys.iter() {
+                try!(m.encode(e))
+            }
+        }
+        Ok(())
+    }
+
+    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SessionState> {
+        let n = try!(d.object());
+        let mut session_tag     = None;
+        let mut recv_chains     = None;
+        let mut send_chain      = None;
+        let mut root_key        = None;
+        let mut prev_counter    = None;
+        let mut skipped_msgkeys = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => session_tag = Some(try!(SessionTag::decode(d))),
+                1 => {
+                    let lr = try!(d.array());
+                    let mut rr = VecDeque::with_capacity(lr);
+                    for _ in 0 .. lr {
+                        rr.push_back(try!(RecvChain::decode(d)))
+                    }
+                    recv_chains = Some(rr)
+                }
+                2 => send_chain   = Some(try!(SendChain::decode(d))),
+                3 => root_key     = Some(try!(RootKey::decode(d))),
+                4 => prev_counter = Some(try!(Counter::decode(d))),
+                5 => {
+                    let lv = try!(d.array());
+                    let mut vm = VecDeque::with_capacity(lv);
+                    for _ in 0 .. lv {
+                        vm.push_back(try!(MessageKeys::decode(d)))
+                    }
+                    skipped_msgkeys = Some(vm)
+                }
+                _ => try!(d.skip())
+            }
+        }
+        Ok(SessionState {
+            session_tag:     to_field!(session_tag, "SessionState::session_tag"),
+            recv_chains:     to_field!(recv_chains, "SessionState::recv_chains"),
+            send_chain:      to_field!(send_chain, "SessionState::send_chain"),
+            root_key:        to_field!(root_key, "SessionState::root_key"),
+            prev_counter:    to_field!(prev_counter, "SessionState::prev_counter"),
+            skipped_msgkeys: to_field!(skipped_msgkeys, "SessionState::skipped_msgkeys")
+        })
     }
 }
 
@@ -609,6 +944,39 @@ mod tests {
     }
 
     #[test]
+    fn pathological_case() {
+        let total_size = 32;
+
+        let alice_ident   = IdentityKeyPair::new();
+        let bob_ident     = IdentityKeyPair::new();
+        let mut bob_store = TestStore { prekeys: gen_prekeys(PreKeyId::new(0), total_size as u16) };
+
+        let mut alices = Vec::new();
+        for pk in bob_store.prekey_slice() {
+            let bob_bundle = PreKeyBundle::new(bob_ident.public_key, pk);
+            alices.push(Session::init_from_prekey(&alice_ident, bob_bundle));
+        }
+
+        assert_eq!(total_size, alices.len());
+
+        let mut bob = Session::init_from_message(&bob_ident, &mut bob_store, &alices[0].encrypt(b"hello").unwrap()).unwrap().0;
+
+        for a in &mut alices {
+            for _ in 0 .. 900 { // Inflate `MessageKeys` vector
+                let _ = a.encrypt(b"hello").unwrap();
+            }
+            let hello_bob = a.encrypt(b"Hello Bob!").unwrap();
+            assert!(bob.decrypt(&mut bob_store, &hello_bob).is_ok())
+        }
+
+        assert_eq!(total_size, bob.session_states.len());
+
+        for a in &mut alices {
+            assert!(bob.decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap()).is_ok());
+        }
+    }
+
+    #[test]
     fn encrypt_decrypt() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident   = IdentityKeyPair::new();
@@ -620,48 +988,48 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        alice = Session::decode(&alice_ident, &alice.encode())
+        alice = Session::deserialise(&alice_ident, &alice.serialise().unwrap())
                         .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
-        assert_eq!(1, alice.session_states[0].recv_chains.len());
+        assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
 
-        let hello_bob = alice.encrypt(b"Hello Bob!");
-        let hello_bob_delayed = alice.encrypt(b"Hello delay!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
+        let hello_bob_delayed = alice.encrypt(b"Hello delay!").unwrap();
         assert_eq!(1, alice.session_states.len());
-        assert_eq!(1, alice.session_states[0].recv_chains.len());
+        assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
-        bob = Session::decode(&bob_ident, &bob.encode())
+        bob = Session::deserialise(&bob_ident, &bob.serialise().unwrap())
                       .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, bob.session_states.len());
-        assert_eq!(1, bob.session_states[0].recv_chains.len());
+        assert_eq!(1, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
         assert_eq!(bob.remote_identity.fingerprint(), alice.local_identity.public_key.fingerprint());
 
-        let hello_alice = bob.encrypt(b"Hello Alice!");
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
 
         // Alice
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
-        assert_eq!(2, alice.session_states[0].recv_chains.len());
+        assert_eq!(2, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
         assert_eq!(alice.remote_identity.fingerprint(), bob.local_identity.public_key.fingerprint());
-        let ping_bob_1 = alice.encrypt(b"Ping1!");
-        let ping_bob_2 = alice.encrypt(b"Ping2!");
+        let ping_bob_1 = alice.encrypt(b"Ping1!").unwrap();
+        let ping_bob_2 = alice.encrypt(b"Ping2!").unwrap();
         assert_prev_count(&alice, 2);
 
         // Bob
         assert_decrypt(b"Ping1!", bob.decrypt(&mut bob_store, &ping_bob_1));
-        assert_eq!(2, bob.session_states[0].recv_chains.len());
+        assert_eq!(2, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
         assert_decrypt(b"Ping2!", bob.decrypt(&mut bob_store, &ping_bob_2));
-        assert_eq!(2, bob.session_states[0].recv_chains.len());
-        let pong_alice = bob.encrypt(b"Pong!");
+        assert_eq!(2, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
+        let pong_alice = bob.encrypt(b"Pong!").unwrap();
         assert_prev_count(&bob, 1);
 
         // Alice
         assert_decrypt(b"Pong!", alice.decrypt(&mut alice_store, &pong_alice));
-        assert_eq!(3, alice.session_states[0].recv_chains.len());
+        assert_eq!(3, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
         assert_prev_count(&alice, 2);
 
         // Bob (Delayed (prekey) message, decrypted with the "old" receive chain)
         assert_decrypt(b"Hello delay!", bob.decrypt(&mut bob_store, &hello_bob_delayed));
-        assert_eq!(2, bob.session_states[0].recv_chains.len());
+        assert_eq!(2, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
         assert_prev_count(&bob, 1);
     }
 
@@ -677,30 +1045,30 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
 
-        let hello1 = bob.encrypt(b"Hello1");
-        let hello2 = bob.encrypt(b"Hello2");
-        let hello3 = bob.encrypt(b"Hello3");
-        let hello4 = bob.encrypt(b"Hello4");
-        let hello5 = bob.encrypt(b"Hello5");
+        let hello1 = bob.encrypt(b"Hello1").unwrap();
+        let hello2 = bob.encrypt(b"Hello2").unwrap();
+        let hello3 = bob.encrypt(b"Hello3").unwrap();
+        let hello4 = bob.encrypt(b"Hello4").unwrap();
+        let hello5 = bob.encrypt(b"Hello5").unwrap();
 
         assert_decrypt(b"Hello2", alice.decrypt(&mut alice_store, &hello2));
-        assert_eq!(1, alice.session_states[0].skipped_msgkeys.len());
+        assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
 
         assert_decrypt(b"Hello1", alice.decrypt(&mut alice_store, &hello1));
-        assert_eq!(0, alice.session_states[0].skipped_msgkeys.len());
+        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
 
         assert_decrypt(b"Hello3", alice.decrypt(&mut alice_store, &hello3));
-        assert_eq!(0, alice.session_states[0].skipped_msgkeys.len());
+        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
 
         assert_decrypt(b"Hello5", alice.decrypt(&mut alice_store, &hello5));
-        assert_eq!(1, alice.session_states[0].skipped_msgkeys.len());
+        assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
 
         assert_decrypt(b"Hello4", alice.decrypt(&mut alice_store, &hello4));
-        assert_eq!(0, alice.session_states[0].skipped_msgkeys.len());
+        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
 
         for m in vec![hello1, hello2, hello3, hello4, hello5].iter() {
             assert_eq!(Some(DecryptError::DuplicateMessage), alice.decrypt(&mut alice_store, m).err());
@@ -718,9 +1086,9 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice  = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob1 = alice.encrypt(b"Hello Bob1!");
-        let hello_bob2 = alice.encrypt(b"Hello Bob2!");
-        let hello_bob3 = alice.encrypt(b"Hello Bob3!");
+        let hello_bob1 = alice.encrypt(b"Hello Bob1!").unwrap();
+        let hello_bob2 = alice.encrypt(b"Hello Bob2!").unwrap();
+        let hello_bob3 = alice.encrypt(b"Hello Bob3!").unwrap();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob1, b"Hello Bob1!");
         assert_eq!(1, bob.session_states.len());
@@ -746,10 +1114,10 @@ mod tests {
 
         // Initial simultaneous prekey message
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         let mut bob     = Session::init_from_prekey(&bob_ident, alice_bundle);
-        let hello_alice = bob.encrypt(b"Hello Alice!");
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
 
         assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
         assert_eq!(2, bob.session_states.len());
@@ -758,10 +1126,10 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Non-simultaneous answer, which results in agreement of a session.
-        let greet_bob = alice.encrypt(b"That was fast!");
+        let greet_bob = alice.encrypt(b"That was fast!").unwrap();
         assert_decrypt(b"That was fast!", bob.decrypt(&mut bob_store, &greet_bob));
 
-        let answer_alice = bob.encrypt(b":-)");
+        let answer_alice = bob.encrypt(b":-)").unwrap();
         assert_decrypt(b":-)", alice.decrypt(&mut alice_store, &answer_alice));
     }
 
@@ -781,17 +1149,17 @@ mod tests {
 
         // Initial simultaneous prekey message
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         let mut bob     = Session::init_from_prekey(&bob_ident, alice_bundle);
-        let hello_alice = bob.encrypt(b"Hello Alice!");
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
 
         assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
 
         // Second simultaneous message
-        let echo_bob1   = alice.encrypt(b"Echo Bob1!");
-        let echo_alice1 = bob.encrypt(b"Echo Alice1!");
+        let echo_bob1   = alice.encrypt(b"Echo Bob1!").unwrap();
+        let echo_alice1 = bob.encrypt(b"Echo Alice1!").unwrap();
 
         assert_decrypt(b"Echo Bob1!", bob.decrypt(&mut bob_store, &echo_bob1));
         assert_eq!(2, bob.session_states.len());
@@ -800,8 +1168,8 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Third simultaneous message
-        let echo_bob2   = alice.encrypt(b"Echo Bob2!");
-        let echo_alice2 = bob.encrypt(b"Echo Alice2!");
+        let echo_bob2   = alice.encrypt(b"Echo Bob2!").unwrap();
+        let echo_alice2 = bob.encrypt(b"Echo Alice2!").unwrap();
 
         assert_decrypt(b"Echo Bob2!", bob.decrypt(&mut bob_store, &echo_bob2));
         assert_eq!(2, bob.session_states.len());
@@ -810,10 +1178,10 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Non-simultaneous answer, which results in agreement of a session.
-        let stop_bob = alice.encrypt(b"Stop it!");
+        let stop_bob = alice.encrypt(b"Stop it!").unwrap();
         assert_decrypt(b"Stop it!", bob.decrypt(&mut bob_store, &stop_bob));
 
-        let answer_alice = bob.encrypt(b"OK");
+        let answer_alice = bob.encrypt(b"OK").unwrap();
         assert_decrypt(b"OK", alice.decrypt(&mut alice_store, &answer_alice));
     }
 
@@ -828,11 +1196,11 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let bytes = alice.encode();
+        let bytes = alice.serialise().unwrap();
 
-        match Session::decode(&alice_ident, &bytes) {
+        match Session::deserialise(&alice_ident, &bytes) {
             Err(ref e)        => panic!("Failed to decode session: {}", e),
-            Ok(s@Session{..}) => assert_eq!(bytes, s.encode())
+            Ok(s@Session{..}) => assert_eq!(bytes, s.serialise().unwrap())
         };
     }
 
@@ -848,17 +1216,17 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
 
         let mut buffer = Vec::with_capacity(1000);
         for _ in 0 .. 1000 {
-            buffer.push(bob.encrypt(b"Hello Alice!").encode())
+            buffer.push(bob.encrypt(b"Hello Alice!").unwrap().serialise().unwrap())
         }
 
         for msg in buffer.iter() {
-            assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &Envelope::decode(msg).unwrap()));
+            assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &Envelope::deserialise(msg).unwrap()));
         }
     }
 
@@ -873,7 +1241,7 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!");
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
         assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
         // The behavior on retry depends on the PreKeyStore implementation.
@@ -911,6 +1279,6 @@ mod tests {
     }
 
     fn assert_prev_count(s: &Session, expected: u32) {
-        assert_eq!(expected, s.session_states[0].prev_counter.value());
+        assert_eq!(expected, s.session_states.get(&s.session_tag).unwrap().val.prev_counter.value());
     }
 }
