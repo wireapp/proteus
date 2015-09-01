@@ -3,8 +3,7 @@
 // the MPL was not distributed with this file, You
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
-use cbor::{Config, Decoder, Encoder};
-use cbor::decoder::opt;
+use cbor::{self, Config, Decoder, Encoder};
 use cbor::skip::Skip;
 use hkdf::{Input, Info, Salt};
 use internal::derived::{DerivedSecrets, CipherKey, MacKey};
@@ -12,7 +11,7 @@ use internal::keys;
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyId};
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
-use internal::util::{DecodeError, DecodeResult, EncodeResult};
+use internal::util::{DecodeError, DecodeResult, EncodeResult, opt};
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
@@ -519,7 +518,7 @@ impl<'r> Session<'r> {
                     }
                 }
                 3 => remote_identity = Some(try!(IdentityKey::decode(d))),
-                4 => if let Some(n) = try!(opt(d.object())) {
+                4 => if let Some(n) = try!(cbor::opt(d.object())) {
                         let mut id = None;
                         let mut pk = None;
                         for _ in 0 .. n {
@@ -913,7 +912,7 @@ impl<E> From<E> for DecryptError<E> {
 
 #[cfg(test)]
 mod tests {
-    use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle};
+    use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle, PreKeyAuth};
     use internal::keys::gen_prekeys;
     use internal::message::Envelope;
     use std::fmt;
@@ -1252,6 +1251,33 @@ mod tests {
             Err(e) => { panic!(format!("{:?}", e)) }
             Ok(_)  => { panic!("Unexpected success on retrying init_from_message") }
         }
+    }
+
+    #[test]
+    fn signed_prekeys() {
+        let bob_ident = IdentityKeyPair::new();
+        let eve_ident = IdentityKeyPair::new();
+
+        let eve_store = TestStore { prekeys: gen_prekeys(PreKeyId::new(0), 10) };
+
+        let     eve_prekey        = eve_store.prekey_slice().first().unwrap().clone();
+        let mut eve_bundle        = PreKeyBundle::new(eve_ident.public_key, &eve_prekey);
+        let mut eve_bundle_signed = PreKeyBundle::signed(&eve_ident, &eve_prekey);
+
+        // eve uses her own ephemeral keypair but tries to use bob's identity
+        // (e.g. to benefit from existing trust relationships)
+        eve_bundle_signed.identity_key = bob_ident.public_key;
+        eve_bundle.identity_key        = bob_ident.public_key;
+
+        // non-authentic prekeys
+        assert_eq!(PreKeyAuth::Unknown, eve_bundle.verify());
+        assert_eq!(PreKeyAuth::Invalid, eve_bundle_signed.verify());
+
+        // authentic prekey
+        let bob_store  = TestStore { prekeys: gen_prekeys(PreKeyId::new(0), 10) };
+        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_bundle_signed = PreKeyBundle::signed(&bob_ident, &bob_prekey);
+        assert_eq!(PreKeyAuth::Valid, bob_bundle_signed.verify());
     }
 
     fn assert_decrypt<E: fmt::Debug>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>) {

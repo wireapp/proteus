@@ -12,7 +12,7 @@ license      = "MPL-2.0"
 byteorder   = ">  0.2.0"
 cbor-codec  = ">= 0.1.0"
 libc        = ">  0.1.0"
-sodiumoxide = ">  0.0.5"
+sodiumoxide = ">= 0.0.8"
 
 [dependencies.hkdf]
 git = "https://github.com/twittner/hkdf"

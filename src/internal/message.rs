@@ -96,7 +96,7 @@ impl Message {
         match try!(d.u8()) {
             1 => CipherMessage::decode(d).map(Message::Plain),
             2 => PreKeyMessage::decode(d).map(Message::Keyed),
-            t => Err(DecodeError::InvalidMessage(format!("unknown message type {}", t)))
+            t => Err(DecodeError::InvalidType(t, "unknown message type"))
         }
     }
 }

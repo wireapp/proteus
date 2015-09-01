@@ -6,7 +6,7 @@
 use cbor::{Config, Decoder, Encoder};
 use cbor::skip::Skip;
 use internal::ffi;
-use internal::util::{Bytes64, Bytes32, DecodeError, DecodeResult, EncodeResult, fmt_hex};
+use internal::util::{Bytes64, Bytes32, DecodeError, DecodeResult, EncodeResult, fmt_hex, opt};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
@@ -177,11 +177,19 @@ pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
 // Prekey bundle ////////////////////////////////////////////////////////////
 
 #[derive(PartialEq, Eq, Debug)]
+pub enum PreKeyAuth {
+    Invalid,
+    Valid,
+    Unknown
+}
+
+#[derive(PartialEq, Eq, Debug)]
 pub struct PreKeyBundle {
     pub version:      u8,
     pub prekey_id:    PreKeyId,
     pub public_key:   PublicKey,
-    pub identity_key: IdentityKey
+    pub identity_key: IdentityKey,
+    pub signature:    Option<Signature>
 }
 
 impl PreKeyBundle {
@@ -190,7 +198,32 @@ impl PreKeyBundle {
             version:      1,
             prekey_id:    key.key_id,
             public_key:   key.key_pair.public_key,
-            identity_key: ident
+            identity_key: ident,
+            signature:    None
+        }
+    }
+
+    pub fn signed(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
+        let ratchet_key = key.key_pair.public_key;
+        let signature   = ident.secret_key.sign(&ratchet_key.pub_edward.0);
+        PreKeyBundle {
+            version:      1,
+            prekey_id:    key.key_id,
+            public_key:   ratchet_key,
+            identity_key: ident.public_key,
+            signature:    Some(signature)
+        }
+    }
+
+    pub fn verify(&self) -> PreKeyAuth {
+        match self.signature {
+            Some(ref sig) =>
+                if self.identity_key.public_key.verify(sig, &self.public_key.pub_edward.0) {
+                    PreKeyAuth::Valid
+                } else {
+                    PreKeyAuth::Invalid
+                },
+            None => PreKeyAuth::Unknown
         }
     }
 
@@ -205,11 +238,15 @@ impl PreKeyBundle {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(4));
+        try!(e.object(5));
         try!(e.u8(0)); try!(e.u8(self.version));
         try!(e.u8(1)); try!(self.prekey_id.encode(e));
         try!(e.u8(2)); try!(self.public_key.encode(e));
-        try!(e.u8(3)); self.identity_key.encode(e)
+        try!(e.u8(3)); try!(self.identity_key.encode(e));
+        try!(e.u8(4)); match self.signature {
+            Some(ref sig) => sig.encode(e),
+            None          => e.null().map_err(From::from)
+        }
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyBundle> {
@@ -218,12 +255,14 @@ impl PreKeyBundle {
         let mut prekey_id    = None;
         let mut public_key   = None;
         let mut identity_key = None;
+        let mut signature    = None;
         for _ in 0 .. n {
             match try!(d.u8()) {
                 0 => version      = Some(try!(d.u8())),
                 1 => prekey_id    = Some(try!(PreKeyId::decode(d))),
                 2 => public_key   = Some(try!(PublicKey::decode(d))),
                 3 => identity_key = Some(try!(IdentityKey::decode(d))),
+                4 => signature    = try!(opt(Signature::decode(d))),
                 _ => try!(d.skip())
             }
         }
@@ -231,7 +270,8 @@ impl PreKeyBundle {
             version:      to_field!(version, "PreKeyBundle::version"),
             prekey_id:    to_field!(prekey_id, "PreKeyBundle::prekey_id"),
             public_key:   to_field!(public_key, "PreKeyBundle::public_key"),
-            identity_key: to_field!(identity_key, "PreKeyBundle::identity_key")
+            identity_key: to_field!(identity_key, "PreKeyBundle::identity_key"),
+            signature:    signature
         })
     }
 }
@@ -417,9 +457,31 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 
 // Signature ////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Signature {
     sig: sign::Signature
+}
+
+impl Signature {
+    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+        try!(e.object(1));
+        try!(e.u8(0).and(e.bytes(&self.sig.0)));
+        Ok(())
+    }
+
+    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Signature> {
+        let n = try!(d.object());
+        let mut sig = None;
+        for _ in 0 .. n {
+            match try!(d.u8()) {
+                0 => sig = Some(try!(Bytes64::decode(d).map(|v| sign::Signature(v.array)))),
+                _ => try!(d.skip())
+            }
+        }
+        Ok(Signature {
+            sig: to_field!(sig, "Signature::sig")
+        })
+    }
 }
 
 // Internal /////////////////////////////////////////////////////////////////
@@ -486,5 +548,26 @@ mod tests {
         let r = roundtrip(|mut e| k.secret_key.encode(&mut e), |mut d| SecretKey::decode(&mut d));
         assert_eq!(&k.secret_key.sec_edward.0[..], &r.sec_edward.0[..]);
         assert_eq!(&k.secret_key.sec_curve.0[..], &r.sec_curve.0[..])
+    }
+
+    #[test]
+    fn enc_dec_prekey_bundle() {
+        let i = IdentityKeyPair::new();
+        let k = PreKey::new(PreKeyId::new(1));
+        let b = PreKeyBundle::new(i.public_key, &k);
+        let r = roundtrip(|mut e| b.encode(&mut e), |mut d| PreKeyBundle::decode(&mut d));
+        assert_eq!(None, b.signature);
+        assert_eq!(b, r);
+    }
+
+    #[test]
+    fn enc_dec_signed_prekey_bundle() {
+        let i = IdentityKeyPair::new();
+        let k = PreKey::new(PreKeyId::new(1));
+        let b = PreKeyBundle::signed(&i, &k);
+        let r = roundtrip(|mut e| b.encode(&mut e), |mut d| PreKeyBundle::decode(&mut d));
+        assert_eq!(b, r);
+        assert_eq!(PreKeyAuth::Valid, b.verify());
+        assert_eq!(PreKeyAuth::Valid, r.verify());
     }
 }
