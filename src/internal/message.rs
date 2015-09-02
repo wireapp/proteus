@@ -9,6 +9,7 @@ use cbor::skip::Skip;
 use internal::derived::{Mac, MacKey, Nonce};
 use internal::keys::{IdentityKey, PreKeyId, PublicKey, rand_bytes};
 use internal::util::{DecodeError, DecodeResult, EncodeResult, fmt_hex};
+use std::borrow::Cow;
 use std::fmt;
 use std::io::{Cursor, Read, Write};
 use std::vec::Vec;
@@ -73,12 +74,19 @@ impl fmt::Debug for SessionTag {
 
 // Message //////////////////////////////////////////////////////////////////
 
-pub enum Message {
-    Plain(CipherMessage),
-    Keyed(PreKeyMessage)
+pub enum Message<'r> {
+    Plain(CipherMessage<'r>),
+    Keyed(PreKeyMessage<'r>)
 }
 
-impl Message {
+impl<'r> Message<'r> {
+    fn into_owned<'s>(self) -> Message<'s> {
+        match self {
+            Message::Plain(m) => Message::Plain(m.into_owned()),
+            Message::Keyed(m) => Message::Keyed(m.into_owned())
+        }
+    }
+
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         match *self {
             Message::Plain(ref m) => {
@@ -92,7 +100,7 @@ impl Message {
         }
     }
 
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Message> {
+    fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Message<'s>> {
         match try!(d.u8()) {
             1 => CipherMessage::decode(d).map(Message::Plain),
             2 => PreKeyMessage::decode(d).map(Message::Keyed),
@@ -103,14 +111,23 @@ impl Message {
 
 // Prekey Message ///////////////////////////////////////////////////////////
 
-pub struct PreKeyMessage {
+pub struct PreKeyMessage<'r> {
     pub prekey_id:    PreKeyId,
-    pub base_key:     PublicKey,
-    pub identity_key: IdentityKey,
-    pub message:      CipherMessage
+    pub base_key:     Cow<'r, PublicKey>,
+    pub identity_key: Cow<'r, IdentityKey>,
+    pub message:      CipherMessage<'r>
 }
 
-impl PreKeyMessage {
+impl<'r> PreKeyMessage<'r> {
+    fn into_owned<'s>(self) -> PreKeyMessage<'s> {
+        PreKeyMessage {
+            prekey_id:    self.prekey_id,
+            base_key:     Cow::Owned(self.base_key.into_owned()),
+            identity_key: Cow::Owned(self.identity_key.into_owned()),
+            message:      self.message.into_owned()
+        }
+    }
+
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(4));
         try!(e.u8(0)); try!(self.prekey_id.encode(e));
@@ -119,7 +136,7 @@ impl PreKeyMessage {
         try!(e.u8(3)); self.message.encode(e)
     }
 
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyMessage> {
+    fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyMessage<'s>> {
         let n = try!(d.object());
         let mut prekey_id    = None;
         let mut base_key     = None;
@@ -136,8 +153,8 @@ impl PreKeyMessage {
         }
         Ok(PreKeyMessage {
             prekey_id:    to_field!(prekey_id, "PreKeyMessage::prekey_id"),
-            base_key:     to_field!(base_key, "PreKeyMessage::base_key"),
-            identity_key: to_field!(identity_key, "PreKeyMessage::identity_key"),
+            base_key:     Cow::Owned(to_field!(base_key, "PreKeyMessage::base_key")),
+            identity_key: Cow::Owned(to_field!(identity_key, "PreKeyMessage::identity_key")),
             message:      to_field!(message, "PreKeyMessage::message")
         })
     }
@@ -145,15 +162,25 @@ impl PreKeyMessage {
 
 // CipherMessage ////////////////////////////////////////////////////////////
 
-pub struct CipherMessage {
-    pub session_tag:  SessionTag,
+pub struct CipherMessage<'r> {
+    pub session_tag:  Cow<'r, SessionTag>,
     pub counter:      Counter,
     pub prev_counter: Counter,
-    pub ratchet_key:  PublicKey,
+    pub ratchet_key:  Cow<'r, PublicKey>,
     pub cipher_text:  Vec<u8>
 }
 
-impl CipherMessage {
+impl<'r> CipherMessage<'r> {
+    fn into_owned<'s>(self) -> CipherMessage<'s> {
+        CipherMessage {
+            session_tag:  Cow::Owned(self.session_tag.into_owned()),
+            counter:      self.counter,
+            prev_counter: self.prev_counter,
+            ratchet_key:  Cow::Owned(self.ratchet_key.into_owned()),
+            cipher_text:  self.cipher_text
+        }
+    }
+
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         try!(e.object(5));
         try!(e.u8(0)); try!(self.session_tag.encode(e));
@@ -164,7 +191,7 @@ impl CipherMessage {
         Ok(())
     }
 
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherMessage> {
+    fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherMessage<'s>> {
         let n = try!(d.object());
         let mut session_tag  = None;
         let mut counter      = None;
@@ -182,10 +209,10 @@ impl CipherMessage {
             }
         }
         Ok(CipherMessage {
-            session_tag:  to_field!(session_tag, "CipherMessage::session_tag"),
+            session_tag:  Cow::Owned(to_field!(session_tag, "CipherMessage::session_tag")),
             counter:      to_field!(counter, "CipherMessage::counter"),
             prev_counter: to_field!(prev_counter, "CipherMessage::prev_counter"),
-            ratchet_key:  to_field!(ratchet_key, "CipherMessage::ratchet_key"),
+            ratchet_key:  Cow::Owned(to_field!(ratchet_key, "CipherMessage::ratchet_key")),
             cipher_text:  to_field!(cipher_text, "CipherMessage::cipher_text")
         })
     }
@@ -193,15 +220,15 @@ impl CipherMessage {
 
 // Message Envelope /////////////////////////////////////////////////////////
 
-pub struct Envelope {
+pub struct Envelope<'r> {
     version:     u8,
     mac:         Mac,
-    message:     Message,
+    message:     Message<'r>,
     message_enc: Vec<u8>
 }
 
-impl Envelope {
-    pub fn new(k: &MacKey, m: Message) -> EncodeResult<Envelope> {
+impl<'r> Envelope<'r> {
+    pub fn new(k: &MacKey, m: Message<'r>) -> EncodeResult<Envelope<'r>> {
         let mut c = Cursor::new(Vec::new());
         try!(m.encode(&mut Encoder::new(&mut c)));
 
@@ -211,6 +238,15 @@ impl Envelope {
             message:     m,
             message_enc: c.into_inner()
         })
+    }
+
+    pub fn into_owned<'s>(self) -> Envelope<'s> {
+        Envelope {
+            version:     self.version,
+            mac:         self.mac,
+            message:     self.message.into_owned(),
+            message_enc: self.message_enc
+        }
     }
 
     pub fn verify(&self, k: &MacKey) -> bool {
@@ -235,7 +271,7 @@ impl Envelope {
         Ok(e.into_writer().into_inner())
     }
 
-    pub fn deserialise(b: &[u8]) -> DecodeResult<Envelope> {
+    pub fn deserialise<'s>(b: &[u8]) -> DecodeResult<Envelope<'s>> {
         Envelope::decode(&mut Decoder::new(Config::default(), Cursor::new(b)))
     }
 
@@ -247,7 +283,7 @@ impl Envelope {
         Ok(())
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Envelope> {
+    pub fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Envelope<'s>> {
         let n = try!(d.object());
         let mut version     = None;
         let mut mac         = None;
@@ -280,6 +316,7 @@ impl Envelope {
 mod tests {
     use internal::derived::MacKey;
     use internal::keys::{KeyPair, PreKeyId, IdentityKey};
+    use std::borrow::Cow;
     use super::*;
 
     #[test]
@@ -292,22 +329,22 @@ mod tests {
         let tg = SessionTag::new();
         let m1 = Message::Keyed(PreKeyMessage {
             prekey_id:    PreKeyId::new(42),
-            base_key:     bk,
-            identity_key: ik,
+            base_key:     Cow::Borrowed(&bk),
+            identity_key: Cow::Borrowed(&ik),
             message:      CipherMessage {
-                session_tag:  tg.clone(),
+                session_tag:  Cow::Borrowed(&tg),
                 counter:      Counter(42),
                 prev_counter: Counter(43),
-                ratchet_key:  rk,
+                ratchet_key:  Cow::Borrowed(&rk),
                 cipher_text:  vec![1, 2, 3, 4]
             }
         });
 
         let m2 = Message::Plain(CipherMessage {
-            session_tag:  tg,
+            session_tag:  Cow::Borrowed(&tg),
             counter:      Counter(42),
             prev_counter: Counter(3),
-            ratchet_key:  rk,
+            ratchet_key:  Cow::Borrowed(&rk),
             cipher_text:  vec![1, 2, 3, 4, 5]
         });
 

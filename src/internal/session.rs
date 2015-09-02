@@ -12,6 +12,7 @@ use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyI
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
 use internal::util::{DecodeError, DecodeResult, EncodeResult, opt};
+use std::borrow::Cow;
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
@@ -319,10 +320,10 @@ impl<'r> Session<'r> {
 
         let mut session = Session {
             version:         1,
-            session_tag:     pkmsg.message.session_tag.clone(),
+            session_tag:     (*pkmsg.message.session_tag).clone(),
             counter:         0,
             local_identity:  ours,
-            remote_identity: pkmsg.identity_key.clone(),
+            remote_identity: (*pkmsg.identity_key).clone(),
             pending_prekey:  None,
             session_states:  BTreeMap::new()
         };
@@ -341,10 +342,8 @@ impl<'r> Session<'r> {
     }
 
     pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
-        let     pending  = self.pending_prekey;
-        let ref identity = self.local_identity.public_key;
-        let     state    = self.session_states.get_mut(&self.session_tag).unwrap(); // See note [session_tag]
-        state.val.encrypt(identity, &pending, plain)
+        let state = self.session_states.get_mut(&self.session_tag).unwrap(); // See note [session_tag]
+        state.val.encrypt(&self.local_identity.public_key, &self.pending_prekey, plain)
     }
 
     // Note [no_new_state]
@@ -357,7 +356,7 @@ impl<'r> Session<'r> {
         match *env.message() {
             Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
             Message::Keyed(ref m) => {
-                if m.identity_key != self.remote_identity {
+                if *m.identity_key != self.remote_identity {
                     return Err(DecryptError::RemoteIdentityChanged)
                 }
                 match try!(self.new_state(store, m)) {
@@ -661,23 +660,23 @@ impl SessionState {
         }
     }
 
-    fn encrypt(&mut self, ident: &IdentityKey, pending: &Option<(PreKeyId, PublicKey)>, plain: &[u8]) -> EncodeResult<Envelope> {
+    fn encrypt<'r>(&'r mut self, ident: &'r IdentityKey, pending: &'r Option<(PreKeyId, PublicKey)>, plain: &[u8]) -> EncodeResult<Envelope> {
         let msgkeys = self.send_chain.chain_key.message_keys();
 
         let cmessage = CipherMessage {
-            session_tag:  self.session_tag.clone(),
-            ratchet_key:  self.send_chain.ratchet_key.public_key,
+            session_tag:  Cow::Borrowed(&self.session_tag),
+            ratchet_key:  Cow::Borrowed(&self.send_chain.ratchet_key.public_key),
             counter:      self.send_chain.chain_key.idx,
             prev_counter: self.prev_counter,
             cipher_text:  msgkeys.encrypt(plain)
         };
 
         let message = match *pending {
-            None     => Message::Plain(cmessage),
-            Some(pp) => Message::Keyed(PreKeyMessage {
+            None         => Message::Plain(cmessage),
+            Some(ref pp) => Message::Keyed(PreKeyMessage {
                 prekey_id:    pp.0,
-                base_key:     pp.1,
-                identity_key: ident.clone(),
+                base_key:     Cow::Borrowed(&pp.1),
+                identity_key: Cow::Borrowed(&ident),
                 message:      cmessage
             })
         };
@@ -688,10 +687,10 @@ impl SessionState {
     }
 
     fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
-        let i = match self.recv_chains.iter().position(|c| c.ratchet_key == m.ratchet_key) {
+        let i = match self.recv_chains.iter().position(|c| c.ratchet_key == *m.ratchet_key) {
             Some(i) => i,
             None    => {
-                self.ratchet(m.ratchet_key);
+                self.ratchet((*m.ratchet_key).clone());
                 0
             }
         };
@@ -960,7 +959,7 @@ mod tests {
 
         assert_eq!(total_size, alices.len());
 
-        let mut bob = Session::init_from_message(&bob_ident, &mut bob_store, &alices[0].encrypt(b"hello").unwrap()).unwrap().0;
+        let mut bob = Session::init_from_message(&bob_ident, &mut bob_store, &alices[0].encrypt(b"hello").unwrap().into_owned()).unwrap().0;
 
         for a in &mut alices {
             for _ in 0 .. 900 { // Inflate `MessageKeys` vector
@@ -993,8 +992,8 @@ mod tests {
                         .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
 
-        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
-        let hello_bob_delayed = alice.encrypt(b"Hello delay!").unwrap();
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
+        let hello_bob_delayed = alice.encrypt(b"Hello delay!").unwrap().into_owned();
         assert_eq!(1, alice.session_states.len());
         assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
 
@@ -1005,14 +1004,14 @@ mod tests {
         assert_eq!(1, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
         assert_eq!(bob.remote_identity.fingerprint(), alice.local_identity.public_key.fingerprint());
 
-        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap().into_owned();
 
         // Alice
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
         assert_eq!(2, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
         assert_eq!(alice.remote_identity.fingerprint(), bob.local_identity.public_key.fingerprint());
-        let ping_bob_1 = alice.encrypt(b"Ping1!").unwrap();
-        let ping_bob_2 = alice.encrypt(b"Ping2!").unwrap();
+        let ping_bob_1 = alice.encrypt(b"Ping1!").unwrap().into_owned();
+        let ping_bob_2 = alice.encrypt(b"Ping2!").unwrap().into_owned();
         assert_prev_count(&alice, 2);
 
         // Bob
@@ -1020,7 +1019,7 @@ mod tests {
         assert_eq!(2, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
         assert_decrypt(b"Ping2!", bob.decrypt(&mut bob_store, &ping_bob_2));
         assert_eq!(2, bob.session_states.get(&bob.session_tag).unwrap().val.recv_chains.len());
-        let pong_alice = bob.encrypt(b"Pong!").unwrap();
+        let pong_alice = bob.encrypt(b"Pong!").unwrap().into_owned();
         assert_prev_count(&bob, 1);
 
         // Alice
@@ -1046,15 +1045,15 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
 
-        let hello1 = bob.encrypt(b"Hello1").unwrap();
-        let hello2 = bob.encrypt(b"Hello2").unwrap();
-        let hello3 = bob.encrypt(b"Hello3").unwrap();
-        let hello4 = bob.encrypt(b"Hello4").unwrap();
-        let hello5 = bob.encrypt(b"Hello5").unwrap();
+        let hello1 = bob.encrypt(b"Hello1").unwrap().into_owned();
+        let hello2 = bob.encrypt(b"Hello2").unwrap().into_owned();
+        let hello3 = bob.encrypt(b"Hello3").unwrap().into_owned();
+        let hello4 = bob.encrypt(b"Hello4").unwrap().into_owned();
+        let hello5 = bob.encrypt(b"Hello5").unwrap().into_owned();
 
         assert_decrypt(b"Hello2", alice.decrypt(&mut alice_store, &hello2));
         assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
@@ -1087,9 +1086,9 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice  = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob1 = alice.encrypt(b"Hello Bob1!").unwrap();
-        let hello_bob2 = alice.encrypt(b"Hello Bob2!").unwrap();
-        let hello_bob3 = alice.encrypt(b"Hello Bob3!").unwrap();
+        let hello_bob1 = alice.encrypt(b"Hello Bob1!").unwrap().into_owned();
+        let hello_bob2 = alice.encrypt(b"Hello Bob2!").unwrap().into_owned();
+        let hello_bob3 = alice.encrypt(b"Hello Bob3!").unwrap().into_owned();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob1, b"Hello Bob1!");
         assert_eq!(1, bob.session_states.len());
@@ -1115,10 +1114,10 @@ mod tests {
 
         // Initial simultaneous prekey message
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
 
         let mut bob     = Session::init_from_prekey(&bob_ident, alice_bundle);
-        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap().into_owned();
 
         assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
         assert_eq!(2, bob.session_states.len());
@@ -1127,10 +1126,10 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Non-simultaneous answer, which results in agreement of a session.
-        let greet_bob = alice.encrypt(b"That was fast!").unwrap();
+        let greet_bob = alice.encrypt(b"That was fast!").unwrap().into_owned();
         assert_decrypt(b"That was fast!", bob.decrypt(&mut bob_store, &greet_bob));
 
-        let answer_alice = bob.encrypt(b":-)").unwrap();
+        let answer_alice = bob.encrypt(b":-)").unwrap().into_owned();
         assert_decrypt(b":-)", alice.decrypt(&mut alice_store, &answer_alice));
     }
 
@@ -1150,17 +1149,17 @@ mod tests {
 
         // Initial simultaneous prekey message
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
 
         let mut bob     = Session::init_from_prekey(&bob_ident, alice_bundle);
-        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap();
+        let hello_alice = bob.encrypt(b"Hello Alice!").unwrap().into_owned();
 
         assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
 
         // Second simultaneous message
-        let echo_bob1   = alice.encrypt(b"Echo Bob1!").unwrap();
-        let echo_alice1 = bob.encrypt(b"Echo Alice1!").unwrap();
+        let echo_bob1   = alice.encrypt(b"Echo Bob1!").unwrap().into_owned();
+        let echo_alice1 = bob.encrypt(b"Echo Alice1!").unwrap().into_owned();
 
         assert_decrypt(b"Echo Bob1!", bob.decrypt(&mut bob_store, &echo_bob1));
         assert_eq!(2, bob.session_states.len());
@@ -1169,8 +1168,8 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Third simultaneous message
-        let echo_bob2   = alice.encrypt(b"Echo Bob2!").unwrap();
-        let echo_alice2 = bob.encrypt(b"Echo Alice2!").unwrap();
+        let echo_bob2   = alice.encrypt(b"Echo Bob2!").unwrap().into_owned();
+        let echo_alice2 = bob.encrypt(b"Echo Alice2!").unwrap().into_owned();
 
         assert_decrypt(b"Echo Bob2!", bob.decrypt(&mut bob_store, &echo_bob2));
         assert_eq!(2, bob.session_states.len());
@@ -1179,10 +1178,10 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Non-simultaneous answer, which results in agreement of a session.
-        let stop_bob = alice.encrypt(b"Stop it!").unwrap();
+        let stop_bob = alice.encrypt(b"Stop it!").unwrap().into_owned();
         assert_decrypt(b"Stop it!", bob.decrypt(&mut bob_store, &stop_bob));
 
-        let answer_alice = bob.encrypt(b"OK").unwrap();
+        let answer_alice = bob.encrypt(b"OK").unwrap().into_owned();
         assert_decrypt(b"OK", alice.decrypt(&mut alice_store, &answer_alice));
     }
 
@@ -1217,7 +1216,7 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
-        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
 
         let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
 
