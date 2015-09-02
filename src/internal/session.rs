@@ -11,8 +11,8 @@ use internal::keys;
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyId};
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
-use internal::util::{DecodeError, DecodeResult, EncodeResult, opt};
-use std::borrow::Cow;
+use internal::types::{DecodeError, DecodeResult, EncodeResult, Handle};
+use internal::util::opt;
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
@@ -320,10 +320,10 @@ impl<'r> Session<'r> {
 
         let mut session = Session {
             version:         1,
-            session_tag:     (*pkmsg.message.session_tag).clone(),
+            session_tag:     pkmsg.message.session_tag.clone(),
             counter:         0,
             local_identity:  ours,
-            remote_identity: (*pkmsg.identity_key).clone(),
+            remote_identity: pkmsg.identity_key.clone(),
             pending_prekey:  None,
             session_states:  BTreeMap::new()
         };
@@ -664,8 +664,8 @@ impl SessionState {
         let msgkeys = self.send_chain.chain_key.message_keys();
 
         let cmessage = CipherMessage {
-            session_tag:  Cow::Borrowed(&self.session_tag),
-            ratchet_key:  Cow::Borrowed(&self.send_chain.ratchet_key.public_key),
+            session_tag:  Handle::Ref(&self.session_tag),
+            ratchet_key:  Handle::Ref(&self.send_chain.ratchet_key.public_key),
             counter:      self.send_chain.chain_key.idx,
             prev_counter: self.prev_counter,
             cipher_text:  msgkeys.encrypt(plain)
@@ -675,8 +675,8 @@ impl SessionState {
             None         => Message::Plain(cmessage),
             Some(ref pp) => Message::Keyed(PreKeyMessage {
                 prekey_id:    pp.0,
-                base_key:     Cow::Borrowed(&pp.1),
-                identity_key: Cow::Borrowed(&ident),
+                base_key:     Handle::Ref(&pp.1),
+                identity_key: Handle::Ref(&ident),
                 message:      cmessage
             })
         };
@@ -690,7 +690,7 @@ impl SessionState {
         let i = match self.recv_chains.iter().position(|c| c.ratchet_key == *m.ratchet_key) {
             Some(i) => i,
             None    => {
-                self.ratchet((*m.ratchet_key).clone());
+                self.ratchet(m.ratchet_key.clone());
                 0
             }
         };
