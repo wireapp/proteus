@@ -331,6 +331,9 @@ impl<'r> Session<'r> {
             Some(mut s) => {
                 let plain = try!(s.decrypt(env, &pkmsg.message));
                 session.insert_session_state(s);
+                if pkmsg.prekey_id != keys::MAX_PREKEY_ID {
+                    try!(store.remove(pkmsg.prekey_id))
+                }
                 Ok((session, plain))
             }
             None => Err(DecryptError::InvalidMessage)
@@ -360,8 +363,11 @@ impl<'r> Session<'r> {
                 match try!(self.new_state(store, m)) {
                     Some(mut s) => {
                         let plain = try!(s.decrypt(env, &m.message));
-                        self.pending_prekey = None;
+                        if m.prekey_id != keys::MAX_PREKEY_ID {
+                            try!(store.remove(m.prekey_id))
+                        }
                         self.insert_session_state(s);
+                        self.pending_prekey = None;
                         Ok(plain)
                     }
                     None => self.decrypt_cipher_message(env, &m.message) // See note [no_new_state]
@@ -382,12 +388,10 @@ impl<'r> Session<'r> {
 
     // Attempt to create a new session state based on the prekey that we
     // attempt to lookup in our prekey store. If successful we return the
-    // newly created state and--unless the last prekey was used--remove the
+    // newly created state. It is the caller's responsibility to remove the
     // prekey from the store.
-    // Only the first of n prekey messages which use the same prekey ID will
-    // therefore return `Ok(Some(...))`.
     // See note [no_new_state] for those cases where no prekey has been found.
-    fn new_state<E>(&mut self, store: &mut PreKeyStore<E>, m: &PreKeyMessage) -> Result<Option<SessionState>, DecryptError<E>> {
+    fn new_state<E>(&self, store: &PreKeyStore<E>, m: &PreKeyMessage) -> Result<Option<SessionState>, DecryptError<E>> {
         let s = try!(store.prekey(m.prekey_id)).map(|prekey| {
             SessionState::init_as_bob(BobParams {
                 bob_ident:   self.local_identity,
@@ -397,9 +401,6 @@ impl<'r> Session<'r> {
                 session_tag: &m.message.session_tag
             })
         });
-        if m.prekey_id != keys::MAX_PREKEY_ID {
-            try!(store.remove(m.prekey_id));
-        }
         Ok(s)
     }
 
@@ -681,8 +682,9 @@ impl SessionState {
             })
         };
 
+        let env = Envelope::new(&msgkeys.mac_key, message);
         self.send_chain.chain_key = self.send_chain.chain_key.next();
-        Envelope::new(&msgkeys.mac_key, message)
+        env
     }
 
     fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
