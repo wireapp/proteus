@@ -285,8 +285,7 @@ struct BobParams<'r> {
     bob_ident:     &'r IdentityKeyPair,
     bob_prekey:    KeyPair,
     alice_ident:   &'r IdentityKey,
-    alice_base:    &'r PublicKey,
-    session_tag:   &'r SessionTag
+    alice_base:    &'r PublicKey
 }
 
 impl<'r> Session<'r> {
@@ -298,9 +297,10 @@ impl<'r> Session<'r> {
             bob:         &pk
         });
 
+        let session_tag = SessionTag::new();
         let mut session = Session {
             version:         1,
-            session_tag:     state.session_tag.clone(),
+            session_tag:     session_tag.clone(),
             counter:         0,
             local_identity:  alice,
             remote_identity: pk.identity_key,
@@ -308,7 +308,7 @@ impl<'r> Session<'r> {
             session_states:  BTreeMap::new()
         };
 
-        session.insert_session_state(state);
+        session.insert_session_state(&session_tag, state);
         session
     }
 
@@ -331,7 +331,7 @@ impl<'r> Session<'r> {
         match try!(session.new_state(store, pkmsg)) {
             Some(mut s) => {
                 let plain = try!(s.decrypt(env, &pkmsg.message));
-                session.insert_session_state(s);
+                session.insert_session_state(&pkmsg.message.session_tag, s);
                 if pkmsg.prekey_id != keys::MAX_PREKEY_ID {
                     try!(store.remove(pkmsg.prekey_id))
                 }
@@ -343,7 +343,10 @@ impl<'r> Session<'r> {
 
     pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
         let state = self.session_states.get_mut(&self.session_tag).unwrap(); // See note [session_tag]
-        state.val.encrypt(&self.local_identity.public_key, &self.pending_prekey, plain)
+        state.val.encrypt(&self.local_identity.public_key,
+                          &self.pending_prekey,
+                          &self.session_tag,
+                          plain)
     }
 
     // Note [no_new_state]
@@ -365,7 +368,7 @@ impl<'r> Session<'r> {
                         if m.prekey_id != keys::MAX_PREKEY_ID {
                             try!(store.remove(m.prekey_id))
                         }
-                        self.insert_session_state(s);
+                        self.insert_session_state(&m.message.session_tag, s);
                         self.pending_prekey = None;
                         Ok(plain)
                     }
@@ -381,7 +384,7 @@ impl<'r> Session<'r> {
             None    => return Err(DecryptError::InvalidMessage)
         };
         let plain = try!(s.decrypt(env, &m));
-        self.insert_session_state(s);
+        self.insert_session_state(&m.session_tag, s);
         Ok(plain)
     }
 
@@ -396,8 +399,7 @@ impl<'r> Session<'r> {
                 bob_ident:   self.local_identity,
                 bob_prekey:  prekey.key_pair,
                 alice_ident: &m.identity_key,
-                alice_base:  &m.base_key,
-                session_tag: &m.message.session_tag
+                alice_base:  &m.base_key
             })
         });
         Ok(s)
@@ -406,7 +408,7 @@ impl<'r> Session<'r> {
     // Here we either replace a session state we already have with a clone
     // that has ratcheted forward, or we add a new session state. In any
     // case we ensure, that the session's `session_tag` value is equal to
-    // the `SessionState`'s one.
+    // the given one.
     //
     // Note [counter_overflow]
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -417,25 +419,21 @@ impl<'r> Session<'r> {
     // state left is the one to be inserted, but if Alice and Bob do not
     // manage to agree on a session state within `usize::MAX` it is probably
     // of least concern.
-    fn insert_session_state(&mut self, s: SessionState) {
-        let tag = s.session_tag.clone();
-        match self.session_states.get(&tag).map(|x| x.idx) {
-            Some(i) => {
-                self.session_states.insert(tag.clone(), Indexed::new(i, s));
+    fn insert_session_state(&mut self, t: &SessionTag, s: SessionState) {
+        if self.session_states.contains_key(t) {
+            self.session_states.get_mut(t).map(|x| x.val = s);
+        } else {
+            if self.counter == usize::MAX { // See note [counter_overflow]
+                self.session_states.clear();
+                self.counter = 0;
             }
-            None => {
-                if self.counter == usize::MAX { // See note [counter_overflow]
-                    self.session_states.clear();
-                    self.counter = 0;
-                }
-                self.session_states.insert(tag.clone(), Indexed::new(self.counter, s));
-                self.counter = self.counter + 1;
-            }
+            self.session_states.insert(t.clone(), Indexed::new(self.counter, s));
+            self.counter = self.counter + 1;
         }
 
         // See note [session_tag]
-        if &self.session_tag != &tag {
-            self.session_tag = tag;
+        if self.session_tag != *t {
+            self.session_tag = t.clone();
         }
 
         if self.session_states.len() < MAX_SESSION_STATES {
@@ -491,9 +489,10 @@ impl<'r> Session<'r> {
         }
         try!(e.u8(5));
         {
-            try!(e.array(self.session_states.len()));
-            for t in self.session_states.values() {
-                try!(t.val.encode(e))
+            try!(e.object(self.session_states.len()));
+            for (t, s) in &self.session_states {
+                try!(t.encode(e));
+                try!(s.val.encode(e))
             }
         }
         Ok(())
@@ -534,11 +533,12 @@ impl<'r> Session<'r> {
                         ))
                 },
                 5 => {
-                    let ls = try!(d.array());
+                    let ls = try!(d.object());
                     let mut rb = BTreeMap::new();
                     for _ in 0 .. ls {
+                        let t = try!(SessionTag::decode(d));
                         let s = try!(SessionState::decode(d));
-                        rb.insert(s.session_tag.clone(), Indexed::new(counter, s));
+                        rb.insert(t, Indexed::new(counter, s));
                         counter = counter + 1
                     }
                     session_states = Some(rb)
@@ -562,7 +562,6 @@ impl<'r> Session<'r> {
 
 #[derive(Clone)]
 pub struct SessionState {
-    session_tag:     SessionTag,
     recv_chains:     VecDeque<RecvChain>,
     send_chain:      SendChain,
     root_key:        RootKey,
@@ -595,7 +594,6 @@ impl SessionState {
         let send_chain   = SendChain::new(chk, send_ratchet);
 
         SessionState {
-            session_tag:     SessionTag::new(),
             recv_chains:     recv_chains,
             send_chain:      send_chain,
             root_key:        rok,
@@ -621,7 +619,6 @@ impl SessionState {
         let send_chain = SendChain::new(chainkey, p.bob_prekey);
 
         SessionState {
-            session_tag:     p.session_tag.clone(),
             recv_chains:     VecDeque::with_capacity(MAX_RECV_CHAINS + 1),
             send_chain:      send_chain,
             root_key:        rootkey,
@@ -660,11 +657,16 @@ impl SessionState {
         }
     }
 
-    fn encrypt<'r>(&'r mut self, ident: &'r IdentityKey, pending: &'r Option<(PreKeyId, PublicKey)>, plain: &[u8]) -> EncodeResult<Envelope> {
+    fn encrypt<'r>(self:    &'r mut SessionState,
+                   ident:   &'r IdentityKey,
+                   pending: &'r Option<(PreKeyId, PublicKey)>,
+                   tag:     &'r SessionTag,
+                   plain:   &[u8]) -> EncodeResult<Envelope>
+    {
         let msgkeys = self.send_chain.chain_key.message_keys();
 
         let cmessage = CipherMessage {
-            session_tag:  Handle::Ref(&self.session_tag),
+            session_tag:  Handle::Ref(tag),
             ratchet_key:  Handle::Ref(&self.send_chain.ratchet_key.public_key),
             counter:      self.send_chain.chain_key.idx,
             prev_counter: self.prev_counter,
@@ -779,19 +781,18 @@ impl SessionState {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(6));
-        try!(e.u8(0)); try!(self.session_tag.encode(e));
-        try!(e.u8(1));
+        try!(e.object(5));
+        try!(e.u8(0));
         {
             try!(e.array(self.recv_chains.len()));
             for r in self.recv_chains.iter() {
                 try!(r.encode(e))
             }
         }
-        try!(e.u8(2)); try!(self.send_chain.encode(e));
-        try!(e.u8(3)); try!(self.root_key.encode(e));
-        try!(e.u8(4)); try!(self.prev_counter.encode(e));
-        try!(e.u8(5));
+        try!(e.u8(1)); try!(self.send_chain.encode(e));
+        try!(e.u8(2)); try!(self.root_key.encode(e));
+        try!(e.u8(3)); try!(self.prev_counter.encode(e));
+        try!(e.u8(4));
         {
             try!(e.array(self.skipped_msgkeys.len()));
             for m in self.skipped_msgkeys.iter() {
@@ -803,7 +804,6 @@ impl SessionState {
 
     fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SessionState> {
         let n = try!(d.object());
-        let mut session_tag     = None;
         let mut recv_chains     = None;
         let mut send_chain      = None;
         let mut root_key        = None;
@@ -811,8 +811,7 @@ impl SessionState {
         let mut skipped_msgkeys = None;
         for _ in 0 .. n {
             match try!(d.u8()) {
-                0 => session_tag = Some(try!(SessionTag::decode(d))),
-                1 => {
+                0 => {
                     let lr = try!(d.array());
                     let mut rr = VecDeque::with_capacity(lr);
                     for _ in 0 .. lr {
@@ -820,10 +819,10 @@ impl SessionState {
                     }
                     recv_chains = Some(rr)
                 }
-                2 => send_chain   = Some(try!(SendChain::decode(d))),
-                3 => root_key     = Some(try!(RootKey::decode(d))),
-                4 => prev_counter = Some(try!(Counter::decode(d))),
-                5 => {
+                1 => send_chain   = Some(try!(SendChain::decode(d))),
+                2 => root_key     = Some(try!(RootKey::decode(d))),
+                3 => prev_counter = Some(try!(Counter::decode(d))),
+                4 => {
                     let lv = try!(d.array());
                     let mut vm = VecDeque::with_capacity(lv);
                     for _ in 0 .. lv {
@@ -835,7 +834,6 @@ impl SessionState {
             }
         }
         Ok(SessionState {
-            session_tag:     to_field!(session_tag, "SessionState::session_tag"),
             recv_chains:     to_field!(recv_chains, "SessionState::recv_chains"),
             send_chain:      to_field!(send_chain, "SessionState::send_chain"),
             root_key:        to_field!(root_key, "SessionState::root_key"),
