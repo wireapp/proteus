@@ -11,8 +11,7 @@ extern crate hkdf;
 extern crate libc;
 extern crate sodiumoxide;
 
-mod internal;
-
+pub mod internal;
 pub mod keys;
 pub mod session;
 pub mod message;
