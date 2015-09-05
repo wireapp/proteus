@@ -6,7 +6,8 @@
 use cbor::{Decoder, Encoder};
 use cbor::skip::Skip;
 use hkdf::{Info, Input, Len, Salt, hkdf};
-use internal::util::{Bytes32, DecodeError, DecodeResult, EncodeResult};
+use internal::types::{DecodeError, DecodeResult, EncodeResult};
+use internal::util::Bytes32;
 use sodiumoxide::crypto::stream::chacha20 as stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
 use std::io::{Read, Write};

@@ -6,7 +6,8 @@
 use cbor::{Config, Decoder, Encoder};
 use cbor::skip::Skip;
 use internal::ffi;
-use internal::util::{Bytes64, Bytes32, DecodeError, DecodeResult, EncodeResult, fmt_hex, opt};
+use internal::types::{DecodeError, DecodeResult, EncodeResult};
+use internal::util::{Bytes64, Bytes32, fmt_hex, opt};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;

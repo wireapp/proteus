@@ -20,4 +20,4 @@ pub fn init() {
     sodiumoxide::init();
 }
 
-pub use internal::util::{DecodeError, EncodeError};
+pub use internal::types::{DecodeError, EncodeError, Handle};
