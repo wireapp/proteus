@@ -72,7 +72,7 @@ impl ChainKey {
 
     pub fn next(&self) -> ChainKey {
         ChainKey {
-            key: MacKey::new(self.key.sign(b"1").to_bytes()),
+            key: MacKey::new(self.key.sign(b"1").into_bytes()),
             idx: self.idx.next()
         }
     }
@@ -785,7 +785,7 @@ impl SessionState {
         try!(e.u8(0));
         {
             try!(e.array(self.recv_chains.len()));
-            for r in self.recv_chains.iter() {
+            for r in &self.recv_chains {
                 try!(r.encode(e))
             }
         }
@@ -795,7 +795,7 @@ impl SessionState {
         try!(e.u8(4));
         {
             try!(e.array(self.skipped_msgkeys.len()));
-            for m in self.skipped_msgkeys.iter() {
+            for m in &self.skipped_msgkeys {
                 try!(m.encode(e))
             }
         }
@@ -1068,7 +1068,7 @@ mod tests {
         assert_decrypt(b"Hello4", alice.decrypt(&mut alice_store, &hello4));
         assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
 
-        for m in vec![hello1, hello2, hello3, hello4, hello5].iter() {
+        for m in &vec![hello1, hello2, hello3, hello4, hello5] {
             assert_eq!(Some(DecryptError::DuplicateMessage), alice.decrypt(&mut alice_store, m).err());
         }
     }
@@ -1223,7 +1223,7 @@ mod tests {
             buffer.push(bob.encrypt(b"Hello Alice!").unwrap().serialise().unwrap())
         }
 
-        for msg in buffer.iter() {
+        for msg in &buffer {
             assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &Envelope::deserialise(msg).unwrap()));
         }
     }

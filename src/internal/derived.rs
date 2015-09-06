@@ -150,7 +150,7 @@ pub struct Mac {
 }
 
 impl Mac {
-    pub fn to_bytes(self) -> [u8; 32] {
+    pub fn into_bytes(self) -> [u8; 32] {
         self.sig.0
     }
 
