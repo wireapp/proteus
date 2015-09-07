@@ -11,8 +11,7 @@ extern crate hkdf;
 extern crate libc;
 extern crate sodiumoxide;
 
-mod internal;
-
+pub mod internal;
 pub mod keys;
 pub mod session;
 pub mod message;
@@ -21,4 +20,4 @@ pub fn init() {
     sodiumoxide::init();
 }
 
-pub use internal::util::{DecodeError, EncodeError};
+pub use internal::types::{DecodeError, EncodeError, Handle};

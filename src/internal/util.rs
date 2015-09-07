@@ -4,13 +4,14 @@
 // can obtain one at http://mozilla.org/MPL/2.0/.
 
 use cbor::{self, Decoder};
-use internal::keys::IdentityKey;
-use std::error::Error;
-use std::fmt;
+use internal::types::{DecodeError, DecodeResult};
 use std::io::Read;
 
 #[cfg(test)]
 use std::io::Cursor;
+
+#[cfg(test)]
+use internal::types::EncodeResult;
 
 macro_rules! to_field {
     ($test: expr, $msg: expr) => {
@@ -21,77 +22,13 @@ macro_rules! to_field {
     }
 }
 
-pub type EncodeResult<A> = Result<A, EncodeError>;
-pub type DecodeResult<A> = Result<A, DecodeError>;
+// Optional Values //////////////////////////////////////////////////////////
 
-#[derive(Debug)]
-pub enum EncodeError {
-    Encoder(cbor::EncodeError)
-}
-
-impl fmt::Display for EncodeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            EncodeError::Encoder(ref e) => write!(f, "CBOR encoder error: {}", e)
-        }
-    }
-}
-
-impl Error for EncodeError {
-    fn description(&self) -> &str {
-        "EncodeError"
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        match *self {
-            EncodeError::Encoder(ref e) => Some(e)
-        }
-    }
-}
-
-impl From<cbor::EncodeError> for EncodeError {
-    fn from(err: cbor::EncodeError) -> EncodeError {
-        EncodeError::Encoder(err)
-    }
-}
-
-#[derive(Debug)]
-pub enum DecodeError {
-    Decoder(cbor::DecodeError),
-    InvalidArrayLen(usize),
-    LocalIdentityChanged(IdentityKey),
-    InvalidMessage(String),
-    MissingField(&'static str)
-}
-
-impl fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            DecodeError::Decoder(ref e)          => write!(f, "CBOR decoder error: {}", e),
-            DecodeError::InvalidArrayLen(n)      => write!(f, "CBOR array length mismatch: {}", n),
-            DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
-            DecodeError::InvalidMessage(ref s)   => write!(f, "Invalid message: {}", s),
-            DecodeError::MissingField(ref s)     => write!(f, "Missing field: {}", s)
-        }
-    }
-}
-
-impl Error for DecodeError {
-    fn description(&self) -> &str {
-        "DecodeError"
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        match *self {
-            DecodeError::Decoder(ref e) => Some(e),
-            _                           => None
-        }
-    }
-}
-
-impl From<cbor::DecodeError> for DecodeError {
-    fn from(err: cbor::DecodeError) -> DecodeError {
-        DecodeError::Decoder(err)
+pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {
+    match r {
+        Ok(x)  => Ok(Some(x)),
+        Err(DecodeError::Decoder(e)) => cbor::opt(Err(e)).map_err(From::from),
+        Err(e) => Err(e)
     }
 }
 

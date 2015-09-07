@@ -6,7 +6,8 @@
 use cbor::{Decoder, Encoder};
 use cbor::skip::Skip;
 use hkdf::{Info, Input, Len, Salt, hkdf};
-use internal::util::{Bytes32, DecodeError, DecodeResult, EncodeResult};
+use internal::types::{DecodeError, DecodeResult, EncodeResult};
+use internal::util::Bytes32;
 use sodiumoxide::crypto::stream::chacha20 as stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
 use std::io::{Read, Write};
@@ -149,7 +150,7 @@ pub struct Mac {
 }
 
 impl Mac {
-    pub fn to_bytes(self) -> [u8; 32] {
+    pub fn into_bytes(self) -> [u8; 32] {
         self.sig.0
     }
 
