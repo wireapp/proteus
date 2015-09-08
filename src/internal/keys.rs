@@ -54,6 +54,7 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
+#[derive(Clone)]
 pub struct IdentityKeyPair {
     pub version:    u8,
     pub secret_key: SecretKey,
