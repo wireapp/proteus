@@ -234,9 +234,14 @@ impl MessageKeys {
 
 // Store ////////////////////////////////////////////////////////////////////
 
-pub trait PreKeyStore<E> {
-    fn prekey(&self, id: PreKeyId) -> Result<Option<PreKey>, E>;
-    fn remove(&mut self, id: PreKeyId) -> Result<(), E>;
+pub trait PreKeyStore {
+    type Error;
+
+    /// Lookup prekey by ID.
+    fn prekey(&mut self, id: PreKeyId) -> Result<Option<PreKey>, Self::Error>;
+
+    /// Remove prekey by ID.
+    fn remove(&mut self, id: PreKeyId) -> Result<(), Self::Error>;
 }
 
 // Session //////////////////////////////////////////////////////////////////
@@ -313,7 +318,7 @@ impl<'r> Session<'r> {
         session
     }
 
-    pub fn init_from_message<E>(ours: &'r IdentityKeyPair, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<(Session<'r>, Vec<u8>), DecryptError<E>> {
+    pub fn init_from_message<S: PreKeyStore>(ours: &'r IdentityKeyPair, store: &mut S, env: &Envelope) -> Result<(Session<'r>, Vec<u8>), DecryptError<S::Error>> {
         let pkmsg = match *env.message() {
             Message::Plain(_)     => return Err(DecryptError::InvalidMessage),
             Message::Keyed(ref m) => m
@@ -356,7 +361,7 @@ impl<'r> Session<'r> {
     // given prekey ID, we assume the prekey has been used before to create
     // a session state which we already have. Thus, we attempt encryption
     // of the inner cipher message.
-    pub fn decrypt<E>(&mut self, store: &mut PreKeyStore<E>, env: &Envelope) -> Result<Vec<u8>, DecryptError<E>> {
+    pub fn decrypt<S: PreKeyStore>(&mut self, store: &mut S, env: &Envelope) -> Result<Vec<u8>, DecryptError<S::Error>> {
         match *env.message() {
             Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
             Message::Keyed(ref m) => {
@@ -394,7 +399,7 @@ impl<'r> Session<'r> {
     // newly created state. It is the caller's responsibility to remove the
     // prekey from the store.
     // See note [no_new_state] for those cases where no prekey has been found.
-    fn new_state<E>(&self, store: &PreKeyStore<E>, m: &PreKeyMessage) -> Result<Option<SessionState>, DecryptError<E>> {
+    fn new_state<S: PreKeyStore>(&self, store: &mut S, m: &PreKeyMessage) -> Result<Option<SessionState>, DecryptError<S::Error>> {
         let s = try!(store.prekey(m.prekey_id)).map(|prekey| {
             SessionState::init_as_bob(BobParams {
                 bob_ident:   self.local_identity,
@@ -929,8 +934,10 @@ mod tests {
         }
     }
 
-    impl PreKeyStore<()> for TestStore {
-        fn prekey(&self, id: PreKeyId) -> Result<Option<PreKey>, ()> {
+    impl PreKeyStore for TestStore {
+        type Error = ();
+
+        fn prekey(&mut self, id: PreKeyId) -> Result<Option<PreKey>, ()> {
             Ok(self.prekeys.iter().find(|k| k.key_id == id).map(|k| k.clone()))
         }
 
@@ -1280,7 +1287,9 @@ mod tests {
         assert_eq!(PreKeyAuth::Valid, bob_bundle_signed.verify());
     }
 
-    fn assert_decrypt<E: fmt::Debug>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>) {
+    fn assert_decrypt<E>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>)
+        where E: fmt::Debug
+    {
         match actual {
             Ok(b)  => {
                 let r: &[u8] = b.as_ref();
@@ -1290,7 +1299,10 @@ mod tests {
         }
     }
 
-    fn assert_init_from_message<'r, E: fmt::Debug>(i: &'r IdentityKeyPair, s: &mut PreKeyStore<E>, m: &Envelope, t: &[u8]) -> Session<'r> {
+    fn assert_init_from_message<'r, S>(i: &'r IdentityKeyPair, s: &mut S, m: &Envelope, t: &[u8]) -> Session<'r>
+        where S: PreKeyStore,
+              S::Error: fmt::Debug
+    {
         match Session::init_from_message(i, s, m) {
             Ok((s, b)) => {
                 let r: &[u8] = b.as_ref();
