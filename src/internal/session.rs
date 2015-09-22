@@ -742,7 +742,7 @@ impl SessionState {
                 if env.verify(&mk.mac_key) {
                     Ok(mk.decrypt(&mesg.cipher_text))
                 } else {
-                    Err(DecryptError::InvalidMessage)
+                    Err(DecryptError::InvalidSignature)
                 }
             }
             None => Err(DecryptError::DuplicateMessage)
