@@ -343,7 +343,7 @@ impl<'r> Session<'r> {
                 }
                 Ok((session, plain))
             }
-            None => Err(DecryptError::InvalidMessage)
+            None => Err(DecryptError::PreKeyNotFound(pkmsg.prekey_id))
         }
     }
 
@@ -360,7 +360,9 @@ impl<'r> Session<'r> {
     // In case we are given a prekey message but did not find a prekey for the
     // given prekey ID, we assume the prekey has been used before to create
     // a session state which we already have. Thus, we attempt encryption
-    // of the inner cipher message.
+    // of the inner cipher message.  This is different from
+    // `Session::init_from_message` which returns a `PreKeyNotFound` error
+    // in this case.
     pub fn decrypt<S: PreKeyStore>(&mut self, store: &mut S, env: &Envelope) -> Result<Vec<u8>, DecryptError<S::Error>> {
         match *env.message() {
             Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
@@ -859,6 +861,7 @@ pub enum DecryptError<E> {
     DuplicateMessage,
     TooDistantFuture,
     OutdatedMessage,
+    PreKeyNotFound(PreKeyId),
     PreKeyStoreError(E)
 }
 
@@ -871,6 +874,7 @@ impl<E> DecryptError<E> {
             DecryptError::DuplicateMessage      => "DuplicateMessage",
             DecryptError::TooDistantFuture      => "TooDistantFuture",
             DecryptError::OutdatedMessage       => "OutdatedMessage",
+            DecryptError::PreKeyNotFound(_)     => "PreKeyNotFound",
             DecryptError::PreKeyStoreError(_)   => "PreKeyStoreError"
         }
     }
@@ -879,7 +883,8 @@ impl<E> DecryptError<E> {
 impl<E: fmt::Debug> fmt::Debug for DecryptError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            DecryptError::PreKeyStoreError(ref e) => write!(f, "PrekeyStoreError: {:?}", e),
+            DecryptError::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {:?}", e),
+            DecryptError::PreKeyNotFound(i)       => write!(f, "PreKeyNotFound: {:?}", i),
             _                                     => f.write_str(self.as_str())
         }
     }
@@ -888,7 +893,8 @@ impl<E: fmt::Debug> fmt::Debug for DecryptError<E> {
 impl<E: fmt::Display> fmt::Display for DecryptError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            DecryptError::PreKeyStoreError(ref e) => write!(f, "PrekeyStoreError: {}", e),
+            DecryptError::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {}", e),
+            DecryptError::PreKeyNotFound(i)       => write!(f, "PreKeyNotFound: {}", i),
             _                                     => f.write_str(self.as_str())
         }
     }
@@ -1254,7 +1260,7 @@ mod tests {
         // With a PreKeyStore that eagerly deletes prekeys, like the TestStore,
         // the prekey will be gone and a retry cause an error (and thus a lost message).
         match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob) {
-            Err(DecryptError::InvalidMessage) => {} // expected
+            Err(DecryptError::PreKeyNotFound(_)) => {} // expected
             Err(e) => { panic!(format!("{:?}", e)) }
             Ok(_)  => { panic!("Unexpected success on retrying init_from_message") }
         }
