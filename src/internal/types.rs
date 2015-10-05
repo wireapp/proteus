@@ -5,10 +5,8 @@
 
 use cbor;
 use internal::keys::IdentityKey;
-use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
-use std::ops::Deref;
 
 // EncodeError //////////////////////////////////////////////////////////////
 
@@ -86,56 +84,5 @@ impl Error for DecodeError {
 impl From<cbor::DecodeError> for DecodeError {
     fn from(err: cbor::DecodeError) -> DecodeError {
         DecodeError::Decoder(err)
-    }
-}
-
-// Handle ///////////////////////////////////////////////////////////////////
-
-#[derive(Debug)]
-pub enum Handle<'r, A: ?Sized + 'r> {
-    Ref(&'r A),
-    Own(A)
-}
-
-impl<'r, A: ?Sized + Clone> Handle<'r, A> {
-    pub fn into_owned(self) -> A {
-        match self {
-            Handle::Ref(x) => x.clone(),
-            Handle::Own(x) => x
-        }
-    }
-}
-
-impl<'r, A: ?Sized> Deref for Handle<'r, A> {
-    type Target = A;
-
-    fn deref(&self) -> &A {
-        match *self {
-            Handle::Ref(x)     => x,
-            Handle::Own(ref x) => &x
-        }
-    }
-}
-
-impl<'r, A: ?Sized + Eq> Eq for Handle<'r, A> {}
-
-impl<'r, A: ?Sized + PartialEq> PartialEq for Handle<'r, A> {
-    #[inline]
-    fn eq(&self, other: &Handle<'r, A>) -> bool {
-        PartialEq::eq(&**self, &**other)
-    }
-}
-
-impl<'r, A: ?Sized + Ord> Ord for Handle<'r, A> {
-    #[inline]
-    fn cmp(&self, other: &Handle<'r, A>) -> Ordering {
-        Ord::cmp(&**self, &**other)
-    }
-}
-
-impl<'r, A: ?Sized + PartialOrd> PartialOrd for Handle<'r, A> {
-    #[inline]
-    fn partial_cmp(&self, other: &Handle<'r, A>) -> Option<Ordering> {
-        PartialOrd::partial_cmp(&**self, &**other)
     }
 }

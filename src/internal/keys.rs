@@ -11,7 +11,7 @@ use internal::util::{Bytes64, Bytes32, fmt_hex, opt};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
-use std::fmt::{Debug, Formatter, Error};
+use std::fmt::{self, Debug, Formatter, Error};
 use std::io::{Cursor, Read, Write};
 use std::u16;
 use std::vec::Vec;
@@ -54,6 +54,7 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
+#[derive(Clone)]
 pub struct IdentityKeyPair {
     pub version:    u8,
     pub secret_key: SecretKey,
@@ -299,6 +300,12 @@ impl PreKeyId {
 
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKeyId> {
         d.u16().map(PreKeyId).map_err(From::from)
+    }
+}
+
+impl fmt::Display for PreKeyId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.0)
     }
 }
 
