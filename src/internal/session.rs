@@ -11,7 +11,7 @@ use internal::keys;
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyId};
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
-use internal::types::{DecodeError, DecodeResult, EncodeResult};
+use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
 use internal::util::opt;
 use std::borrow::Cow;
 use std::cmp::{Ord, Ordering};
@@ -348,7 +348,9 @@ impl<'r> Session<'r> {
     }
 
     pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
-        let state = self.session_states.get_mut(&self.session_tag).unwrap(); // See note [session_tag]
+        let state = try!(self.session_states
+                             .get_mut(&self.session_tag)
+                             .ok_or(InternalError::NoSessionForTag)); // See note [session_tag]
         state.val.encrypt(&self.local_identity.public_key,
                           &self.pending_prekey,
                           &self.session_tag,
