@@ -8,19 +8,40 @@ use internal::keys::IdentityKey;
 use std::error::Error;
 use std::fmt;
 
+#[derive(Debug)]
+pub enum InternalError {
+    NoSessionForTag
+}
+
+impl fmt::Display for InternalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            InternalError::NoSessionForTag => write!(f, "No session found for session tag.")
+        }
+    }
+}
+
+impl Error for InternalError {
+    fn description(&self) -> &str {
+        "InternalError"
+    }
+}
+
 // EncodeError //////////////////////////////////////////////////////////////
 
 pub type EncodeResult<A> = Result<A, EncodeError>;
 
 #[derive(Debug)]
 pub enum EncodeError {
+    Internal(InternalError),
     Encoder(cbor::EncodeError)
 }
 
 impl fmt::Display for EncodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            EncodeError::Encoder(ref e) => write!(f, "CBOR encoder error: {}", e)
+            EncodeError::Internal(ref e) => write!(f, "Internal error: {}", e),
+            EncodeError::Encoder(ref e)  => write!(f, "CBOR encoder error: {}", e)
         }
     }
 }
@@ -32,7 +53,8 @@ impl Error for EncodeError {
 
     fn cause(&self) -> Option<&Error> {
         match *self {
-            EncodeError::Encoder(ref e) => Some(e)
+            EncodeError::Internal(ref e) => Some(e),
+            EncodeError::Encoder(ref e)  => Some(e),
         }
     }
 }
@@ -40,6 +62,12 @@ impl Error for EncodeError {
 impl From<cbor::EncodeError> for EncodeError {
     fn from(err: cbor::EncodeError) -> EncodeError {
         EncodeError::Encoder(err)
+    }
+}
+
+impl From<InternalError> for EncodeError {
+    fn from(err: InternalError) -> EncodeError {
+        EncodeError::Internal(err)
     }
 }
 
