@@ -1,18 +1,18 @@
 [package]
 
 name         = "proteus"
-version      = "0.3.0"
+version      = "0.4.1"
 authors      = ["Toralf Wittner <tw@dtex.org>", "Roman S. Borschel <roman@pkaboo.org>"]
 description  = "Axolotl protocol implementation"
-homepage     = "https://github.com/twittner/proteus"
-repository   = "git@github.com:twittner/proteus.git"
+homepage     = "https://github.com/shared-secret/proteus"
+repository   = "git@github.com:shared-secret/proteus.git"
 license      = "MPL-2.0"
 
 [dependencies]
 byteorder   = ">  0.2.0"
 cbor-codec  = ">= 0.1.0"
 libc        = ">  0.1.0"
-sodiumoxide = ">= 0.0.8"
+sodiumoxide = ">= 0.0.9"
 
 [dependencies.hkdf]
 git = "https://github.com/twittner/hkdf"

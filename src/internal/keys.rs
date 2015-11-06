@@ -494,8 +494,8 @@ impl Signature {
 
 // Internal /////////////////////////////////////////////////////////////////
 
-pub fn from_ed25519_pk(k: &sign::PublicKey) -> [u8; ecdh::BYTES] {
-    let mut ep = [0u8; ecdh::BYTES];
+pub fn from_ed25519_pk(k: &sign::PublicKey) -> [u8; ecdh::GROUPELEMENTBYTES] {
+    let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
     unsafe {
         ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr());
     }
