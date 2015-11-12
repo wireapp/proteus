@@ -151,37 +151,121 @@ impl SendChain {
 
 // Receive Chain ////////////////////////////////////////////////////////////
 
+const MAX_COUNTER_GAP: usize = 1000;
+
 #[derive(Clone)]
 pub struct RecvChain {
-    chain_key:   ChainKey,
-    ratchet_key: PublicKey
+    chain_key:    ChainKey,
+    ratchet_key:  PublicKey,
+    message_keys: VecDeque<MessageKeys>
 }
 
 impl RecvChain {
     pub fn new(ck: ChainKey, rk: PublicKey) -> RecvChain {
-        RecvChain { chain_key: ck, ratchet_key: rk }
+        RecvChain {
+            chain_key:    ck,
+            ratchet_key:  rk,
+            message_keys: VecDeque::new()
+        }
+    }
+
+    fn try_message_keys<E>(&mut self, env: &Envelope, mesg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
+        let too_old = self.message_keys.get(0)
+            .map(|k| k.counter > mesg.counter)
+            .unwrap_or(false);
+
+        if too_old {
+            return Err(DecryptError::OutdatedMessage)
+        }
+
+        match self.message_keys.iter().position(|mk| mk.counter == mesg.counter) {
+            Some(i) => {
+                let mk = self.message_keys.remove(i).unwrap();
+                if env.verify(&mk.mac_key) {
+                    Ok(mk.decrypt(&mesg.cipher_text))
+                } else {
+                    Err(DecryptError::InvalidSignature)
+                }
+            }
+            None => Err(DecryptError::DuplicateMessage)
+        }
+    }
+
+    fn stage_message_keys<E>(&self, msg: &CipherMessage) -> Result<(ChainKey, MessageKeys, VecDeque<MessageKeys>), DecryptError<E>> {
+        let num = (msg.counter.value() - self.chain_key.idx.value()) as usize;
+
+        if num > MAX_COUNTER_GAP {
+            return Err(DecryptError::TooDistantFuture)
+        }
+
+        let mut buf = VecDeque::with_capacity(num);
+        let mut chk = self.chain_key.clone();
+
+        for _ in 0 .. num {
+            buf.push_back(chk.message_keys());
+            chk = chk.next()
+        }
+
+        let mk = chk.message_keys();
+        Ok((chk, mk, buf))
+    }
+
+    fn commit_message_keys(&mut self, mks: VecDeque<MessageKeys>) {
+        assert!(mks.len() <= MAX_COUNTER_GAP);
+
+        let excess = self.message_keys.len() as isize
+                   + mks.len() as isize
+                   - MAX_COUNTER_GAP as isize;
+
+        for _ in 0 .. excess {
+            self.message_keys.pop_front();
+        }
+
+        for m in mks.into_iter() {
+            self.message_keys.push_back(m)
+        }
+
+        assert!(self.message_keys.len() <= MAX_COUNTER_GAP);
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(2));
+        try!(e.object(3));
         try!(e.u8(0)); try!(self.chain_key.encode(e));
-        try!(e.u8(1)); self.ratchet_key.encode(e)
+        try!(e.u8(1)); try!(self.ratchet_key.encode(e));
+        try!(e.u8(2));
+        {
+            try!(e.array(self.message_keys.len()));
+            for m in &self.message_keys {
+                try!(m.encode(e))
+            }
+        }
+        Ok(())
     }
 
     fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RecvChain> {
         let n = try!(d.object());
-        let mut chain_key   = None;
-        let mut ratchet_key = None;
+        let mut chain_key    = None;
+        let mut ratchet_key  = None;
+        let mut message_keys = None;
         for _ in 0 .. n {
             match try!(d.u8()) {
                 0 => chain_key   = Some(try!(ChainKey::decode(d))),
                 1 => ratchet_key = Some(try!(PublicKey::decode(d))),
+                2 => {
+                    let lv = try!(d.array());
+                    let mut vm = VecDeque::with_capacity(lv);
+                    for _ in 0 .. lv {
+                        vm.push_back(try!(MessageKeys::decode(d)))
+                    }
+                    message_keys = Some(vm)
+                }
                 _ => try!(d.skip())
             }
         }
         Ok(RecvChain {
-            chain_key:   to_field!(chain_key, "RecvChain::chain_key"),
-            ratchet_key: to_field!(ratchet_key, "RecvChain::ratchet_key")
+            chain_key:    to_field!(chain_key, "RecvChain::chain_key"),
+            ratchet_key:  to_field!(ratchet_key, "RecvChain::ratchet_key"),
+            message_keys: message_keys.unwrap_or_else(|| VecDeque::new())
         })
     }
 }
@@ -247,7 +331,6 @@ pub trait PreKeyStore {
 // Session //////////////////////////////////////////////////////////////////
 
 const MAX_RECV_CHAINS:    usize = 5;
-const MAX_COUNTER_GAP:    usize = 1000;
 const MAX_SESSION_STATES: usize = 100;
 
 pub struct Indexed<A> {
@@ -572,11 +655,10 @@ impl<'r> Session<'r> {
 
 #[derive(Clone)]
 pub struct SessionState {
-    recv_chains:     VecDeque<RecvChain>,
-    send_chain:      SendChain,
-    root_key:        RootKey,
-    prev_counter:    Counter,
-    skipped_msgkeys: VecDeque<MessageKeys>
+    recv_chains:  VecDeque<RecvChain>,
+    send_chain:   SendChain,
+    root_key:     RootKey,
+    prev_counter: Counter
 }
 
 impl SessionState {
@@ -607,8 +689,7 @@ impl SessionState {
             recv_chains:     recv_chains,
             send_chain:      send_chain,
             root_key:        rok,
-            prev_counter:    Counter::zero(),
-            skipped_msgkeys: VecDeque::new()
+            prev_counter:    Counter::zero()
         }
     }
 
@@ -632,8 +713,7 @@ impl SessionState {
             recv_chains:     VecDeque::with_capacity(MAX_RECV_CHAINS + 1),
             send_chain:      send_chain,
             root_key:        rootkey,
-            prev_counter:    Counter::zero(),
-            skipped_msgkeys: VecDeque::new()
+            prev_counter:    Counter::zero()
         }
     }
 
@@ -646,16 +726,8 @@ impl SessionState {
         let (send_root_key, send_chain_key) =
             recv_root_key.dh_ratchet(&new_ratchet, &ratchet_key);
 
-        let recv_chain = RecvChain {
-            chain_key:   recv_chain_key,
-            ratchet_key: ratchet_key,
-        };
-
-        let send_chain = SendChain {
-            chain_key:   send_chain_key,
-            ratchet_key: new_ratchet
-        };
-
+        let recv_chain    = RecvChain::new(recv_chain_key, ratchet_key);
+        let send_chain    = SendChain::new(send_chain_key, new_ratchet);
         self.root_key     = send_root_key;
         self.prev_counter = self.send_chain.chain_key.idx;
         self.send_chain   = send_chain;
@@ -699,99 +771,41 @@ impl SessionState {
     }
 
     fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
-        let i = match self.recv_chains.iter().position(|c| c.ratchet_key == *m.ratchet_key) {
-            Some(i) => i,
-            None    => {
-                self.ratchet((*m.ratchet_key).clone());
-                0
-            }
-        };
+        let mut rchain =
+            match self.recv_chains.iter().position(|c| c.ratchet_key == *m.ratchet_key) {
+                Some(i) => &mut self.recv_chains[i],
+                None    => {
+                    self.ratchet((*m.ratchet_key).clone());
+                    &mut self.recv_chains[0]
+                }
+            };
 
-        match m.counter.cmp(&self.recv_chains[i].chain_key.idx) {
-            Ordering::Less    => self.try_skipped_message_keys(env, m),
+        match m.counter.cmp(&rchain.chain_key.idx) {
+            Ordering::Less    => rchain.try_message_keys(env, m),
             Ordering::Greater => {
-                let (chk, mk, mks) = try!(SessionState::stage_skipped_message_keys(m, &self.recv_chains[i]));
+                let (chk, mk, mks) = try!(rchain.stage_message_keys(m));
                 if !env.verify(&mk.mac_key) {
                     return Err(DecryptError::InvalidSignature)
                 }
                 let plain = mk.decrypt(&m.cipher_text);
-                self.recv_chains[i].chain_key = chk.next();
-                self.commit_skipped_message_keys(mks);
+                rchain.chain_key = chk.next();
+                rchain.commit_message_keys(mks);
                 Ok(plain)
             }
             Ordering::Equal => {
-                let mks = self.recv_chains[i].chain_key.message_keys();
+                let mks = rchain.chain_key.message_keys();
                 if !env.verify(&mks.mac_key) {
                     return Err(DecryptError::InvalidSignature)
                 }
                 let plain = mks.decrypt(&m.cipher_text);
-                self.recv_chains[i].chain_key = self.recv_chains[i].chain_key.next();
+                rchain.chain_key = rchain.chain_key.next();
                 Ok(plain)
             }
         }
     }
 
-    fn try_skipped_message_keys<E>(&mut self, env: &Envelope, mesg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
-        let too_old = self.skipped_msgkeys.get(0)
-            .map(|k| k.counter > mesg.counter)
-            .unwrap_or(false);
-
-        if too_old {
-            return Err(DecryptError::OutdatedMessage)
-        }
-
-        match self.skipped_msgkeys.iter().position(|mk| mk.counter == mesg.counter) {
-            Some(i) => {
-                let mk = self.skipped_msgkeys.remove(i).unwrap();
-                if env.verify(&mk.mac_key) {
-                    Ok(mk.decrypt(&mesg.cipher_text))
-                } else {
-                    Err(DecryptError::InvalidSignature)
-                }
-            }
-            None => Err(DecryptError::DuplicateMessage)
-        }
-    }
-
-    fn stage_skipped_message_keys<E>(msg: &CipherMessage, chr: &RecvChain) -> Result<(ChainKey, MessageKeys, VecDeque<MessageKeys>), DecryptError<E>> {
-        let num = (msg.counter.value() - chr.chain_key.idx.value()) as usize;
-
-        if num > MAX_COUNTER_GAP {
-            return Err(DecryptError::TooDistantFuture)
-        }
-
-        let mut buf = VecDeque::with_capacity(num);
-        let mut chk = chr.chain_key.clone();
-
-        for _ in 0 .. num {
-            buf.push_back(chk.message_keys());
-            chk = chk.next()
-        }
-
-        let mk = chk.message_keys();
-        Ok((chk, mk, buf))
-    }
-
-    fn commit_skipped_message_keys(&mut self, mks: VecDeque<MessageKeys>) {
-        assert!(mks.len() <= MAX_COUNTER_GAP);
-
-        let excess = self.skipped_msgkeys.len() as isize
-                   + mks.len() as isize
-                   - MAX_COUNTER_GAP as isize;
-
-        for _ in 0 .. excess {
-            self.skipped_msgkeys.pop_front();
-        }
-
-        for m in mks.into_iter() {
-            self.skipped_msgkeys.push_back(m)
-        }
-
-        assert!(self.skipped_msgkeys.len() <= MAX_COUNTER_GAP);
-    }
-
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(5));
+        try!(e.object(4));
         try!(e.u8(0));
         {
             try!(e.array(self.recv_chains.len()));
@@ -802,13 +816,7 @@ impl SessionState {
         try!(e.u8(1)); try!(self.send_chain.encode(e));
         try!(e.u8(2)); try!(self.root_key.encode(e));
         try!(e.u8(3)); try!(self.prev_counter.encode(e));
-        try!(e.u8(4));
-        {
-            try!(e.array(self.skipped_msgkeys.len()));
-            for m in &self.skipped_msgkeys {
-                try!(m.encode(e))
-            }
-        }
+        // Note that key '4' was used for skipped message keys.
         Ok(())
     }
 
@@ -818,7 +826,6 @@ impl SessionState {
         let mut send_chain      = None;
         let mut root_key        = None;
         let mut prev_counter    = None;
-        let mut skipped_msgkeys = None;
         for _ in 0 .. n {
             match try!(d.u8()) {
                 0 => {
@@ -832,14 +839,6 @@ impl SessionState {
                 1 => send_chain   = Some(try!(SendChain::decode(d))),
                 2 => root_key     = Some(try!(RootKey::decode(d))),
                 3 => prev_counter = Some(try!(Counter::decode(d))),
-                4 => {
-                    let lv = try!(d.array());
-                    let mut vm = VecDeque::with_capacity(lv);
-                    for _ in 0 .. lv {
-                        vm.push_back(try!(MessageKeys::decode(d)))
-                    }
-                    skipped_msgkeys = Some(vm)
-                }
                 _ => try!(d.skip())
             }
         }
@@ -847,8 +846,7 @@ impl SessionState {
             recv_chains:     to_field!(recv_chains, "SessionState::recv_chains"),
             send_chain:      to_field!(send_chain, "SessionState::send_chain"),
             root_key:        to_field!(root_key, "SessionState::root_key"),
-            prev_counter:    to_field!(prev_counter, "SessionState::prev_counter"),
-            skipped_msgkeys: to_field!(skipped_msgkeys, "SessionState::skipped_msgkeys")
+            prev_counter:    to_field!(prev_counter, "SessionState::prev_counter")
         })
     }
 }
@@ -927,7 +925,7 @@ impl<E> From<E> for DecryptError<E> {
 mod tests {
     use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle, PreKeyAuth};
     use internal::keys::gen_prekeys;
-    use internal::message::Envelope;
+    use internal::message::{Counter, Envelope};
     use std::fmt;
     use std::vec::Vec;
     use super::*;
@@ -1070,19 +1068,19 @@ mod tests {
         let hello5 = bob.encrypt(b"Hello5").unwrap().into_owned();
 
         assert_decrypt(b"Hello2", alice.decrypt(&mut alice_store, &hello2));
-        assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
+        assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains[0].message_keys.len());
 
         assert_decrypt(b"Hello1", alice.decrypt(&mut alice_store, &hello1));
-        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
+        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains[0].message_keys.len());
 
         assert_decrypt(b"Hello3", alice.decrypt(&mut alice_store, &hello3));
-        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
+        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains[0].message_keys.len());
 
         assert_decrypt(b"Hello5", alice.decrypt(&mut alice_store, &hello5));
-        assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
+        assert_eq!(1, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains[0].message_keys.len());
 
         assert_decrypt(b"Hello4", alice.decrypt(&mut alice_store, &hello4));
-        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.skipped_msgkeys.len());
+        assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains[0].message_keys.len());
 
         for m in &vec![hello1, hello2, hello3, hello4, hello5] {
             assert_eq!(Some(DecryptError::DuplicateMessage), alice.decrypt(&mut alice_store, m).err());
@@ -1266,6 +1264,104 @@ mod tests {
             Err(e) => { panic!(format!("{:?}", e)) }
             Ok(_)  => { panic!("Unexpected success on retrying init_from_message") }
         }
+    }
+
+    #[test]
+    fn skipped_message_keys() {
+        let alice_ident = IdentityKeyPair::new();
+        let bob_ident   = IdentityKeyPair::new();
+
+        let mut alice_store = TestStore { prekeys: gen_prekeys(PreKeyId::new(0), 10) };
+        let mut bob_store   = TestStore { prekeys: gen_prekeys(PreKeyId::new(0), 10) };
+
+        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
+
+        let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
+        let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
+
+        {
+            let ref s = alice.session_states.get(&alice.session_tag).unwrap().val;
+            assert_eq!(1, s.recv_chains.len());
+            assert_eq!(Counter::zero(), s.recv_chains[0].chain_key.idx);
+            assert_eq!(Counter::zero().next(), s.send_chain.chain_key.idx);
+            assert_eq!(0, s.recv_chains[0].message_keys.len())
+        }
+
+        let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
+
+        {
+            // Normal exchange. Bob has created a new receive chain without skipped message keys.
+            let ref s = bob.session_states.get(&bob.session_tag).unwrap().val;
+            assert_eq!(1, s.recv_chains.len());
+            assert_eq!(Counter::zero().next(), s.recv_chains[0].chain_key.idx);
+            assert_eq!(Counter::zero(), s.send_chain.chain_key.idx);
+            assert_eq!(0, s.recv_chains[0].message_keys.len())
+        }
+
+        let hello_alice0 = bob.encrypt(b"Hello0").unwrap().into_owned();
+        let _            = bob.encrypt(b"Hello1").unwrap().into_owned();
+        let hello_alice2 = bob.encrypt(b"Hello2").unwrap().into_owned();
+        assert_decrypt(b"Hello2", alice.decrypt(&mut alice_store, &hello_alice2));
+
+        {
+            // Alice has two skipped message keys in her new receive chain.
+            let ref s = alice.session_states.get(&alice.session_tag).unwrap().val;
+            assert_eq!(2, s.recv_chains.len());
+            assert_eq!(Counter::zero().next().next().next(), s.recv_chains[0].chain_key.idx);
+            assert_eq!(Counter::zero(), s.send_chain.chain_key.idx);
+            assert_eq!(2, s.recv_chains[0].message_keys.len());
+            assert_eq!(0, s.recv_chains[0].message_keys[0].counter.value());
+            assert_eq!(1, s.recv_chains[0].message_keys[1].counter.value())
+        }
+
+        let hello_bob0 = alice.encrypt(b"Hello0").unwrap().into_owned();
+        assert_decrypt(b"Hello0", bob.decrypt(&mut bob_store, &hello_bob0));
+
+        {
+            // For Bob everything is normal still. A new message from Alice means a
+            // new receive chain has been created and again no skipped message keys.
+            let ref s = bob.session_states.get(&bob.session_tag).unwrap().val;
+            assert_eq!(2, s.recv_chains.len());
+            assert_eq!(Counter::zero().next(), s.recv_chains[0].chain_key.idx);
+            assert_eq!(Counter::zero(), s.send_chain.chain_key.idx);
+            assert_eq!(0, s.recv_chains[0].message_keys.len())
+        }
+
+        assert_decrypt(b"Hello0", alice.decrypt(&mut alice_store, &hello_alice0));
+
+        {
+            // Alice received the first of the two missing messages. Therefore
+            // only one message key is still skipped (counter value = 1).
+            let ref s = alice.session_states.get(&alice.session_tag).unwrap().val;
+            assert_eq!(2, s.recv_chains.len());
+            assert_eq!(1, s.recv_chains[0].message_keys.len());
+            assert_eq!(1, s.recv_chains[0].message_keys[0].counter.value())
+        }
+
+
+        let hello_again0 = bob.encrypt(b"Again0").unwrap().into_owned();
+        let hello_again1 = bob.encrypt(b"Again1").unwrap().into_owned();
+
+        assert_decrypt(b"Again1", alice.decrypt(&mut alice_store, &hello_again1));
+
+        {
+            // Bob has sent two new messages which Alice receives out of order.
+            // The first one received causes a new ratchet and hence a new receive chain.
+            // The second one will cause Alice to look into her skipped message keys since
+            // the message index is lower than the receive chain index. This test therefore
+            // ensures that skipped message keys are local to receive chains since the previous
+            // receive chain still has a skipped message key with an index > 0 which would
+            // cause an `OutdatedMessage` error if the vector was shared across receive chains.
+            let ref s = alice.session_states.get(&alice.session_tag).unwrap().val;
+            assert_eq!(3, s.recv_chains.len());
+            assert_eq!(1, s.recv_chains[0].message_keys.len());
+            assert_eq!(1, s.recv_chains[1].message_keys.len());
+            assert_eq!(0, s.recv_chains[0].message_keys[0].counter.value());
+            assert_eq!(1, s.recv_chains[1].message_keys[0].counter.value());
+        }
+
+        assert_decrypt(b"Again0", alice.decrypt(&mut alice_store, &hello_again0))
     }
 
     #[test]

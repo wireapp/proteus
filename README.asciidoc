@@ -10,12 +10,12 @@
 :hkdf-impl: https://github.com/twittner/hkdf
 :hmac: https://en.wikipedia.org/wiki/Hash-based_message_authentication_code
 :mpl: https://img.shields.io/badge/license-MPL_2.0-blue.svg
-:travis: https://travis-ci.org/twittner/proteus.svg?branch=develop
+:travis: https://travis-ci.org/shared-secret/proteus.svg?branch=develop
 :cbor: https://tools.ietf.org/html/rfc7049
-:wiki: https://github.com/twittner/proteus/wiki/Serialisation-format
+:wiki: https://github.com/shared-secret/proteus/wiki/Serialisation-format
 
 image:{mpl}["License: MPL-2.0", link="https://www.mozilla.org/MPL/2.0/"]
-image:{travis}["Build Status", link="https://travis-ci.org/twittner/proteus"]
+image:{travis}["Build Status", link="https://travis-ci.org/shared-secret/proteus"]
 
 Proteus is an implementation of the link:{axolotl}[axolotl protocol] without
 header keys. It is suitable for use in asynchronous environments through its
