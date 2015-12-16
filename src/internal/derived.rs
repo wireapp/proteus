@@ -22,7 +22,6 @@ use sodiumoxide::crypto::stream::chacha20 as stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
 use std::io::{Read, Write};
 use std::ops::Deref;
-use std::slice::bytes::copy_memory;
 use std::vec::Vec;
 
 // Derived Secrets //////////////////////////////////////////////////////////
@@ -41,8 +40,8 @@ impl DerivedSecrets {
         let len = Len::new(64).expect("Unexpected hkdf::HASH_LEN.");
         let okm = hkdf(salt, input, info, len);
 
-        copy_memory(&okm[0  .. 32], &mut ck);
-        copy_memory(&okm[32 .. 64], &mut mk);
+        ck.as_mut().write_all(&okm[0  .. 32]).unwrap();
+        mk.as_mut().write_all(&okm[32 .. 64]).unwrap();
 
         DerivedSecrets {
             cipher_key: CipherKey::new(ck),
