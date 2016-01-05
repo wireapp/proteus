@@ -22,7 +22,6 @@ use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyI
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
 use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
-use internal::util::opt;
 use std::borrow::Cow;
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};
