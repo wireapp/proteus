@@ -1,7 +1,17 @@
-// This Source Code Form is subject to the terms of
-// the Mozilla Public License, v. 2.0. If a copy of
-// the MPL was not distributed with this file, You
-// can obtain one at http://mozilla.org/MPL/2.0/.
+// Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use cbor::{self, Config, Decoder, Encoder};
 use cbor::skip::Skip;
@@ -12,7 +22,6 @@ use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyI
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
 use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
-use internal::util::opt;
 use std::borrow::Cow;
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};

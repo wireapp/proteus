@@ -1,12 +1,12 @@
 [package]
 
 name         = "proteus"
-version      = "0.4.1"
-authors      = ["Toralf Wittner <tw@dtex.org>", "Roman S. Borschel <roman@pkaboo.org>"]
+version      = "0.5.0"
+authors      = ["Wire Swiss GmbH <support@wire.com>"]
 description  = "Axolotl protocol implementation"
-homepage     = "https://github.com/shared-secret/proteus"
-repository   = "git@github.com:shared-secret/proteus.git"
-license      = "MPL-2.0"
+homepage     = "https://github.com/wireapp/proteus"
+repository   = "git@github.com:wireapp/proteus.git"
+license      = "GPL-3.0"
 
 [dependencies]
 byteorder   = ">  0.2.0"
@@ -15,4 +15,4 @@ libc        = ">  0.1.0"
 sodiumoxide = ">= 0.0.9"
 
 [dependencies.hkdf]
-git = "https://github.com/twittner/hkdf"
+git = "https://github.com/wireapp/hkdf"

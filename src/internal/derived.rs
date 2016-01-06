@@ -1,7 +1,17 @@
-// This Source Code Form is subject to the terms of
-// the Mozilla Public License, v. 2.0. If a copy of
-// the MPL was not distributed with this file, You
-// can obtain one at http://mozilla.org/MPL/2.0/.
+// Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use cbor::{Decoder, Encoder};
 use cbor::skip::Skip;
@@ -12,7 +22,6 @@ use sodiumoxide::crypto::stream::chacha20 as stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
 use std::io::{Read, Write};
 use std::ops::Deref;
-use std::slice::bytes::copy_memory;
 use std::vec::Vec;
 
 // Derived Secrets //////////////////////////////////////////////////////////
@@ -31,8 +40,8 @@ impl DerivedSecrets {
         let len = Len::new(64).expect("Unexpected hkdf::HASH_LEN.");
         let okm = hkdf(salt, input, info, len);
 
-        copy_memory(&okm[0  .. 32], &mut ck);
-        copy_memory(&okm[32 .. 64], &mut mk);
+        ck.as_mut().write_all(&okm[0  .. 32]).unwrap();
+        mk.as_mut().write_all(&okm[32 .. 64]).unwrap();
 
         DerivedSecrets {
             cipher_key: CipherKey::new(ck),
