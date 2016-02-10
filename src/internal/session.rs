@@ -486,6 +486,7 @@ impl<'r> Session<'r> {
             None    => return Err(DecryptError::InvalidMessage)
         };
         let plain = try!(s.decrypt(env, &m));
+        self.pending_prekey = None;
         self.insert_session_state(&m.session_tag, s);
         Ok(plain)
     }
@@ -934,7 +935,7 @@ impl<E> From<E> for DecryptError<E> {
 mod tests {
     use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle, PreKeyAuth};
     use internal::keys::gen_prekeys;
-    use internal::message::{Counter, Envelope};
+    use internal::message::{Counter, Envelope, Message};
     use std::fmt;
     use std::vec::Vec;
     use super::*;
@@ -1029,10 +1030,13 @@ mod tests {
 
         // Alice
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
+        assert!(alice.pending_prekey.is_none());
         assert_eq!(2, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
         assert_eq!(alice.remote_identity.fingerprint(), bob.local_identity.public_key.fingerprint());
         let ping_bob_1 = alice.encrypt(b"Ping1!").unwrap().into_owned();
+        assert_is_cipher_msg(&ping_bob_1);
         let ping_bob_2 = alice.encrypt(b"Ping2!").unwrap().into_owned();
+        assert_is_cipher_msg(&ping_bob_2);
         assert_prev_count(&alice, 2);
 
         // Bob
@@ -1431,5 +1435,12 @@ mod tests {
 
     fn assert_prev_count(s: &Session, expected: u32) {
         assert_eq!(expected, s.session_states.get(&s.session_tag).unwrap().val.prev_counter.value());
+    }
+
+    fn assert_is_cipher_msg(e: &Envelope) {
+        match *e.message() {
+            Message::Plain(_) => (),
+            Message::Keyed(_) => panic!("not a cipher message")
+        }
     }
 }
