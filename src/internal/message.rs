@@ -17,9 +17,10 @@ use byteorder::{BigEndian, ByteOrder};
 use cbor::{Config, Decoder, Encoder};
 use cbor::skip::Skip;
 use internal::derived::{Mac, MacKey, Nonce};
-use internal::keys::{IdentityKey, PreKeyId, PublicKey, rand_bytes};
+use internal::keys::{IdentityKey, PreKeyId, PublicKey};
 use internal::types::{DecodeError, DecodeResult, EncodeResult};
 use internal::util::fmt_hex;
+use sodiumoxide::randombytes;
 use std::borrow::Cow;
 use std::fmt;
 use std::io::{Cursor, Read, Write};
@@ -60,20 +61,30 @@ impl Counter {
 
 // Session Tag //////////////////////////////////////////////////////////////
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SessionTag { tag: Vec<u8> }
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SessionTag { tag: [u8; 16] }
 
 impl SessionTag {
     pub fn new() -> SessionTag {
-        SessionTag { tag: rand_bytes(16) }
+        let mut bytes = [0; 16];
+        randombytes::randombytes_into(&mut bytes);
+        SessionTag { tag: bytes }
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.bytes(&self.tag[..]).map_err(From::from)
+        e.bytes(&self.tag).map_err(From::from)
     }
 
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionTag> {
-        d.bytes().map(|v| SessionTag { tag: v }).map_err(From::from)
+        let v = try!(d.bytes());
+        if 16 != v.len() {
+            return Err(DecodeError::InvalidArrayLen(v.len()))
+        }
+        let mut a = [0u8; 16];
+        for i in 0..16 {
+            a[i] = v[i]
+        }
+        Ok(SessionTag { tag: a })
     }
 }
 
@@ -174,7 +185,7 @@ impl<'r> PreKeyMessage<'r> {
 // CipherMessage ////////////////////////////////////////////////////////////
 
 pub struct CipherMessage<'r> {
-    pub session_tag:  Cow<'r, SessionTag>,
+    pub session_tag:  SessionTag,
     pub counter:      Counter,
     pub prev_counter: Counter,
     pub ratchet_key:  Cow<'r, PublicKey>,
@@ -184,7 +195,7 @@ pub struct CipherMessage<'r> {
 impl<'r> CipherMessage<'r> {
     fn into_owned<'s>(self) -> CipherMessage<'s> {
         CipherMessage {
-            session_tag:  Cow::Owned(self.session_tag.into_owned()),
+            session_tag:  self.session_tag,
             counter:      self.counter,
             prev_counter: self.prev_counter,
             ratchet_key:  Cow::Owned(self.ratchet_key.into_owned()),
@@ -220,7 +231,7 @@ impl<'r> CipherMessage<'r> {
             }
         }
         Ok(CipherMessage {
-            session_tag:  Cow::Owned(to_field!(session_tag, "CipherMessage::session_tag")),
+            session_tag:  to_field!(session_tag, "CipherMessage::session_tag"),
             counter:      to_field!(counter, "CipherMessage::counter"),
             prev_counter: to_field!(prev_counter, "CipherMessage::prev_counter"),
             ratchet_key:  Cow::Owned(to_field!(ratchet_key, "CipherMessage::ratchet_key")),
@@ -343,7 +354,7 @@ mod tests {
             base_key:     Cow::Borrowed(&bk),
             identity_key: Cow::Borrowed(&ik),
             message:      CipherMessage {
-                session_tag:  Cow::Borrowed(&tg),
+                session_tag:  tg,
                 counter:      Counter(42),
                 prev_counter: Counter(43),
                 ratchet_key:  Cow::Borrowed(&rk),
@@ -352,7 +363,7 @@ mod tests {
         });
 
         let m2 = Message::Plain(CipherMessage {
-            session_tag:  Cow::Borrowed(&tg),
+            session_tag:  tg,
             counter:      Counter(42),
             prev_counter: Counter(3),
             ratchet_key:  Cow::Borrowed(&rk),
