@@ -398,7 +398,7 @@ impl<'r> Session<'r> {
         let session_tag = SessionTag::new();
         let mut session = Session {
             version:         1,
-            session_tag:     session_tag.clone(),
+            session_tag:     session_tag,
             counter:         0,
             local_identity:  alice,
             remote_identity: pk.identity_key,
@@ -406,7 +406,7 @@ impl<'r> Session<'r> {
             session_states:  BTreeMap::new()
         };
 
-        session.insert_session_state(&session_tag, state);
+        session.insert_session_state(session_tag, state);
         session
     }
 
@@ -418,7 +418,7 @@ impl<'r> Session<'r> {
 
         let mut session = Session {
             version:         1,
-            session_tag:     (*pkmsg.message.session_tag).clone(),
+            session_tag:     pkmsg.message.session_tag,
             counter:         0,
             local_identity:  ours,
             remote_identity: (*pkmsg.identity_key).clone(),
@@ -429,7 +429,7 @@ impl<'r> Session<'r> {
         match try!(session.new_state(store, pkmsg)) {
             Some(mut s) => {
                 let plain = try!(s.decrypt(env, &pkmsg.message));
-                session.insert_session_state(&pkmsg.message.session_tag, s);
+                session.insert_session_state(pkmsg.message.session_tag, s);
                 if pkmsg.prekey_id != keys::MAX_PREKEY_ID {
                     try!(store.remove(pkmsg.prekey_id))
                 }
@@ -445,7 +445,7 @@ impl<'r> Session<'r> {
                              .ok_or(InternalError::NoSessionForTag)); // See note [session_tag]
         state.val.encrypt(&self.local_identity.public_key,
                           &self.pending_prekey,
-                          &self.session_tag,
+                          self.session_tag,
                           plain)
     }
 
@@ -470,7 +470,7 @@ impl<'r> Session<'r> {
                         if m.prekey_id != keys::MAX_PREKEY_ID {
                             try!(store.remove(m.prekey_id))
                         }
-                        self.insert_session_state(&m.message.session_tag, s);
+                        self.insert_session_state(m.message.session_tag, s);
                         self.pending_prekey = None;
                         Ok(plain)
                     }
@@ -487,7 +487,7 @@ impl<'r> Session<'r> {
         };
         let plain = try!(s.decrypt(env, &m));
         self.pending_prekey = None;
-        self.insert_session_state(&m.session_tag, s);
+        self.insert_session_state(m.session_tag, s);
         Ok(plain)
     }
 
@@ -522,21 +522,21 @@ impl<'r> Session<'r> {
     // state left is the one to be inserted, but if Alice and Bob do not
     // manage to agree on a session state within `usize::MAX` it is probably
     // of least concern.
-    fn insert_session_state(&mut self, t: &SessionTag, s: SessionState) {
-        if self.session_states.contains_key(t) {
-            self.session_states.get_mut(t).map(|x| x.val = s);
+    fn insert_session_state(&mut self, t: SessionTag, s: SessionState) {
+        if self.session_states.contains_key(&t) {
+            self.session_states.get_mut(&t).map(|x| x.val = s);
         } else {
             if self.counter == usize::MAX { // See note [counter_overflow]
                 self.session_states.clear();
                 self.counter = 0;
             }
-            self.session_states.insert(t.clone(), Indexed::new(self.counter, s));
+            self.session_states.insert(t, Indexed::new(self.counter, s));
             self.counter = self.counter + 1;
         }
 
         // See note [session_tag]
-        if self.session_tag != *t {
-            self.session_tag = t.clone();
+        if self.session_tag != t {
+            self.session_tag = t;
         }
 
         if self.session_states.len() < MAX_SESSION_STATES {
@@ -752,13 +752,13 @@ impl SessionState {
     fn encrypt<'r>(self:    &'r mut SessionState,
                    ident:   &'r IdentityKey,
                    pending: &'r Option<(PreKeyId, PublicKey)>,
-                   tag:     &'r SessionTag,
+                   tag:     SessionTag,
                    plain:   &[u8]) -> EncodeResult<Envelope>
     {
         let msgkeys = self.send_chain.chain_key.message_keys();
 
         let cmessage = CipherMessage {
-            session_tag:  Cow::Borrowed(tag),
+            session_tag:  tag,
             ratchet_key:  Cow::Borrowed(&self.send_chain.ratchet_key.public_key),
             counter:      self.send_chain.chain_key.idx,
             prev_counter: self.prev_counter,
