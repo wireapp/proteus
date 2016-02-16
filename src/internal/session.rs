@@ -539,20 +539,14 @@ impl<'r> Session<'r> {
             self.session_tag = t;
         }
 
-        if self.session_states.len() < MAX_SESSION_STATES {
-            return ()
+        // Too many states => remove the one with lowest counter value (= oldest)
+        if self.session_states.len() >= MAX_SESSION_STATES {
+            self.session_states.iter()
+                .filter(|s| s.0 != &self.session_tag)
+                .min_by_key(|s| s.1.idx)
+                .map(|s| s.0.clone())
+                .map(|k| self.session_states.remove(&k));
         }
-
-        self.session_states.iter()
-            .filter(|s| s.0 != &self.session_tag)
-            .fold(None, |x, (k, v)| {
-                match x {
-                    Some(ref s) if v.idx < s.idx => Some(Indexed::new(v.idx, k.clone())),
-                    Some(_) => x,
-                    None    => Some(Indexed::new(v.idx, k.clone()))
-                }
-            })
-            .map(|k| self.session_states.remove(&k.val));
     }
 
     pub fn local_identity(&self) -> &IdentityKey {
@@ -935,8 +929,10 @@ impl<E> From<E> for DecryptError<E> {
 mod tests {
     use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle, PreKeyAuth};
     use internal::keys::gen_prekeys;
-    use internal::message::{Counter, Envelope, Message};
+    use internal::message::{Counter, Envelope, Message, SessionTag};
+    use std::collections::BTreeMap;
     use std::fmt;
+    use std::usize;
     use std::vec::Vec;
     use super::*;
 
@@ -964,6 +960,9 @@ mod tests {
             Ok(())
         }
     }
+
+    #[derive(Debug, Copy, Clone, PartialEq)]
+    enum MsgType { Plain, Keyed }
 
     #[test]
     fn pathological_case() {
@@ -1034,9 +1033,9 @@ mod tests {
         assert_eq!(2, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains.len());
         assert_eq!(alice.remote_identity.fingerprint(), bob.local_identity.public_key.fingerprint());
         let ping_bob_1 = alice.encrypt(b"Ping1!").unwrap().into_owned();
-        assert_is_cipher_msg(&ping_bob_1);
+        assert_is_msg(&ping_bob_1, MsgType::Plain);
         let ping_bob_2 = alice.encrypt(b"Ping2!").unwrap().into_owned();
-        assert_is_cipher_msg(&ping_bob_2);
+        assert_is_msg(&ping_bob_2, MsgType::Plain);
         assert_prev_count(&alice, 2);
 
         // Bob
@@ -1140,9 +1139,11 @@ mod tests {
         // Initial simultaneous prekey message
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
         let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
+        assert_is_msg(&hello_bob, MsgType::Keyed);
 
         let mut bob     = Session::init_from_prekey(&bob_ident, alice_bundle);
         let hello_alice = bob.encrypt(b"Hello Alice!").unwrap().into_owned();
+        assert_is_msg(&hello_alice, MsgType::Keyed);
 
         assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
         assert_eq!(2, bob.session_states.len());
@@ -1152,9 +1153,11 @@ mod tests {
 
         // Non-simultaneous answer, which results in agreement of a session.
         let greet_bob = alice.encrypt(b"That was fast!").unwrap().into_owned();
+        assert_is_msg(&greet_bob, MsgType::Plain);
         assert_decrypt(b"That was fast!", bob.decrypt(&mut bob_store, &greet_bob));
 
         let answer_alice = bob.encrypt(b":-)").unwrap().into_owned();
+        assert_is_msg(&answer_alice, MsgType::Plain);
         assert_decrypt(b":-)", alice.decrypt(&mut alice_store, &answer_alice));
     }
 
@@ -1175,16 +1178,21 @@ mod tests {
         // Initial simultaneous prekey message
         let mut alice = Session::init_from_prekey(&alice_ident, bob_bundle);
         let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
+        assert_is_msg(&hello_bob, MsgType::Keyed);
 
         let mut bob     = Session::init_from_prekey(&bob_ident, alice_bundle);
         let hello_alice = bob.encrypt(b"Hello Alice!").unwrap().into_owned();
+        assert_is_msg(&hello_alice, MsgType::Keyed);
 
         assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
         assert_decrypt(b"Hello Alice!", alice.decrypt(&mut alice_store, &hello_alice));
 
         // Second simultaneous message
-        let echo_bob1   = alice.encrypt(b"Echo Bob1!").unwrap().into_owned();
+        let echo_bob1 = alice.encrypt(b"Echo Bob1!").unwrap().into_owned();
+        assert_is_msg(&echo_bob1, MsgType::Plain);
+
         let echo_alice1 = bob.encrypt(b"Echo Alice1!").unwrap().into_owned();
+        assert_is_msg(&echo_alice1, MsgType::Plain);
 
         assert_decrypt(b"Echo Bob1!", bob.decrypt(&mut bob_store, &echo_bob1));
         assert_eq!(2, bob.session_states.len());
@@ -1193,8 +1201,11 @@ mod tests {
         assert_eq!(2, alice.session_states.len());
 
         // Third simultaneous message
-        let echo_bob2   = alice.encrypt(b"Echo Bob2!").unwrap().into_owned();
+        let echo_bob2 = alice.encrypt(b"Echo Bob2!").unwrap().into_owned();
+        assert_is_msg(&echo_bob2, MsgType::Plain);
+
         let echo_alice2 = bob.encrypt(b"Echo Alice2!").unwrap().into_owned();
+        assert_is_msg(&echo_alice2, MsgType::Plain);
 
         assert_decrypt(b"Echo Bob2!", bob.decrypt(&mut bob_store, &echo_bob2));
         assert_eq!(2, bob.session_states.len());
@@ -1404,6 +1415,52 @@ mod tests {
         assert_eq!(PreKeyAuth::Valid, bob_bundle_signed.verify());
     }
 
+    #[test]
+    fn session_states_limit() {
+        let alice = IdentityKeyPair::new();
+        let bob   = IdentityKeyPair::new();
+
+        let mut bob_store = TestStore { prekeys: gen_prekeys(PreKeyId::new(0), 500) };
+
+        let get_bob = |i, store: &mut TestStore| {
+            PreKeyBundle::new(bob.public_key, &store.prekey(i).unwrap().unwrap())
+        };
+
+        let mut alice2bob = Session::init_from_prekey(&alice, get_bob(PreKeyId::new(1), &mut bob_store));
+        let mut hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
+        assert_is_msg(&hello_bob, MsgType::Keyed);
+
+        let mut bob2alice = Session::init_from_message(&bob, &mut bob_store, &hello_bob).unwrap().0;
+        assert_eq!(1, bob2alice.session_states.len());
+
+        // find oldest session state
+        let oldest = |m: &BTreeMap<SessionTag, Indexed<SessionState>>| {
+            let mut x = SessionTag::new();
+            let mut n = usize::MAX;
+            for (k, v) in m {
+                if v.idx < n {
+                    n = v.idx;
+                    x = k.clone()
+                }
+            }
+            x
+        };
+
+        for i in 2 .. 500 {
+            alice2bob = Session::init_from_prekey(&alice, get_bob(PreKeyId::new(i), &mut bob_store));
+            hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
+            assert_is_msg(&hello_bob, MsgType::Keyed);
+
+            let to_remove = oldest(&bob2alice.session_states);
+            assert_decrypt(b"Hello Bob!", bob2alice.decrypt(&mut bob_store, &hello_bob));
+            let n = bob2alice.session_states.len();
+            assert!(n < 100);
+            if i > 99 {
+                assert_eq!(false, bob2alice.session_states.contains_key(&to_remove))
+            }
+        }
+    }
+
     fn assert_decrypt<E>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>)
         where E: fmt::Debug
     {
@@ -1437,10 +1494,11 @@ mod tests {
         assert_eq!(expected, s.session_states.get(&s.session_tag).unwrap().val.prev_counter.value());
     }
 
-    fn assert_is_cipher_msg(e: &Envelope) {
+    fn assert_is_msg(e: &Envelope, t: MsgType) {
         match *e.message() {
-            Message::Plain(_) => (),
-            Message::Keyed(_) => panic!("not a cipher message")
+            Message::Plain(_) if t == MsgType::Plain => (),
+            Message::Keyed(_) if t == MsgType::Keyed => {},
+            _ => panic!("invalid message type")
         }
     }
 }
