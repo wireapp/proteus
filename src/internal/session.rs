@@ -449,14 +449,6 @@ impl<'r> Session<'r> {
                           plain)
     }
 
-    // Note [no_new_state]
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // In case we are given a prekey message but did not find a prekey for the
-    // given prekey ID, we assume the prekey has been used before to create
-    // a session state which we already have. Thus, we attempt encryption
-    // of the inner cipher message.  This is different from
-    // `Session::init_from_message` which returns a `PreKeyNotFound` error
-    // in this case.
     pub fn decrypt<S: PreKeyStore>(&mut self, store: &mut S, env: &Envelope) -> Result<Vec<u8>, DecryptError<S::Error>> {
         match *env.message() {
             Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
@@ -464,17 +456,21 @@ impl<'r> Session<'r> {
                 if *m.identity_key != self.remote_identity {
                     return Err(DecryptError::RemoteIdentityChanged)
                 }
-                match try!(self.new_state(store, m)) {
-                    Some(mut s) => {
-                        let plain = try!(s.decrypt(env, &m.message));
-                        if m.prekey_id != keys::MAX_PREKEY_ID {
-                            try!(store.remove(m.prekey_id))
-                        }
-                        self.insert_session_state(m.message.session_tag, s);
-                        self.pending_prekey = None;
-                        Ok(plain)
-                    }
-                    None => self.decrypt_cipher_message(env, &m.message) // See note [no_new_state]
+                match self.decrypt_cipher_message(env, &m.message) {
+                    e @ Err(DecryptError::InvalidSignature) | e @ Err(DecryptError::InvalidMessage) =>
+                        match try!(self.new_state(store, m)) {
+                            Some(mut s) => {
+                                let plain = try!(s.decrypt(env, &m.message));
+                                if m.prekey_id != keys::MAX_PREKEY_ID {
+                                    try!(store.remove(m.prekey_id))
+                                }
+                                self.insert_session_state(m.message.session_tag, s);
+                                self.pending_prekey = None;
+                                Ok(plain)
+                            }
+                            None => e
+                        },
+                    x => x
                 }
             }
         }
@@ -1458,6 +1454,55 @@ mod tests {
             if i > 99 {
                 assert_eq!(false, bob2alice.session_states.contains_key(&to_remove))
             }
+        }
+    }
+
+    #[test]
+    fn replaced_prekeys() {
+        let alice_ident = IdentityKeyPair::new();
+        let bob_ident   = IdentityKeyPair::new();
+
+        let mut bob_store1 = TestStore { prekeys: vec![PreKey::new(PreKeyId::new(1))] };
+        let mut bob_store2 = TestStore { prekeys: vec![PreKey::new(PreKeyId::new(1))] };
+
+        let bob_prekey = bob_store1.prekey(PreKeyId::new(1)).unwrap().unwrap();
+        let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
+
+        let mut alice  = Session::init_from_prekey(&alice_ident, bob_bundle);
+        let hello_bob1 = alice.encrypt(b"Hello Bob1!").unwrap().into_owned();
+
+        let mut bob = assert_init_from_message(&bob_ident, &mut bob_store1, &hello_bob1, b"Hello Bob1!");
+        assert_eq!(1, bob.session_states.len());
+
+        let hello_bob2 = alice.encrypt(b"Hello Bob2!").unwrap().into_owned();
+        assert_decrypt(b"Hello Bob2!", bob.decrypt(&mut bob_store1, &hello_bob2));
+        assert_eq!(1, bob.session_states.len());
+
+        let hello_bob3 = alice.encrypt(b"Hello Bob3!").unwrap().into_owned();
+        assert_decrypt(b"Hello Bob3!", bob.decrypt(&mut bob_store2, &hello_bob3));
+        assert_eq!(1, bob.session_states.len());
+    }
+
+    #[test]
+    fn max_counter_gap() {
+        let alice_ident = IdentityKeyPair::new();
+        let bob_ident   = IdentityKeyPair::new();
+
+        let mut bob_store = TestStore { prekeys: vec![PreKey::last_resort()] };
+
+        let bob_prekey = bob_store.prekey(PreKeyId::new(0xFFFF)).unwrap().unwrap();
+        let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
+
+        let mut alice  = Session::init_from_prekey(&alice_ident, bob_bundle);
+        let hello_bob1 = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
+
+        let mut bob = assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob1, b"Hello Bob!");
+        assert_eq!(1, bob.session_states.len());
+
+        for _ in 0 .. 1001 {
+            let hello_bob2 = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
+            assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob2));
+            assert_eq!(1, bob.session_states.len());
         }
     }
 
