@@ -1,4 +1,6 @@
 // Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+// Based on libsignal-protocol-java by Open Whisper Systems
+// https://github.com/WhisperSystems/libsignal-protocol-java.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by

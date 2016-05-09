@@ -1,4 +1,6 @@
 // Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+// Based on libsignal-protocol-java by Open Whisper Systems
+// https://github.com/WhisperSystems/libsignal-protocol-java.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -28,7 +30,7 @@ use std::vec::Vec;
 
 // Identity Key /////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct IdentityKey {
     pub public_key: PublicKey
 }
@@ -209,20 +211,20 @@ impl PreKeyBundle {
         PreKeyBundle {
             version:      1,
             prekey_id:    key.key_id,
-            public_key:   key.key_pair.public_key,
+            public_key:   key.key_pair.public_key.clone(),
             identity_key: ident,
             signature:    None
         }
     }
 
     pub fn signed(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
-        let ratchet_key = key.key_pair.public_key;
+        let ratchet_key = key.key_pair.public_key.clone();
         let signature   = ident.secret_key.sign(&ratchet_key.pub_edward.0);
         PreKeyBundle {
             version:      1,
             prekey_id:    key.key_id,
             public_key:   ratchet_key,
-            identity_key: ident.public_key,
+            identity_key: ident.public_key.clone(),
             signature:    Some(signature)
         }
     }
@@ -413,7 +415,7 @@ impl SecretKey {
 
 // PublicKey ////////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct PublicKey {
     pub_edward: sign::PublicKey,
     pub_curve:  ecdh::GroupElement
