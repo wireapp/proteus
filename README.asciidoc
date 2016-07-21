@@ -6,10 +6,6 @@ You can find the published source code at https://github.com/wireapp[github.com/
 
 For licensing information, see the attached LICENSE file and the list of third-party licenses at https://wire.com/legal/licenses/[wire.com/legal/licenses/].
 
-## Contributions
-
-Wire is in the process of releasing source code, but is not yet actively developing in all open source repositories. For this reason, we are not able to accept all pull requests at the moment.
-
 = Proteus
 
 // Links
