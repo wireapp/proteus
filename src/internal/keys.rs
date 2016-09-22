@@ -190,14 +190,14 @@ pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
 
 // Prekey bundle ////////////////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PreKeyAuth {
     Invalid,
     Valid,
     Unknown
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PreKeyBundle {
     pub version:      u8,
     pub prekey_id:    PreKeyId,
