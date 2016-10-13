@@ -24,7 +24,7 @@ use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyI
 use internal::keys::{KeyPair, PublicKey};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
 use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
@@ -365,11 +365,11 @@ impl<A> Indexed<A> {
 // `Session::encrypt` can not succeed. The only places where we change
 // it after initialisation is in `Session::insert_session_state` which
 // sets it to the value of the state which is inserted.
-pub struct Session<'r> {
+pub struct Session<I> {
     version:         u8,
     session_tag:     SessionTag,
     counter:         usize,
-    local_identity:  &'r IdentityKeyPair,
+    local_identity:  I,
     remote_identity: IdentityKey,
     pending_prekey:  Option<(PreKeyId, PublicKey)>,
     session_states:  BTreeMap<SessionTag, Indexed<SessionState>>
@@ -388,11 +388,11 @@ struct BobParams<'r> {
     alice_base:    &'r PublicKey
 }
 
-impl<'r> Session<'r> {
-    pub fn init_from_prekey(alice: &'r IdentityKeyPair, pk: PreKeyBundle) -> Session<'r> {
+impl<I: Borrow<IdentityKeyPair>> Session<I> {
+    pub fn init_from_prekey(alice: I, pk: PreKeyBundle) -> Session<I> {
         let alice_base = KeyPair::new();
         let state      = SessionState::init_as_alice(AliceParams {
-            alice_ident: alice,
+            alice_ident: alice.borrow(),
             alice_base:  &alice_base,
             bob:         &pk
         });
@@ -412,7 +412,7 @@ impl<'r> Session<'r> {
         session
     }
 
-    pub fn init_from_message<S: PreKeyStore>(ours: &'r IdentityKeyPair, store: &mut S, env: &Envelope) -> Result<(Session<'r>, Vec<u8>), DecryptError<S::Error>> {
+    pub fn init_from_message<S: PreKeyStore>(ours: I, store: &mut S, env: &Envelope) -> Result<(Session<I>, Vec<u8>), DecryptError<S::Error>> {
         let pkmsg = match *env.message() {
             Message::Plain(_)     => return Err(DecryptError::InvalidMessage),
             Message::Keyed(ref m) => m
@@ -445,7 +445,7 @@ impl<'r> Session<'r> {
         let state = try!(self.session_states
                              .get_mut(&self.session_tag)
                              .ok_or(InternalError::NoSessionForTag)); // See note [session_tag]
-        state.val.encrypt(&self.local_identity.public_key,
+        state.val.encrypt(&self.local_identity.borrow().public_key,
                           &self.pending_prekey,
                           self.session_tag,
                           plain)
@@ -497,7 +497,7 @@ impl<'r> Session<'r> {
     fn new_state<S: PreKeyStore>(&self, store: &mut S, m: &PreKeyMessage) -> Result<Option<SessionState>, DecryptError<S::Error>> {
         let s = try!(store.prekey(m.prekey_id)).map(|prekey| {
             SessionState::init_as_bob(BobParams {
-                bob_ident:   self.local_identity,
+                bob_ident:   self.local_identity.borrow(),
                 bob_prekey:  prekey.key_pair,
                 alice_ident: &m.identity_key,
                 alice_base:  &m.base_key
@@ -548,7 +548,7 @@ impl<'r> Session<'r> {
     }
 
     pub fn local_identity(&self) -> &IdentityKey {
-        &self.local_identity.public_key
+        &self.local_identity.borrow().public_key
     }
 
     pub fn remote_identity(&self) -> &IdentityKey {
@@ -561,7 +561,7 @@ impl<'r> Session<'r> {
         Ok(e.into_writer().into_inner())
     }
 
-    pub fn deserialise(ident: &'r IdentityKeyPair, b: &[u8]) -> DecodeResult<Session<'r>> {
+    pub fn deserialise(ident: I, b: &[u8]) -> DecodeResult<Session<I>> {
         Session::decode(ident, &mut Decoder::new(Config::default(), Cursor::new(b)))
     }
 
@@ -569,7 +569,7 @@ impl<'r> Session<'r> {
         try!(e.object(6));
         try!(e.u8(0)); try!(e.u8(self.version));
         try!(e.u8(1)); try!(self.session_tag.encode(e));
-        try!(e.u8(2)); try!(self.local_identity.public_key.encode(e));
+        try!(e.u8(2)); try!(self.local_identity.borrow().public_key.encode(e));
         try!(e.u8(3)); try!(self.remote_identity.encode(e));
         try!(e.u8(4));
         {
@@ -593,7 +593,7 @@ impl<'r> Session<'r> {
         Ok(())
     }
 
-    pub fn decode<'s, R: Read + Skip>(ident: &'s IdentityKeyPair, d: &mut Decoder<R>) -> DecodeResult<Session<'s>> {
+    pub fn decode<R: Read + Skip>(ident: I, d: &mut Decoder<R>) -> DecodeResult<Session<I>> {
         let n = try!(d.object());
         let mut version         = None;
         let mut session_tag     = None;
@@ -607,7 +607,7 @@ impl<'r> Session<'r> {
                 1 => session_tag = Some(try!(SessionTag::decode(d))),
                 2 => {
                     let li = try!(IdentityKey::decode(d));
-                    if ident.public_key != li {
+                    if ident.borrow().public_key != li {
                         return Err(DecodeError::LocalIdentityChanged(li))
                     }
                 }
@@ -928,6 +928,7 @@ mod tests {
     use internal::keys::{IdentityKeyPair, PreKey, PreKeyId, PreKeyBundle, PreKeyAuth};
     use internal::keys::gen_prekeys;
     use internal::message::{Counter, Envelope, Message, SessionTag};
+    use std::borrow::Borrow;
     use std::collections::BTreeMap;
     use std::fmt;
     use std::usize;
@@ -1520,7 +1521,7 @@ mod tests {
         }
     }
 
-    fn assert_init_from_message<'r, S>(i: &'r IdentityKeyPair, s: &mut S, m: &Envelope, t: &[u8]) -> Session<'r>
+    fn assert_init_from_message<'r, S>(i: &'r IdentityKeyPair, s: &mut S, m: &Envelope, t: &[u8]) -> Session<&'r IdentityKeyPair>
         where S: PreKeyStore,
               S::Error: fmt::Debug
     {
@@ -1537,7 +1538,7 @@ mod tests {
         }
     }
 
-    fn assert_prev_count(s: &Session, expected: u32) {
+    fn assert_prev_count<I: Borrow<IdentityKeyPair>>(s: &Session<I>, expected: u32) {
         assert_eq!(expected, s.session_states.get(&s.session_tag).unwrap().val.prev_counter.value());
     }
 
