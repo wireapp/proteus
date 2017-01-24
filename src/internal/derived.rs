@@ -42,8 +42,8 @@ impl DerivedSecrets {
         let len = Len::new(64).expect("Unexpected hkdf::HASH_LEN.");
         let okm = hkdf(salt, input, info, len);
 
-        ck.as_mut().write_all(&okm[0  .. 32]).unwrap();
-        mk.as_mut().write_all(&okm[32 .. 64]).unwrap();
+        ck.as_mut().write_all(&okm.0[0  .. 32]).unwrap();
+        mk.as_mut().write_all(&okm.0[32 .. 64]).unwrap();
 
         DerivedSecrets {
             cipher_key: CipherKey::new(ck),
