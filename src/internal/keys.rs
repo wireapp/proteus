@@ -333,8 +333,8 @@ impl KeyPair {
     pub fn new() -> KeyPair {
         let (p, s) = sign::gen_keypair();
 
-        let es = from_ed25519_sk(&s);
-        let ep = from_ed25519_pk(&p);
+        let es = from_ed25519_sk(&s).expect("invalid ed25519 secret key");
+        let ep = from_ed25519_pk(&p).expect("invalid ed25519 public key");
 
         KeyPair {
             secret_key: SecretKey {
@@ -405,10 +405,21 @@ impl SecretKey {
                 _ => try!(d.skip())
             }
         }
-        let sec_curve = sec_edward.as_ref().map(|ed| ecdh::Scalar(from_ed25519_sk(ed)));
+        let sec_edward =
+            if let Some(se) = sec_edward {
+                se
+            } else {
+                return Err(DecodeError::MissingField("SecretKey::sec_edward"))
+            };
+        let sec_curve =
+            if let Some(sc) = from_ed25519_sk(&sec_edward).map(ecdh::Scalar) {
+                sc
+            } else {
+                return Err(DecodeError::InvalidField("SecretKey::sec_edward"))
+            };
         Ok(SecretKey {
-            sec_edward: to_field!(sec_edward, "SecretKey::sec_edward"),
-            sec_curve:  to_field!(sec_curve, "SecretKey::sec_curve")
+            sec_edward: sec_edward,
+            sec_curve:  sec_curve
         })
     }
 }
@@ -461,10 +472,21 @@ impl PublicKey {
                 _ => try!(d.skip())
             }
         }
-        let pub_curve = pub_edward.as_ref().map(|ed| ecdh::GroupElement(from_ed25519_pk(ed)));
+        let pub_edward =
+            if let Some(pe) = pub_edward {
+                pe
+            } else {
+                return Err(DecodeError::MissingField("PublicKey::pub_edward"))
+            };
+        let pub_curve =
+            if let Some(pc) = from_ed25519_pk(&pub_edward).map(ecdh::GroupElement) {
+                pc
+            } else {
+                return Err(DecodeError::InvalidField("PublicKey::pub_edward"))
+            };
         Ok(PublicKey {
-            pub_edward: to_field!(pub_edward, "PublicKey::pub_edward"),
-            pub_curve:  to_field!(pub_curve, "PublicKey::pub_curve")
+            pub_edward: pub_edward,
+            pub_curve:  pub_curve
         })
     }
 }
@@ -506,20 +528,26 @@ impl Signature {
 
 // Internal /////////////////////////////////////////////////////////////////
 
-pub fn from_ed25519_pk(k: &sign::PublicKey) -> [u8; ecdh::GROUPELEMENTBYTES] {
+pub fn from_ed25519_pk(k: &sign::PublicKey) -> Option<[u8; ecdh::GROUPELEMENTBYTES]> {
     let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
     unsafe {
-        ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr());
+        if ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
+            Some(ep)
+        } else {
+            None
+        }
     }
-    ep
 }
 
-pub fn from_ed25519_sk(k: &sign::SecretKey) -> [u8; ecdh::SCALARBYTES] {
+pub fn from_ed25519_sk(k: &sign::SecretKey) -> Option<[u8; ecdh::SCALARBYTES]> {
     let mut es = [0u8; ecdh::SCALARBYTES];
     unsafe {
-        ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr());
+        if ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
+            Some(es)
+        } else {
+            None
+        }
     }
-    es
 }
 
 // Tests ////////////////////////////////////////////////////////////////////
