@@ -94,7 +94,8 @@ pub enum DecodeError {
     LocalIdentityChanged(IdentityKey),
     InvalidType(u8, &'static str),
     MissingField(&'static str),
-    InvalidField(&'static str)
+    InvalidField(&'static str),
+    DuplicateField(&'static str)
 }
 
 impl fmt::Display for DecodeError {
@@ -105,7 +106,8 @@ impl fmt::Display for DecodeError {
             DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
             DecodeError::InvalidType(t, ref s)   => write!(f, "Invalid type {}: {}", t, s),
             DecodeError::MissingField(ref s)     => write!(f, "Missing field: {}", s),
-            DecodeError::InvalidField(ref s)     => write!(f, "Invalid field: {}", s)
+            DecodeError::InvalidField(ref s)     => write!(f, "Invalid field: {}", s),
+            DecodeError::DuplicateField(ref s)   => write!(f, "Duplicate field: {}", s),
         }
     }
 }
