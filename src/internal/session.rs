@@ -15,6 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std;
+use std::borrow::{Borrow, Cow};
+use std::cmp::{Ord, Ordering};
+use std::collections::{BTreeMap, VecDeque};
+use std::fmt;
+use std::io::{Cursor, Read, Write};
+use std::usize;
+
 use cbor::{self, Config, Decoder, Encoder};
 use cbor::skip::Skip;
 use hkdf::{Input, Info, Salt};
@@ -23,14 +31,6 @@ use internal::keys::{self, KeyPair, PublicKey};
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, PreKey, PreKeyId};
 use internal::message::{Counter, PreKeyMessage, Envelope, Message, CipherMessage, SessionTag};
 use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
-use std::borrow::{Borrow, Cow};
-use std::cmp::{Ord, Ordering};
-use std::collections::{BTreeMap, VecDeque};
-use std::error::Error;
-use std::fmt;
-use std::io::{Cursor, Read, Write};
-use std::usize;
-use std::vec::Vec;
 
 // Root key /////////////////////////////////////////////////////////////////
 
@@ -44,7 +44,7 @@ impl RootKey {
         RootKey { key: k }
     }
 
-    pub fn dh_ratchet<E>(&self, ours: &KeyPair, theirs: &PublicKey) -> Result<(RootKey, ChainKey), DecryptError<E>> {
+    pub fn dh_ratchet<E>(&self, ours: &KeyPair, theirs: &PublicKey) -> Result<(RootKey, ChainKey), Error<E>> {
         let secret = ours.secret_key.shared_secret(theirs)?;
         let dsecs  = DerivedSecrets::kdf(Input(&secret), Salt(&self.key), Info(b"dh_ratchet"));
         Ok((RootKey::from_cipher_key(dsecs.cipher_key), ChainKey::from_mac_key(dsecs.mac_key, Counter::zero())))
@@ -179,13 +179,13 @@ impl RecvChain {
         }
     }
 
-    fn try_message_keys<E>(&mut self, env: &Envelope, mesg: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
+    fn try_message_keys<E>(&mut self, env: &Envelope, mesg: &CipherMessage) -> Result<Vec<u8>, Error<E>> {
         let too_old = self.message_keys.get(0)
             .map(|k| k.counter > mesg.counter)
             .unwrap_or(false);
 
         if too_old {
-            return Err(DecryptError::OutdatedMessage)
+            return Err(Error::OutdatedMessage)
         }
 
         match self.message_keys.iter().position(|mk| mk.counter == mesg.counter) {
@@ -194,18 +194,18 @@ impl RecvChain {
                 if env.verify(&mk.mac_key) {
                     Ok(mk.decrypt(&mesg.cipher_text))
                 } else {
-                    Err(DecryptError::InvalidSignature)
+                    Err(Error::InvalidSignature)
                 }
             }
-            None => Err(DecryptError::DuplicateMessage)
+            None => Err(Error::DuplicateMessage)
         }
     }
 
-    fn stage_message_keys<E>(&self, msg: &CipherMessage) -> Result<(ChainKey, MessageKeys, VecDeque<MessageKeys>), DecryptError<E>> {
+    fn stage_message_keys<E>(&self, msg: &CipherMessage) -> Result<(ChainKey, MessageKeys, VecDeque<MessageKeys>), Error<E>> {
         let num = (msg.counter.value() - self.chain_key.idx.value()) as usize;
 
         if num > MAX_COUNTER_GAP {
-            return Err(DecryptError::TooDistantFuture)
+            return Err(Error::TooDistantFuture)
         }
 
         let mut buf = VecDeque::with_capacity(num);
@@ -388,7 +388,7 @@ struct BobParams<'r> {
 }
 
 impl<I: Borrow<IdentityKeyPair>> Session<I> {
-    pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> Result<Session<I>, DecryptError<E>> {
+    pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> Result<Session<I>, Error<E>> {
         let alice_base = KeyPair::new();
         let state      = SessionState::init_as_alice(AliceParams {
             alice_ident: alice.borrow(),
@@ -411,9 +411,9 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         Ok(session)
     }
 
-    pub fn init_from_message<S: PreKeyStore>(ours: I, store: &mut S, env: &Envelope) -> Result<(Session<I>, Vec<u8>), DecryptError<S::Error>> {
+    pub fn init_from_message<S: PreKeyStore>(ours: I, store: &mut S, env: &Envelope) -> Result<(Session<I>, Vec<u8>), Error<S::Error>> {
         let pkmsg = match *env.message() {
-            Message::Plain(_)     => return Err(DecryptError::InvalidMessage),
+            Message::Plain(_)     => return Err(Error::InvalidMessage),
             Message::Keyed(ref m) => m
         };
 
@@ -432,11 +432,11 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 let plain = try!(s.decrypt(env, &pkmsg.message));
                 session.insert_session_state(pkmsg.message.session_tag, s);
                 if pkmsg.prekey_id != keys::MAX_PREKEY_ID {
-                    store.remove(pkmsg.prekey_id).map_err(DecryptError::PreKeyStoreError)?
+                    store.remove(pkmsg.prekey_id).map_err(Error::PreKeyStoreError)?
                 }
                 Ok((session, plain))
             }
-            None => Err(DecryptError::PreKeyNotFound(pkmsg.prekey_id))
+            None => Err(Error::PreKeyNotFound(pkmsg.prekey_id))
         }
     }
 
@@ -450,20 +450,20 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                           plain)
     }
 
-    pub fn decrypt<S: PreKeyStore>(&mut self, store: &mut S, env: &Envelope) -> Result<Vec<u8>, DecryptError<S::Error>> {
+    pub fn decrypt<S: PreKeyStore>(&mut self, store: &mut S, env: &Envelope) -> Result<Vec<u8>, Error<S::Error>> {
         match *env.message() {
             Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
             Message::Keyed(ref m) => {
                 if *m.identity_key != self.remote_identity {
-                    return Err(DecryptError::RemoteIdentityChanged)
+                    return Err(Error::RemoteIdentityChanged)
                 }
                 match self.decrypt_cipher_message(env, &m.message) {
-                    e @ Err(DecryptError::InvalidSignature) | e @ Err(DecryptError::InvalidMessage) =>
+                    e @ Err(Error::InvalidSignature) | e @ Err(Error::InvalidMessage) =>
                         match try!(self.new_state(store, m)) {
                             Some(mut s) => {
                                 let plain = try!(s.decrypt(env, &m.message));
                                 if m.prekey_id != keys::MAX_PREKEY_ID {
-                                    store.remove(m.prekey_id).map_err(DecryptError::PreKeyStoreError)?
+                                    store.remove(m.prekey_id).map_err(Error::PreKeyStoreError)?
                                 }
                                 self.insert_session_state(m.message.session_tag, s);
                                 self.pending_prekey = None;
@@ -477,10 +477,10 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         }
     }
 
-    fn decrypt_cipher_message<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
+    fn decrypt_cipher_message<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, Error<E>> {
         let mut s = match self.session_states.get_mut(&m.session_tag) {
             Some(s) => s.val.clone(),
-            None    => return Err(DecryptError::InvalidMessage)
+            None    => return Err(Error::InvalidMessage)
         };
         let plain = try!(s.decrypt(env, &m));
         self.pending_prekey = None;
@@ -493,8 +493,8 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     // newly created state. It is the caller's responsibility to remove the
     // prekey from the store.
     // See note [no_new_state] for those cases where no prekey has been found.
-    fn new_state<S: PreKeyStore>(&self, store: &mut S, m: &PreKeyMessage) -> Result<Option<SessionState>, DecryptError<S::Error>> {
-        if let Some(prekey) = store.prekey(m.prekey_id).map_err(DecryptError::PreKeyStoreError)? {
+    fn new_state<S: PreKeyStore>(&self, store: &mut S, m: &PreKeyMessage) -> Result<Option<SessionState>, Error<S::Error>> {
+        if let Some(prekey) = store.prekey(m.prekey_id).map_err(Error::PreKeyStoreError)? {
             let s = SessionState::init_as_bob(BobParams {
                 bob_ident:   self.local_identity.borrow(),
                 bob_prekey:  prekey.key_pair,
@@ -665,7 +665,7 @@ pub struct SessionState {
 }
 
 impl SessionState {
-    fn init_as_alice<E>(p: AliceParams) -> Result<SessionState, DecryptError<E>> {
+    fn init_as_alice<E>(p: AliceParams) -> Result<SessionState, Error<E>> {
         let master_key = {
             let mut buf = Vec::new();
             buf.extend(&p.alice_ident.secret_key.shared_secret(&p.bob.public_key)?);
@@ -696,7 +696,7 @@ impl SessionState {
         })
     }
 
-    fn init_as_bob<E>(p: BobParams) -> Result<SessionState, DecryptError<E>> {
+    fn init_as_bob<E>(p: BobParams) -> Result<SessionState, Error<E>> {
         let master_key = {
             let mut buf = Vec::new();
             buf.extend(&p.bob_prekey.secret_key.shared_secret(&p.alice_ident.public_key)?);
@@ -720,7 +720,7 @@ impl SessionState {
         })
     }
 
-    fn ratchet<E>(&mut self, ratchet_key: PublicKey) -> Result<(), DecryptError<E>> {
+    fn ratchet<E>(&mut self, ratchet_key: PublicKey) -> Result<(), Error<E>> {
         let new_ratchet = KeyPair::new();
 
         let (recv_root_key, recv_chain_key) =
@@ -775,7 +775,7 @@ impl SessionState {
         env
     }
 
-    fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, DecryptError<E>> {
+    fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, Error<E>> {
         let mut rchain =
             match self.recv_chains.iter().position(|c| c.ratchet_key == *m.ratchet_key) {
                 Some(i) => &mut self.recv_chains[i],
@@ -790,7 +790,7 @@ impl SessionState {
             Ordering::Greater => {
                 let (chk, mk, mks) = try!(rchain.stage_message_keys(m));
                 if !env.verify(&mk.mac_key) {
-                    return Err(DecryptError::InvalidSignature)
+                    return Err(Error::InvalidSignature)
                 }
                 let plain = mk.decrypt(&m.cipher_text);
                 rchain.chain_key = chk.next();
@@ -800,7 +800,7 @@ impl SessionState {
             Ordering::Equal => {
                 let mks = rchain.chain_key.message_keys();
                 if !env.verify(&mks.mac_key) {
-                    return Err(DecryptError::InvalidSignature)
+                    return Err(Error::InvalidSignature)
                 }
                 let plain = mks.decrypt(&m.cipher_text);
                 rchain.chain_key = rchain.chain_key.next();
@@ -859,7 +859,7 @@ impl SessionState {
 // Decrypt Error ////////////////////////////////////////////////////////////
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub enum DecryptError<E> {
+pub enum Error<E> {
     RemoteIdentityChanged,
     InvalidSignature,
     InvalidMessage,
@@ -871,58 +871,58 @@ pub enum DecryptError<E> {
     DegeneratedKey
 }
 
-impl<E> DecryptError<E> {
+impl<E> Error<E> {
     fn as_str(&self) -> &str {
         match *self {
-            DecryptError::RemoteIdentityChanged => "RemoteIdentityChanged",
-            DecryptError::InvalidSignature      => "InvalidSignature",
-            DecryptError::InvalidMessage        => "InvalidMessage",
-            DecryptError::DuplicateMessage      => "DuplicateMessage",
-            DecryptError::TooDistantFuture      => "TooDistantFuture",
-            DecryptError::OutdatedMessage       => "OutdatedMessage",
-            DecryptError::PreKeyNotFound(_)     => "PreKeyNotFound",
-            DecryptError::PreKeyStoreError(_)   => "PreKeyStoreError",
-            DecryptError::DegeneratedKey        => "DegeneratedKey"
+            Error::RemoteIdentityChanged => "RemoteIdentityChanged",
+            Error::InvalidSignature      => "InvalidSignature",
+            Error::InvalidMessage        => "InvalidMessage",
+            Error::DuplicateMessage      => "DuplicateMessage",
+            Error::TooDistantFuture      => "TooDistantFuture",
+            Error::OutdatedMessage       => "OutdatedMessage",
+            Error::PreKeyNotFound(_)     => "PreKeyNotFound",
+            Error::PreKeyStoreError(_)   => "PreKeyStoreError",
+            Error::DegeneratedKey        => "DegeneratedKey"
         }
     }
 }
 
-impl<E: fmt::Debug> fmt::Debug for DecryptError<E> {
+impl<E: fmt::Debug> fmt::Debug for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            DecryptError::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {:?}", e),
-            DecryptError::PreKeyNotFound(i)       => write!(f, "PreKeyNotFound: {:?}", i),
-            _                                     => f.write_str(self.as_str())
+            Error::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {:?}", e),
+            Error::PreKeyNotFound(i)       => write!(f, "PreKeyNotFound: {:?}", i),
+            _                              => f.write_str(self.as_str())
         }
     }
 }
 
-impl<E: fmt::Display> fmt::Display for DecryptError<E> {
+impl<E: fmt::Display> fmt::Display for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            DecryptError::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {}", e),
-            DecryptError::PreKeyNotFound(i)       => write!(f, "PreKeyNotFound: {}", i),
-            _                                     => f.write_str(self.as_str())
+            Error::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {}", e),
+            Error::PreKeyNotFound(i)       => write!(f, "PreKeyNotFound: {}", i),
+            _                              => f.write_str(self.as_str())
         }
     }
 }
 
-impl<E: Error> Error for DecryptError<E> {
+impl<E: std::error::Error> std::error::Error for Error<E> {
     fn description(&self) -> &str {
         self.as_str()
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&std::error::Error> {
         match *self {
-            DecryptError::PreKeyStoreError(ref e) => Some(e),
-            _                                     => None
+            Error::PreKeyStoreError(ref e) => Some(e),
+            _                              => None
         }
     }
 }
 
-impl<E> From<keys::Zero> for DecryptError<E> {
-    fn from(_: keys::Zero) -> DecryptError<E> {
-        DecryptError::DegeneratedKey
+impl<E> From<keys::Zero> for Error<E> {
+    fn from(_: keys::Zero) -> Error<E> {
+        Error::DegeneratedKey
     }
 }
 
@@ -1099,7 +1099,7 @@ mod tests {
         assert_eq!(0, alice.session_states.get(&alice.session_tag).unwrap().val.recv_chains[0].message_keys.len());
 
         for m in &vec![hello1, hello2, hello3, hello4, hello5] {
-            assert_eq!(Some(DecryptError::DuplicateMessage), alice.decrypt(&mut alice_store, m).err());
+            assert_eq!(Some(Error::DuplicateMessage), alice.decrypt(&mut alice_store, m).err());
         }
     }
 
@@ -1288,7 +1288,7 @@ mod tests {
         // With a PreKeyStore that eagerly deletes prekeys, like the TestStore,
         // the prekey will be gone and a retry cause an error (and thus a lost message).
         match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob) {
-            Err(DecryptError::PreKeyNotFound(_)) => {} // expected
+            Err(Error::PreKeyNotFound(_)) => {} // expected
             Err(e) => { panic!(format!("{:?}", e)) }
             Ok(_)  => { panic!("Unexpected success on retrying init_from_message") }
         }
@@ -1514,7 +1514,7 @@ mod tests {
         }
     }
 
-    fn assert_decrypt<E>(expected: &[u8], actual: Result<Vec<u8>, DecryptError<E>>)
+    fn assert_decrypt<E>(expected: &[u8], actual: Result<Vec<u8>, Error<E>>)
         where E: fmt::Debug
     {
         match actual {
