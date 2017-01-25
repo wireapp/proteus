@@ -60,7 +60,7 @@ impl RootKey {
         let mut key = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => key = Some(CipherKey::decode(d)?),
+                0 => uniq!("RootKey::key", key, CipherKey::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -110,8 +110,8 @@ impl ChainKey {
         let mut idx = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => key = Some(MacKey::decode(d)?),
-                1 => idx = Some(Counter::decode(d)?),
+                0 => uniq!("ChainKey::key", key, MacKey::decode(d)?),
+                1 => uniq!("ChainKey::idx", idx, Counter::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -147,8 +147,8 @@ impl SendChain {
         let mut ratchet_key = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => chain_key   = Some(ChainKey::decode(d)?),
-                1 => ratchet_key = Some(KeyPair::decode(d)?),
+                0 => uniq!("SendChain::chain_key", chain_key, ChainKey::decode(d)?),
+                1 => uniq!("SendChain::ratchet_key", ratchet_key, KeyPair::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -259,16 +259,16 @@ impl RecvChain {
         let mut message_keys = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => chain_key   = Some(ChainKey::decode(d)?),
-                1 => ratchet_key = Some(PublicKey::decode(d)?),
-                2 => {
+                0 => uniq!("RecvChain::chain_key", chain_key, ChainKey::decode(d)?),
+                1 => uniq!("RecvChain::ratchet_key", ratchet_key, PublicKey::decode(d)?),
+                2 => uniq!("RecvChain::message_keys", message_keys, {
                     let lv = d.array()?;
                     let mut vm = VecDeque::with_capacity(lv);
                     for _ in 0 .. lv {
                         vm.push_back(MessageKeys::decode(d)?)
                     }
-                    message_keys = Some(vm)
-                }
+                    vm
+                }),
                 _ => d.skip()?
             }
         }
@@ -312,9 +312,9 @@ impl MessageKeys {
         let mut counter    = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => cipher_key = Some(CipherKey::decode(d)?),
-                1 => mac_key    = Some(MacKey::decode(d)?),
-                2 => counter    = Some(Counter::decode(d)?),
+                0 => uniq!("MessageKeys::cipher_key", cipher_key, CipherKey::decode(d)?),
+                1 => uniq!("MessageKeys::mac_key", mac_key, MacKey::decode(d)?),
+                2 => uniq!("MessageKeys::counter", counter, Counter::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -604,31 +604,32 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         let mut session_states  = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => version     = Some(d.u8()?),
-                1 => session_tag = Some(SessionTag::decode(d)?),
+                0 => uniq!("Session::version", version, d.u8()?),
+                1 => uniq!("Session::session_tag", session_tag, SessionTag::decode(d)?),
                 2 => {
                     let li = IdentityKey::decode(d)?;
                     if ident.borrow().public_key != li {
                         return Err(DecodeError::LocalIdentityChanged(li))
                     }
                 }
-                3 => remote_identity = Some(IdentityKey::decode(d)?),
-                4 => if let Some(n) = cbor::opt(d.object())? {
+                3 => uniq!("Session::remote_identity", remote_identity, IdentityKey::decode(d)?),
+                4 => uniq!("Session::pending_prekey", pending_prekey, {
+                    if let Some(n) = cbor::opt(d.object())? {
                         let mut id = None;
                         let mut pk = None;
                         for _ in 0 .. n {
                             match d.u8()? {
-                                0 => id = Some(PreKeyId::decode(d)?),
-                                1 => pk = Some(PublicKey::decode(d)?),
+                                0 => uniq!("PendingPreKey::id", id, PreKeyId::decode(d)?),
+                                1 => uniq!("PendingPreKey::pk", pk, PublicKey::decode(d)?),
                                 _ => d.skip()?
                             }
                         }
-                        pending_prekey = Some((
-                            to_field!(id, "Session::pending_prekey_id"),
-                            to_field!(pk, "Session::pending_prekey")
-                        ))
-                },
-                5 => {
+                        Some((to_field!(id, "Session::pending_prekey_id"), to_field!(pk, "Session::pending_prekey")))
+                    } else {
+                        None
+                    }
+                }),
+                5 => uniq!("Session::session_states", session_states, {
                     let ls = d.object()?;
                     let mut rb = BTreeMap::new();
                     for _ in 0 .. ls {
@@ -637,8 +638,8 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                         rb.insert(t, Indexed::new(counter, s));
                         counter = counter + 1
                     }
-                    session_states = Some(rb)
-                }
+                    rb
+                }),
                 _ => d.skip()?
             }
         }
@@ -648,7 +649,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             counter:         counter,
             local_identity:  ident,
             remote_identity: to_field!(remote_identity, "Session::remote_identity"),
-            pending_prekey:  pending_prekey,
+            pending_prekey:  pending_prekey.unwrap_or(None),
             session_states:  to_field!(session_states, "Session::session_states")
         })
     }
@@ -833,17 +834,17 @@ impl SessionState {
         let mut prev_counter    = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => {
+                0 => uniq!("SessionState::recv_chains", recv_chains, {
                     let lr = d.array()?;
                     let mut rr = VecDeque::with_capacity(lr);
                     for _ in 0 .. lr {
                         rr.push_back(RecvChain::decode(d)?)
                     }
-                    recv_chains = Some(rr)
-                }
-                1 => send_chain   = Some(SendChain::decode(d)?),
-                2 => root_key     = Some(RootKey::decode(d)?),
-                3 => prev_counter = Some(Counter::decode(d)?),
+                    rr
+                }),
+                1 => uniq!("SessionState::send_chain", send_chain, SendChain::decode(d)?),
+                2 => uniq!("SessionState::root_key", root_key, RootKey::decode(d)?),
+                3 => uniq!("SessionState::prev_counter", prev_counter, Counter::decode(d)?),
                 _ => d.skip()?
             }
         }

@@ -34,6 +34,16 @@ macro_rules! to_field {
     }
 }
 
+macro_rules! uniq {
+    ($msg: expr, $name: ident, $action: expr) => {
+        if $name.is_some() {
+            return Err(DecodeError::DuplicateField($msg))
+        } else {
+            $name = Some($action)
+        }
+    }
+}
+
 // Optional Values //////////////////////////////////////////////////////////
 
 pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {

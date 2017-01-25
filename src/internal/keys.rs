@@ -55,7 +55,7 @@ impl IdentityKey {
         let mut public_key = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => public_key = Some(PublicKey::decode(d)?),
+                0 => uniq!("IdentityKey::public_key", public_key, PublicKey::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -108,9 +108,9 @@ impl IdentityKeyPair {
         let mut public_key = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => version    = Some(d.u8()?),
-                1 => secret_key = Some(SecretKey::decode(d)?),
-                2 => public_key = Some(IdentityKey::decode(d)?),
+                0 => uniq!("IdentityKeyPair::version", version, d.u8()?),
+                1 => uniq!("IdentityKeyPair::secret_key", secret_key, SecretKey::decode(d)?),
+                2 => uniq!("IdentityKeyPair::public_key", public_key, IdentityKey::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -168,9 +168,9 @@ impl PreKey {
         let mut key_pair = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => version  = Some(d.u8()?),
-                1 => key_id   = Some(PreKeyId::decode(d)?),
-                2 => key_pair = Some(KeyPair::decode(d)?),
+                0 => uniq!("PreKey::version", version, d.u8()?),
+                1 => uniq!("PreKey::key_id", key_id, PreKeyId::decode(d)?),
+                2 => uniq!("PreKey::key_pair", key_pair, KeyPair::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -273,11 +273,11 @@ impl PreKeyBundle {
         let mut signature    = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => version      = Some(d.u8()?),
-                1 => prekey_id    = Some(PreKeyId::decode(d)?),
-                2 => public_key   = Some(PublicKey::decode(d)?),
-                3 => identity_key = Some(IdentityKey::decode(d)?),
-                4 => signature    = opt(Signature::decode(d))?,
+                0 => uniq!("PreKeyBundle::version", version, d.u8()?),
+                1 => uniq!("PreKeyBundle::prekey_id", prekey_id, PreKeyId::decode(d)?),
+                2 => uniq!("PreKeyBundle::public_key", public_key, PublicKey::decode(d)?),
+                3 => uniq!("PreKeyBundle::identity_key", identity_key, IdentityKey::decode(d)?),
+                4 => uniq!("PreKeyBundle::signature", signature, opt(Signature::decode(d))?),
                 _ => d.skip()?
             }
         }
@@ -286,7 +286,7 @@ impl PreKeyBundle {
             prekey_id:    to_field!(prekey_id, "PreKeyBundle::prekey_id"),
             public_key:   to_field!(public_key, "PreKeyBundle::public_key"),
             identity_key: to_field!(identity_key, "PreKeyBundle::identity_key"),
-            signature:    signature
+            signature:    signature.unwrap_or(None)
         })
     }
 }
@@ -361,8 +361,8 @@ impl KeyPair {
         let mut public_key = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => secret_key = Some(SecretKey::decode(d)?),
-                1 => public_key = Some(PublicKey::decode(d)?),
+                0 => uniq!("KeyPair::secret_key", secret_key, SecretKey::decode(d)?),
+                1 => uniq!("KeyPair::public_key", public_key, PublicKey::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -418,7 +418,7 @@ impl SecretKey {
         let mut sec_edward = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => sec_edward = Some(Bytes64::decode(d).map(|v| sign::SecretKey(v.array))?),
+                0 => uniq!("SecretKey::sec_edward", sec_edward, Bytes64::decode(d).map(|v| sign::SecretKey(v.array))?),
                 _ => d.skip()?
             }
         }
@@ -477,7 +477,7 @@ impl PublicKey {
         let mut pub_edward = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => pub_edward = Some(Bytes32::decode(d).map(|v| sign::PublicKey(v.array))?),
+                0 => uniq!("PublicKey::pub_edward", pub_edward, Bytes32::decode(d).map(|v| sign::PublicKey(v.array))?),
                 _ => d.skip()?
             }
         }
@@ -517,7 +517,7 @@ impl Signature {
         let mut sig = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => sig = Some(Bytes64::decode(d).map(|v| sign::Signature(v.array))?),
+                0 => uniq!("Signature::sig", sig, Bytes64::decode(d).map(|v| sign::Signature(v.array))?),
                 _ => d.skip()?
             }
         }

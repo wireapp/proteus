@@ -87,7 +87,7 @@ impl CipherKey {
         let mut key = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => key = Some(Bytes32::decode(d).map(|v| stream::Key(v.array))?),
+                0 => uniq!("CipherKey::key", key, Bytes32::decode(d).map(|v| stream::Key(v.array))?),
                 _ => d.skip()?
             }
         }
@@ -145,7 +145,7 @@ impl MacKey {
         let mut key = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => key = Some(Bytes32::decode(d).map(|v| mac::Key(v.array))?),
+                0 => uniq!("MacKey::key", key, Bytes32::decode(d).map(|v| mac::Key(v.array))?),
                 _ => d.skip()?
             }
         }
@@ -176,7 +176,7 @@ impl Mac {
         let mut sig = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => sig = Some(Bytes32::decode(d).map(|v| mac::Tag(v.array))?),
+                0 => uniq!("Mac::sig", sig, Bytes32::decode(d).map(|v| mac::Tag(v.array))?),
                 _ => d.skip()?
             }
         }

@@ -168,10 +168,10 @@ impl<'r> PreKeyMessage<'r> {
         let mut message      = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => prekey_id    = Some(PreKeyId::decode(d)?),
-                1 => base_key     = Some(PublicKey::decode(d)?),
-                2 => identity_key = Some(IdentityKey::decode(d)?),
-                3 => message      = Some(CipherMessage::decode(d)?),
+                0 => uniq!("PreKeyMessage::prekey_id", prekey_id, PreKeyId::decode(d)?),
+                1 => uniq!("PreKeyMessage::base_key", base_key, PublicKey::decode(d)?),
+                2 => uniq!("PreKeyMessage::identity_key", identity_key, IdentityKey::decode(d)?),
+                3 => uniq!("PreKeyMessage::message", message, CipherMessage::decode(d)?),
                 _ => d.skip()?
             }
         }
@@ -224,11 +224,11 @@ impl<'r> CipherMessage<'r> {
         let mut cipher_text  = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => session_tag  = Some(SessionTag::decode(d)?),
-                1 => counter      = Some(Counter::decode(d)?),
-                2 => prev_counter = Some(Counter::decode(d)?),
-                3 => ratchet_key  = Some(PublicKey::decode(d)?),
-                4 => cipher_text  = Some(d.bytes()?),
+                0 => uniq!("CipherMessage::session_tag", session_tag, SessionTag::decode(d)?),
+                1 => uniq!("CipherMessage::counter", counter, Counter::decode(d)?),
+                2 => uniq!("CipherMessage::prev_counter", prev_counter, Counter::decode(d)?),
+                3 => uniq!("CipherMessage::ratchet_key", ratchet_key, PublicKey::decode(d)?),
+                4 => uniq!("CipherMessage::cipher_text", cipher_text, d.bytes()?),
                 _ => d.skip()?
             }
         }
@@ -315,8 +315,9 @@ impl<'r> Envelope<'r> {
         let mut message_enc = None;
         for _ in 0 .. n {
             match d.u8()? {
-                0 => version = Some(d.u8()?),
-                1 => mac     = Some(Mac::decode(d)?),
+                0 => uniq!("Envelope::version", version, d.u8()?),
+                1 => uniq!("Envelope::mac", mac, Mac::decode(d)?),
+                2 if message.is_some() => return Err(DecodeError::DuplicateField("Envelope::message")),
                 2 => {
                     let msg_enc = d.bytes()?;
                     message     = Some(Message::decode(&mut Decoder::new(Config::default(), Cursor::new(&msg_enc[..])))?);
