@@ -9,13 +9,10 @@ repository   = "git@github.com:wireapp/proteus.git"
 license      = "GPL-3.0"
 
 [dependencies]
-byteorder   = ">  0.2.0"
-cbor-codec  = ">= 0.1.0"
-libc        = ">  0.1.0"
+byteorder     = ">  0.2.0"
+cbor-codec    = ">= 0.1.0"
+hkdf          = { git = "https://github.com/wireapp/hkdf", branch = "develop"}
+libc          = ">  0.1.0"
+libsodium-sys = ">= 0.0.12"
+sodiumoxide   = { version = ">= 0.0.12", default-features = false }
 
-[dependencies.sodiumoxide]
-version = ">= 0.0.12"
-default-features = false
-
-[dependencies.hkdf]
-git = "https://github.com/wireapp/hkdf"

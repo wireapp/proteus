@@ -93,7 +93,8 @@ pub enum DecodeError {
     InvalidArrayLen(usize),
     LocalIdentityChanged(IdentityKey),
     InvalidType(u8, &'static str),
-    MissingField(&'static str)
+    MissingField(&'static str),
+    InvalidField(&'static str)
 }
 
 impl fmt::Display for DecodeError {
@@ -103,7 +104,8 @@ impl fmt::Display for DecodeError {
             DecodeError::InvalidArrayLen(n)      => write!(f, "CBOR array length mismatch: {}", n),
             DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
             DecodeError::InvalidType(t, ref s)   => write!(f, "Invalid type {}: {}", t, s),
-            DecodeError::MissingField(ref s)     => write!(f, "Missing field: {}", s)
+            DecodeError::MissingField(ref s)     => write!(f, "Missing field: {}", s),
+            DecodeError::InvalidField(ref s)     => write!(f, "Invalid field: {}", s)
         }
     }
 }

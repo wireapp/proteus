@@ -19,6 +19,7 @@ extern crate cbor;
 extern crate byteorder;
 extern crate hkdf;
 extern crate libc;
+extern crate libsodium_sys;
 extern crate sodiumoxide;
 
 pub mod internal;
@@ -26,8 +27,8 @@ pub mod keys;
 pub mod session;
 pub mod message;
 
-pub fn init() {
-    sodiumoxide::init();
+pub fn init() -> bool {
+    sodiumoxide::init()
 }
 
 pub use internal::types::{DecodeError, EncodeError};

@@ -20,6 +20,7 @@ use cbor::skip::Skip;
 use internal::ffi;
 use internal::types::{DecodeError, DecodeResult, EncodeResult};
 use internal::util::{Bytes64, Bytes32, fmt_hex, opt};
+use libsodium_sys::{self as libsodium};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
@@ -333,8 +334,8 @@ impl KeyPair {
     pub fn new() -> KeyPair {
         let (p, s) = sign::gen_keypair();
 
-        let es = from_ed25519_sk(&s);
-        let ep = from_ed25519_pk(&p);
+        let es = from_ed25519_sk(&s).expect("invalid ed25519 secret key");
+        let ep = from_ed25519_pk(&p).expect("invalid ed25519 public key");
 
         KeyPair {
             secret_key: SecretKey {
@@ -374,6 +375,23 @@ impl KeyPair {
 
 // SecretKey ////////////////////////////////////////////////////////////////
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Zero();
+
+// Sodiumoxide's scalarmult function ignores the return code of
+// `crypto_scalarmult_curve25519`, hence we call that function directly.
+// `crypto_scalarmult_curve25519` returns -1 if the resulting value is all 0.
+fn scalarmult(s: &ecdh::Scalar, g: &ecdh::GroupElement) -> Result<ecdh::GroupElement, Zero> {
+    let mut ge = [0; ecdh::GROUPELEMENTBYTES];
+    unsafe {
+        if libsodium::crypto_scalarmult_curve25519(&mut ge, &s.0, &g.0) != 0 {
+            Err(Zero())
+        } else {
+            Ok(ecdh::GroupElement(ge))
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SecretKey {
     sec_edward: sign::SecretKey,
@@ -385,9 +403,8 @@ impl SecretKey {
         Signature { sig: sign::sign_detached(m, &self.sec_edward) }
     }
 
-    pub fn shared_secret(&self, p: &PublicKey) -> [u8; 32] {
-        let ecdh::GroupElement(b) = ecdh::scalarmult(&self.sec_curve, &p.pub_curve);
-        b
+    pub fn shared_secret(&self, p: &PublicKey) -> Result<[u8; 32], Zero> {
+        scalarmult(&self.sec_curve, &p.pub_curve).map(|ge| ge.0)
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -405,10 +422,13 @@ impl SecretKey {
                 _ => try!(d.skip())
             }
         }
-        let sec_curve = sec_edward.as_ref().map(|ed| ecdh::Scalar(from_ed25519_sk(ed)));
+        let sec_edward = sec_edward.ok_or(DecodeError::MissingField("SecretKey::sec_edward"))?;
+        let sec_curve  = from_ed25519_sk(&sec_edward)
+            .map(ecdh::Scalar)
+            .map_err(|()| DecodeError::InvalidField("SecretKey::sec_edward"))?;
         Ok(SecretKey {
-            sec_edward: to_field!(sec_edward, "SecretKey::sec_edward"),
-            sec_curve:  to_field!(sec_curve, "SecretKey::sec_curve")
+            sec_edward: sec_edward,
+            sec_curve:  sec_curve
         })
     }
 }
@@ -461,10 +481,13 @@ impl PublicKey {
                 _ => try!(d.skip())
             }
         }
-        let pub_curve = pub_edward.as_ref().map(|ed| ecdh::GroupElement(from_ed25519_pk(ed)));
+        let pub_edward = pub_edward.ok_or(DecodeError::MissingField("PublicKey::pub_edward"))?;
+        let pub_curve  = from_ed25519_pk(&pub_edward)
+            .map(ecdh::GroupElement)
+            .map_err(|()| DecodeError::InvalidField("PublicKey::pub_edward"))?;
         Ok(PublicKey {
-            pub_edward: to_field!(pub_edward, "PublicKey::pub_edward"),
-            pub_curve:  to_field!(pub_curve, "PublicKey::pub_curve")
+            pub_edward: pub_edward,
+            pub_curve:  pub_curve
         })
     }
 }
@@ -506,20 +529,26 @@ impl Signature {
 
 // Internal /////////////////////////////////////////////////////////////////
 
-pub fn from_ed25519_pk(k: &sign::PublicKey) -> [u8; ecdh::GROUPELEMENTBYTES] {
+pub fn from_ed25519_pk(k: &sign::PublicKey) -> Result<[u8; ecdh::GROUPELEMENTBYTES], ()> {
     let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
     unsafe {
-        ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr());
+        if ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
+            Ok(ep)
+        } else {
+            Err(())
+        }
     }
-    ep
 }
 
-pub fn from_ed25519_sk(k: &sign::SecretKey) -> [u8; ecdh::SCALARBYTES] {
+pub fn from_ed25519_sk(k: &sign::SecretKey) -> Result<[u8; ecdh::SCALARBYTES], ()> {
     let mut es = [0u8; ecdh::SCALARBYTES];
     unsafe {
-        ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr());
+        if ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
+            Ok(es)
+        } else {
+            Err(())
+        }
     }
-    es
 }
 
 // Tests ////////////////////////////////////////////////////////////////////
@@ -589,5 +618,14 @@ mod tests {
         assert_eq!(b, r);
         assert_eq!(PreKeyAuth::Valid, b.verify());
         assert_eq!(PreKeyAuth::Valid, r.verify());
+    }
+
+    #[test]
+    fn degenerated_key() {
+        let mut k = KeyPair::new();
+        for i in 0 .. k.public_key.pub_curve.0.len() {
+            k.public_key.pub_curve.0[i] = 0
+        }
+        assert_eq!(Err(Zero()), k.secret_key.shared_secret(&k.public_key))
     }
 }
