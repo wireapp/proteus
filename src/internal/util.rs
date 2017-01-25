@@ -50,7 +50,7 @@ pub struct Bytes32 { pub array: [u8; 32] }
 
 impl Bytes32 {
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Bytes32> {
-        let v = try!(d.bytes());
+        let v = d.bytes()?;
         if 32 != v.len() {
             return Err(DecodeError::InvalidArrayLen(v.len()))
         }
@@ -68,7 +68,7 @@ pub struct Bytes64 { pub array: [u8; 64] }
 
 impl Bytes64 {
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Bytes64> {
-        let v = try!(d.bytes());
+        let v = d.bytes()?;
         if 64 != v.len() {
             return Err(DecodeError::InvalidArrayLen(v.len()))
         }

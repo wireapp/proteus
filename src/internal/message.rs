@@ -78,7 +78,7 @@ impl SessionTag {
     }
 
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionTag> {
-        let v = try!(d.bytes());
+        let v = d.bytes()?;
         if 16 != v.len() {
             return Err(DecodeError::InvalidArrayLen(v.len()))
         }
@@ -114,18 +114,18 @@ impl<'r> Message<'r> {
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         match *self {
             Message::Plain(ref m) => {
-                try!(e.u8(1));
+                e.u8(1)?;
                 m.encode(e)
             }
             Message::Keyed(ref m) => {
-                try!(e.u8(2));
+                e.u8(2)?;
                 m.encode(e)
             }
         }
     }
 
     fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Message<'s>> {
-        match try!(d.u8()) {
+        match d.u8()? {
             1 => CipherMessage::decode(d).map(Message::Plain),
             2 => PreKeyMessage::decode(d).map(Message::Keyed),
             t => Err(DecodeError::InvalidType(t, "unknown message type"))
@@ -153,26 +153,26 @@ impl<'r> PreKeyMessage<'r> {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(4));
-        try!(e.u8(0)); try!(self.prekey_id.encode(e));
-        try!(e.u8(1)); try!(self.base_key.encode(e));
-        try!(e.u8(2)); try!(self.identity_key.encode(e));
-        try!(e.u8(3)); self.message.encode(e)
+        e.object(4)?;
+        e.u8(0)?; self.prekey_id.encode(e)?;
+        e.u8(1)?; self.base_key.encode(e)?;
+        e.u8(2)?; self.identity_key.encode(e)?;
+        e.u8(3)?; self.message.encode(e)
     }
 
     fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyMessage<'s>> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut prekey_id    = None;
         let mut base_key     = None;
         let mut identity_key = None;
         let mut message      = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => prekey_id    = Some(try!(PreKeyId::decode(d))),
-                1 => base_key     = Some(try!(PublicKey::decode(d))),
-                2 => identity_key = Some(try!(IdentityKey::decode(d))),
-                3 => message      = Some(try!(CipherMessage::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => prekey_id    = Some(PreKeyId::decode(d)?),
+                1 => base_key     = Some(PublicKey::decode(d)?),
+                2 => identity_key = Some(IdentityKey::decode(d)?),
+                3 => message      = Some(CipherMessage::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(PreKeyMessage {
@@ -206,30 +206,30 @@ impl<'r> CipherMessage<'r> {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(5));
-        try!(e.u8(0)); try!(self.session_tag.encode(e));
-        try!(e.u8(1)); try!(self.counter.encode(e));
-        try!(e.u8(2)); try!(self.prev_counter.encode(e));
-        try!(e.u8(3)); try!(self.ratchet_key.encode(e));
-        try!(e.u8(4)); try!(e.bytes(&self.cipher_text[..]));
+        e.object(5)?;
+        e.u8(0)?; self.session_tag.encode(e)?;
+        e.u8(1)?; self.counter.encode(e)?;
+        e.u8(2)?; self.prev_counter.encode(e)?;
+        e.u8(3)?; self.ratchet_key.encode(e)?;
+        e.u8(4)?; e.bytes(&self.cipher_text[..])?;
         Ok(())
     }
 
     fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherMessage<'s>> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut session_tag  = None;
         let mut counter      = None;
         let mut prev_counter = None;
         let mut ratchet_key  = None;
         let mut cipher_text  = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => session_tag  = Some(try!(SessionTag::decode(d))),
-                1 => counter      = Some(try!(Counter::decode(d))),
-                2 => prev_counter = Some(try!(Counter::decode(d))),
-                3 => ratchet_key  = Some(try!(PublicKey::decode(d))),
-                4 => cipher_text  = Some(try!(d.bytes())),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => session_tag  = Some(SessionTag::decode(d)?),
+                1 => counter      = Some(Counter::decode(d)?),
+                2 => prev_counter = Some(Counter::decode(d)?),
+                3 => ratchet_key  = Some(PublicKey::decode(d)?),
+                4 => cipher_text  = Some(d.bytes()?),
+                _ => d.skip()?
             }
         }
         Ok(CipherMessage {
@@ -254,7 +254,7 @@ pub struct Envelope<'r> {
 impl<'r> Envelope<'r> {
     pub fn new(k: &MacKey, m: Message<'r>) -> EncodeResult<Envelope<'r>> {
         let mut c = Cursor::new(Vec::new());
-        try!(m.encode(&mut Encoder::new(&mut c)));
+        m.encode(&mut Encoder::new(&mut c))?;
 
         Ok(Envelope {
             version:     1,
@@ -291,7 +291,7 @@ impl<'r> Envelope<'r> {
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
         let mut e = Encoder::new(Cursor::new(Vec::new()));
-        try!(self.encode(&mut e));
+        self.encode(&mut e)?;
         Ok(e.into_writer().into_inner())
     }
 
@@ -300,29 +300,29 @@ impl<'r> Envelope<'r> {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(3));
-        try!(e.u8(0)); try!(e.u8(self.version));
-        try!(e.u8(1)); try!(self.mac.encode(e));
-        try!(e.u8(2).and(e.bytes(&self.message_enc)));
+        e.object(3)?;
+        e.u8(0)?; e.u8(self.version)?;
+        e.u8(1)?; self.mac.encode(e)?;
+        e.u8(2).and(e.bytes(&self.message_enc))?;
         Ok(())
     }
 
     pub fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Envelope<'s>> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut version     = None;
         let mut mac         = None;
         let mut message     = None;
         let mut message_enc = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => version = Some(try!(d.u8())),
-                1 => mac     = Some(try!(Mac::decode(d))),
+            match d.u8()? {
+                0 => version = Some(d.u8()?),
+                1 => mac     = Some(Mac::decode(d)?),
                 2 => {
-                    let msg_enc = try!(d.bytes());
-                    message     = Some(try!(Message::decode(&mut Decoder::new(Config::default(), Cursor::new(&msg_enc[..])))));
+                    let msg_enc = d.bytes()?;
+                    message     = Some(Message::decode(&mut Decoder::new(Config::default(), Cursor::new(&msg_enc[..])))?);
                     message_enc = Some(msg_enc)
                 }
-                _ => try!(d.skip())
+                _ => d.skip()?
             }
         }
         Ok(Envelope {

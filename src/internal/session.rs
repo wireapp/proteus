@@ -51,17 +51,17 @@ impl RootKey {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(1));
-        try!(e.u8(0)); self.key.encode(e)
+        e.object(1)?;
+        e.u8(0)?; self.key.encode(e)
     }
 
     fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RootKey> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut key = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => key = Some(try!(CipherKey::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => key = Some(CipherKey::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(RootKey { key: to_field!(key, "RootKey::key") })
@@ -99,20 +99,20 @@ impl ChainKey {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(2));
-        try!(e.u8(0)); try!(self.key.encode(e));
-        try!(e.u8(1)); self.idx.encode(e)
+        e.object(2)?;
+        e.u8(0)?; self.key.encode(e)?;
+        e.u8(1)?; self.idx.encode(e)
     }
 
     fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<ChainKey> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut key = None;
         let mut idx = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => key = Some(try!(MacKey::decode(d))),
-                1 => idx = Some(try!(Counter::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => key = Some(MacKey::decode(d)?),
+                1 => idx = Some(Counter::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(ChainKey {
@@ -136,20 +136,20 @@ impl SendChain {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(2));
-        try!(e.u8(0)); try!(self.chain_key.encode(e));
-        try!(e.u8(1)); self.ratchet_key.encode(e)
+        e.object(2)?;
+        e.u8(0)?; self.chain_key.encode(e)?;
+        e.u8(1)?; self.ratchet_key.encode(e)
     }
 
     fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SendChain> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut chain_key   = None;
         let mut ratchet_key = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => chain_key   = Some(try!(ChainKey::decode(d))),
-                1 => ratchet_key = Some(try!(KeyPair::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => chain_key   = Some(ChainKey::decode(d)?),
+                1 => ratchet_key = Some(KeyPair::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(SendChain {
@@ -239,37 +239,37 @@ impl RecvChain {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(3));
-        try!(e.u8(0)); try!(self.chain_key.encode(e));
-        try!(e.u8(1)); try!(self.ratchet_key.encode(e));
-        try!(e.u8(2));
+        e.object(3)?;
+        e.u8(0)?; self.chain_key.encode(e)?;
+        e.u8(1)?; self.ratchet_key.encode(e)?;
+        e.u8(2)?;
         {
-            try!(e.array(self.message_keys.len()));
+            e.array(self.message_keys.len())?;
             for m in &self.message_keys {
-                try!(m.encode(e))
+                m.encode(e)?
             }
         }
         Ok(())
     }
 
     fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RecvChain> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut chain_key    = None;
         let mut ratchet_key  = None;
         let mut message_keys = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => chain_key   = Some(try!(ChainKey::decode(d))),
-                1 => ratchet_key = Some(try!(PublicKey::decode(d))),
+            match d.u8()? {
+                0 => chain_key   = Some(ChainKey::decode(d)?),
+                1 => ratchet_key = Some(PublicKey::decode(d)?),
                 2 => {
-                    let lv = try!(d.array());
+                    let lv = d.array()?;
                     let mut vm = VecDeque::with_capacity(lv);
                     for _ in 0 .. lv {
-                        vm.push_back(try!(MessageKeys::decode(d)))
+                        vm.push_back(MessageKeys::decode(d)?)
                     }
                     message_keys = Some(vm)
                 }
-                _ => try!(d.skip())
+                _ => d.skip()?
             }
         }
         Ok(RecvChain {
@@ -299,23 +299,23 @@ impl MessageKeys {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(3));
-        try!(e.u8(0)); try!(self.cipher_key.encode(e));
-        try!(e.u8(1)); try!(self.mac_key.encode(e));
-        try!(e.u8(2)); self.counter.encode(e)
+        e.object(3)?;
+        e.u8(0)?; self.cipher_key.encode(e)?;
+        e.u8(1)?; self.mac_key.encode(e)?;
+        e.u8(2)?; self.counter.encode(e)
     }
 
     fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MessageKeys> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut cipher_key = None;
         let mut mac_key    = None;
         let mut counter    = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => cipher_key = Some(try!(CipherKey::decode(d))),
-                1 => mac_key    = Some(try!(MacKey::decode(d))),
-                2 => counter    = Some(try!(Counter::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => cipher_key = Some(CipherKey::decode(d)?),
+                1 => mac_key    = Some(MacKey::decode(d)?),
+                2 => counter    = Some(Counter::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(MessageKeys {
@@ -427,9 +427,9 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             session_states:  BTreeMap::new()
         };
 
-        match try!(session.new_state(store, pkmsg)) {
+        match session.new_state(store, pkmsg)? {
             Some(mut s) => {
-                let plain = try!(s.decrypt(env, &pkmsg.message));
+                let plain = s.decrypt(env, &pkmsg.message)?;
                 session.insert_session_state(pkmsg.message.session_tag, s);
                 if pkmsg.prekey_id != keys::MAX_PREKEY_ID {
                     store.remove(pkmsg.prekey_id).map_err(Error::PreKeyStoreError)?
@@ -441,9 +441,9 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     }
 
     pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
-        let state = try!(self.session_states
-                             .get_mut(&self.session_tag)
-                             .ok_or(InternalError::NoSessionForTag)); // See note [session_tag]
+        let state = self.session_states
+                        .get_mut(&self.session_tag)
+                        .ok_or(InternalError::NoSessionForTag)?; // See note [session_tag]
         state.val.encrypt(&self.local_identity.borrow().public_key,
                           &self.pending_prekey,
                           self.session_tag,
@@ -459,9 +459,9 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 }
                 match self.decrypt_cipher_message(env, &m.message) {
                     e @ Err(Error::InvalidSignature) | e @ Err(Error::InvalidMessage) =>
-                        match try!(self.new_state(store, m)) {
+                        match self.new_state(store, m)? {
                             Some(mut s) => {
-                                let plain = try!(s.decrypt(env, &m.message));
+                                let plain = s.decrypt(env, &m.message)?;
                                 if m.prekey_id != keys::MAX_PREKEY_ID {
                                     store.remove(m.prekey_id).map_err(Error::PreKeyStoreError)?
                                 }
@@ -482,7 +482,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             Some(s) => s.val.clone(),
             None    => return Err(Error::InvalidMessage)
         };
-        let plain = try!(s.decrypt(env, &m));
+        let plain = s.decrypt(env, &m)?;
         self.pending_prekey = None;
         self.insert_session_state(m.session_tag, s);
         Ok(plain)
@@ -558,7 +558,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
         let mut e = Encoder::new(Cursor::new(Vec::new()));
-        try!(self.encode(&mut e));
+        self.encode(&mut e)?;
         Ok(e.into_writer().into_inner())
     }
 
@@ -567,35 +567,35 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(6));
-        try!(e.u8(0)); try!(e.u8(self.version));
-        try!(e.u8(1)); try!(self.session_tag.encode(e));
-        try!(e.u8(2)); try!(self.local_identity.borrow().public_key.encode(e));
-        try!(e.u8(3)); try!(self.remote_identity.encode(e));
-        try!(e.u8(4));
+        e.object(6)?;
+        e.u8(0)?; e.u8(self.version)?;
+        e.u8(1)?; self.session_tag.encode(e)?;
+        e.u8(2)?; self.local_identity.borrow().public_key.encode(e)?;
+        e.u8(3)?; self.remote_identity.encode(e)?;
+        e.u8(4)?;
         {
             match self.pending_prekey {
-                None               => try!(e.null()),
+                None               => e.null()?,
                 Some((id, ref pk)) => {
-                    try!(e.object(2));
-                    try!(e.u8(0)); try!(id.encode(e));
-                    try!(e.u8(1)); try!(pk.encode(e))
+                    e.object(2)?;
+                    e.u8(0)?; id.encode(e)?;
+                    e.u8(1)?; pk.encode(e)?
                 }
             }
         }
-        try!(e.u8(5));
+        e.u8(5)?;
         {
-            try!(e.object(self.session_states.len()));
+            e.object(self.session_states.len())?;
             for (t, s) in &self.session_states {
-                try!(t.encode(e));
-                try!(s.val.encode(e))
+                t.encode(e)?;
+                s.val.encode(e)?
             }
         }
         Ok(())
     }
 
     pub fn decode<R: Read + Skip>(ident: I, d: &mut Decoder<R>) -> DecodeResult<Session<I>> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut version         = None;
         let mut session_tag     = None;
         let mut counter         = 0;
@@ -603,24 +603,24 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         let mut pending_prekey  = None;
         let mut session_states  = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => version     = Some(try!(d.u8())),
-                1 => session_tag = Some(try!(SessionTag::decode(d))),
+            match d.u8()? {
+                0 => version     = Some(d.u8()?),
+                1 => session_tag = Some(SessionTag::decode(d)?),
                 2 => {
-                    let li = try!(IdentityKey::decode(d));
+                    let li = IdentityKey::decode(d)?;
                     if ident.borrow().public_key != li {
                         return Err(DecodeError::LocalIdentityChanged(li))
                     }
                 }
-                3 => remote_identity = Some(try!(IdentityKey::decode(d))),
-                4 => if let Some(n) = try!(cbor::opt(d.object())) {
+                3 => remote_identity = Some(IdentityKey::decode(d)?),
+                4 => if let Some(n) = cbor::opt(d.object())? {
                         let mut id = None;
                         let mut pk = None;
                         for _ in 0 .. n {
-                            match try!(d.u8()) {
-                                0 => id = Some(try!(PreKeyId::decode(d))),
-                                1 => pk = Some(try!(PublicKey::decode(d))),
-                                _ => try!(d.skip())
+                            match d.u8()? {
+                                0 => id = Some(PreKeyId::decode(d)?),
+                                1 => pk = Some(PublicKey::decode(d)?),
+                                _ => d.skip()?
                             }
                         }
                         pending_prekey = Some((
@@ -629,17 +629,17 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                         ))
                 },
                 5 => {
-                    let ls = try!(d.object());
+                    let ls = d.object()?;
                     let mut rb = BTreeMap::new();
                     for _ in 0 .. ls {
-                        let t = try!(SessionTag::decode(d));
-                        let s = try!(SessionState::decode(d));
+                        let t = SessionTag::decode(d)?;
+                        let s = SessionState::decode(d)?;
                         rb.insert(t, Indexed::new(counter, s));
                         counter = counter + 1
                     }
                     session_states = Some(rb)
                 }
-                _ => try!(d.skip())
+                _ => d.skip()?
             }
         }
         Ok(Session {
@@ -788,7 +788,7 @@ impl SessionState {
         match m.counter.cmp(&rchain.chain_key.idx) {
             Ordering::Less    => rchain.try_message_keys(env, m),
             Ordering::Greater => {
-                let (chk, mk, mks) = try!(rchain.stage_message_keys(m));
+                let (chk, mk, mks) = rchain.stage_message_keys(m)?;
                 if !env.verify(&mk.mac_key) {
                     return Err(Error::InvalidSignature)
                 }
@@ -810,41 +810,41 @@ impl SessionState {
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(4));
-        try!(e.u8(0));
+        e.object(4)?;
+        e.u8(0)?;
         {
-            try!(e.array(self.recv_chains.len()));
+            e.array(self.recv_chains.len())?;
             for r in &self.recv_chains {
-                try!(r.encode(e))
+                r.encode(e)?
             }
         }
-        try!(e.u8(1)); try!(self.send_chain.encode(e));
-        try!(e.u8(2)); try!(self.root_key.encode(e));
-        try!(e.u8(3)); try!(self.prev_counter.encode(e));
+        e.u8(1)?; self.send_chain.encode(e)?;
+        e.u8(2)?; self.root_key.encode(e)?;
+        e.u8(3)?; self.prev_counter.encode(e)?;
         // Note that key '4' was used for skipped message keys.
         Ok(())
     }
 
     fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SessionState> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut recv_chains     = None;
         let mut send_chain      = None;
         let mut root_key        = None;
         let mut prev_counter    = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
+            match d.u8()? {
                 0 => {
-                    let lr = try!(d.array());
+                    let lr = d.array()?;
                     let mut rr = VecDeque::with_capacity(lr);
                     for _ in 0 .. lr {
-                        rr.push_back(try!(RecvChain::decode(d)))
+                        rr.push_back(RecvChain::decode(d)?)
                     }
                     recv_chains = Some(rr)
                 }
-                1 => send_chain   = Some(try!(SendChain::decode(d))),
-                2 => root_key     = Some(try!(RootKey::decode(d))),
-                3 => prev_counter = Some(try!(Counter::decode(d))),
-                _ => try!(d.skip())
+                1 => send_chain   = Some(SendChain::decode(d)?),
+                2 => root_key     = Some(RootKey::decode(d)?),
+                3 => prev_counter = Some(Counter::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(SessionState {
