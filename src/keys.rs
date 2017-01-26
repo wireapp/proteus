@@ -25,6 +25,7 @@ pub use internal::keys::MAX_PREKEY_ID;
 pub use internal::keys::PreKeyAuth;
 pub use internal::keys::PreKeyBundle;
 pub use internal::keys::Signature;
+pub use internal::keys::Zero;
 
 pub use internal::keys::gen_prekeys;
 pub use internal::keys::rand_bytes;
