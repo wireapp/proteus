@@ -20,7 +20,6 @@ use cbor::skip::Skip;
 use internal::ffi;
 use internal::types::{DecodeError, DecodeResult, EncodeResult};
 use internal::util::{Bytes64, Bytes32, fmt_hex, opt};
-use libsodium_sys::{self as libsodium};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
@@ -378,20 +377,6 @@ impl KeyPair {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero();
 
-// Sodiumoxide's scalarmult function ignores the return code of
-// `crypto_scalarmult_curve25519`, hence we call that function directly.
-// `crypto_scalarmult_curve25519` returns -1 if the resulting value is all 0.
-fn scalarmult(s: &ecdh::Scalar, g: &ecdh::GroupElement) -> Result<ecdh::GroupElement, Zero> {
-    let mut ge = [0; ecdh::GROUPELEMENTBYTES];
-    unsafe {
-        if libsodium::crypto_scalarmult_curve25519(&mut ge, &s.0, &g.0) != 0 {
-            Err(Zero())
-        } else {
-            Ok(ecdh::GroupElement(ge))
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct SecretKey {
     sec_edward: sign::SecretKey,
@@ -404,7 +389,9 @@ impl SecretKey {
     }
 
     pub fn shared_secret(&self, p: &PublicKey) -> Result<[u8; 32], Zero> {
-        scalarmult(&self.sec_curve, &p.pub_curve).map(|ge| ge.0)
+        ecdh::scalarmult(&self.sec_curve, &p.pub_curve)
+            .map(|ge| ge.0)
+            .map_err(|()| Zero())
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {

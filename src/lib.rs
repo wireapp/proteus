@@ -19,7 +19,6 @@ extern crate cbor;
 extern crate byteorder;
 extern crate hkdf;
 extern crate libc;
-extern crate libsodium_sys;
 extern crate sodiumoxide;
 
 pub mod internal;
