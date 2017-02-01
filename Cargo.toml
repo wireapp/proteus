@@ -1,7 +1,7 @@
 [package]
 
 name         = "proteus"
-version      = "0.5.3"
+version      = "0.6.0"
 authors      = ["Wire Swiss GmbH <support@wire.com>"]
 description  = "Axolotl protocol implementation"
 homepage     = "https://github.com/wireapp/proteus"
