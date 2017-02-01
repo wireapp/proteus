@@ -1,3 +1,7 @@
+1.0.0
+
+    * Change `Zero` to be compatible with rustc 1.14 (stable).
+
 0.6.0
 
     * `proteus::session::DecryptError` has been renamed to
