@@ -375,7 +375,7 @@ impl KeyPair {
 // SecretKey ////////////////////////////////////////////////////////////////
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Zero();
+pub struct Zero {}
 
 #[derive(Clone)]
 pub struct SecretKey {
@@ -391,7 +391,7 @@ impl SecretKey {
     pub fn shared_secret(&self, p: &PublicKey) -> Result<[u8; 32], Zero> {
         ecdh::scalarmult(&self.sec_curve, &p.pub_curve)
             .map(|ge| ge.0)
-            .map_err(|()| Zero())
+            .map_err(|()| Zero {})
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -613,6 +613,6 @@ mod tests {
         for i in 0 .. k.public_key.pub_curve.0.len() {
             k.public_key.pub_curve.0[i] = 0
         }
-        assert_eq!(Err(Zero()), k.secret_key.shared_secret(&k.public_key))
+        assert_eq!(Err(Zero {}), k.secret_key.shared_secret(&k.public_key))
     }
 }
