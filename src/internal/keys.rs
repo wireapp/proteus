@@ -45,17 +45,17 @@ impl IdentityKey {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(1));
-        try!(e.u8(0)); self.public_key.encode(e)
+        e.object(1)?;
+        e.u8(0)?; self.public_key.encode(e)
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<IdentityKey> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut public_key = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => public_key = Some(try!(PublicKey::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("IdentityKey::public_key", public_key, PublicKey::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(IdentityKey {
@@ -85,7 +85,7 @@ impl IdentityKeyPair {
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
         let mut e = Encoder::new(Cursor::new(Vec::new()));
-        try!(self.encode(&mut e));
+        self.encode(&mut e)?;
         Ok(e.into_writer().into_inner())
     }
 
@@ -94,23 +94,23 @@ impl IdentityKeyPair {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(3));
-        try!(e.u8(0)); try!(e.u8(self.version));
-        try!(e.u8(1)); try!(self.secret_key.encode(e));
-        try!(e.u8(2)); self.public_key.encode(e)
+        e.object(3)?;
+        e.u8(0)?; e.u8(self.version)?;
+        e.u8(1)?; self.secret_key.encode(e)?;
+        e.u8(2)?; self.public_key.encode(e)
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<IdentityKeyPair> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut version    = None;
         let mut secret_key = None;
         let mut public_key = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => version    = Some(try!(d.u8())),
-                1 => secret_key = Some(try!(SecretKey::decode(d))),
-                2 => public_key = Some(try!(IdentityKey::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("IdentityKeyPair::version", version, d.u8()?),
+                1 => uniq!("IdentityKeyPair::secret_key", secret_key, SecretKey::decode(d)?),
+                2 => uniq!("IdentityKeyPair::public_key", public_key, IdentityKey::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(IdentityKeyPair {
@@ -145,7 +145,7 @@ impl PreKey {
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
         let mut e = Encoder::new(Cursor::new(Vec::new()));
-        try!(self.encode(&mut e));
+        self.encode(&mut e)?;
         Ok(e.into_writer().into_inner())
     }
 
@@ -154,23 +154,23 @@ impl PreKey {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(3));
-        try!(e.u8(0)); try!(e.u8(self.version));
-        try!(e.u8(1)); try!(self.key_id.encode(e));
-        try!(e.u8(2)); self.key_pair.encode(e)
+        e.object(3)?;
+        e.u8(0)?; e.u8(self.version)?;
+        e.u8(1)?; self.key_id.encode(e)?;
+        e.u8(2)?; self.key_pair.encode(e)
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKey> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut version  = None;
         let mut key_id   = None;
         let mut key_pair = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => version  = Some(try!(d.u8())),
-                1 => key_id   = Some(try!(PreKeyId::decode(d))),
-                2 => key_pair = Some(try!(KeyPair::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("PreKey::version", version, d.u8()?),
+                1 => uniq!("PreKey::key_id", key_id, PreKeyId::decode(d)?),
+                2 => uniq!("PreKey::key_pair", key_pair, KeyPair::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(PreKey {
@@ -190,14 +190,14 @@ pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
 
 // Prekey bundle ////////////////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PreKeyAuth {
     Invalid,
     Valid,
     Unknown
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PreKeyBundle {
     pub version:      u8,
     pub prekey_id:    PreKeyId,
@@ -243,7 +243,7 @@ impl PreKeyBundle {
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
         let mut e = Encoder::new(Cursor::new(Vec::new()));
-        try!(self.encode(&mut e));
+        self.encode(&mut e)?;
         Ok(e.into_writer().into_inner())
     }
 
@@ -252,32 +252,32 @@ impl PreKeyBundle {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(5));
-        try!(e.u8(0)); try!(e.u8(self.version));
-        try!(e.u8(1)); try!(self.prekey_id.encode(e));
-        try!(e.u8(2)); try!(self.public_key.encode(e));
-        try!(e.u8(3)); try!(self.identity_key.encode(e));
-        try!(e.u8(4)); match self.signature {
+        e.object(5)?;
+        e.u8(0)?; e.u8(self.version)?;
+        e.u8(1)?; self.prekey_id.encode(e)?;
+        e.u8(2)?; self.public_key.encode(e)?;
+        e.u8(3)?; self.identity_key.encode(e)?;
+        e.u8(4)?; match self.signature {
             Some(ref sig) => sig.encode(e),
             None          => e.null().map_err(From::from)
         }
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyBundle> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut version      = None;
         let mut prekey_id    = None;
         let mut public_key   = None;
         let mut identity_key = None;
         let mut signature    = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => version      = Some(try!(d.u8())),
-                1 => prekey_id    = Some(try!(PreKeyId::decode(d))),
-                2 => public_key   = Some(try!(PublicKey::decode(d))),
-                3 => identity_key = Some(try!(IdentityKey::decode(d))),
-                4 => signature    = try!(opt(Signature::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("PreKeyBundle::version", version, d.u8()?),
+                1 => uniq!("PreKeyBundle::prekey_id", prekey_id, PreKeyId::decode(d)?),
+                2 => uniq!("PreKeyBundle::public_key", public_key, PublicKey::decode(d)?),
+                3 => uniq!("PreKeyBundle::identity_key", identity_key, IdentityKey::decode(d)?),
+                4 => uniq!("PreKeyBundle::signature", signature, opt(Signature::decode(d))?),
+                _ => d.skip()?
             }
         }
         Ok(PreKeyBundle {
@@ -285,7 +285,7 @@ impl PreKeyBundle {
             prekey_id:    to_field!(prekey_id, "PreKeyBundle::prekey_id"),
             public_key:   to_field!(public_key, "PreKeyBundle::public_key"),
             identity_key: to_field!(identity_key, "PreKeyBundle::identity_key"),
-            signature:    signature
+            signature:    signature.unwrap_or(None)
         })
     }
 }
@@ -333,8 +333,8 @@ impl KeyPair {
     pub fn new() -> KeyPair {
         let (p, s) = sign::gen_keypair();
 
-        let es = from_ed25519_sk(&s);
-        let ep = from_ed25519_pk(&p);
+        let es = from_ed25519_sk(&s).expect("invalid ed25519 secret key");
+        let ep = from_ed25519_pk(&p).expect("invalid ed25519 public key");
 
         KeyPair {
             secret_key: SecretKey {
@@ -349,20 +349,20 @@ impl KeyPair {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(2));
-        try!(e.u8(0)); try!(self.secret_key.encode(e));
-        try!(e.u8(1)); self.public_key.encode(e)
+        e.object(2)?;
+        e.u8(0)?; self.secret_key.encode(e)?;
+        e.u8(1)?; self.public_key.encode(e)
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<KeyPair> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut secret_key = None;
         let mut public_key = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => secret_key = Some(try!(SecretKey::decode(d))),
-                1 => public_key = Some(try!(PublicKey::decode(d))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("KeyPair::secret_key", secret_key, SecretKey::decode(d)?),
+                1 => uniq!("KeyPair::public_key", public_key, PublicKey::decode(d)?),
+                _ => d.skip()?
             }
         }
         Ok(KeyPair {
@@ -373,6 +373,9 @@ impl KeyPair {
 }
 
 // SecretKey ////////////////////////////////////////////////////////////////
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Zero();
 
 #[derive(Clone)]
 pub struct SecretKey {
@@ -385,30 +388,34 @@ impl SecretKey {
         Signature { sig: sign::sign_detached(m, &self.sec_edward) }
     }
 
-    pub fn shared_secret(&self, p: &PublicKey) -> [u8; 32] {
-        let ecdh::GroupElement(b) = ecdh::scalarmult(&self.sec_curve, &p.pub_curve);
-        b
+    pub fn shared_secret(&self, p: &PublicKey) -> Result<[u8; 32], Zero> {
+        ecdh::scalarmult(&self.sec_curve, &p.pub_curve)
+            .map(|ge| ge.0)
+            .map_err(|()| Zero())
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(1));
-        try!(e.u8(0).and(e.bytes(&self.sec_edward.0)));
+        e.object(1)?;
+        e.u8(0).and(e.bytes(&self.sec_edward.0))?;
         Ok(())
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SecretKey> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut sec_edward = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => sec_edward = Some(try!(Bytes64::decode(d).map(|v| sign::SecretKey(v.array)))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("SecretKey::sec_edward", sec_edward, Bytes64::decode(d).map(|v| sign::SecretKey(v.array))?),
+                _ => d.skip()?
             }
         }
-        let sec_curve = sec_edward.as_ref().map(|ed| ecdh::Scalar(from_ed25519_sk(ed)));
+        let sec_edward = sec_edward.ok_or(DecodeError::MissingField("SecretKey::sec_edward"))?;
+        let sec_curve  = from_ed25519_sk(&sec_edward)
+            .map(ecdh::Scalar)
+            .map_err(|()| DecodeError::InvalidField("SecretKey::sec_edward"))?;
         Ok(SecretKey {
-            sec_edward: to_field!(sec_edward, "SecretKey::sec_edward"),
-            sec_curve:  to_field!(sec_curve, "SecretKey::sec_curve")
+            sec_edward: sec_edward,
+            sec_curve:  sec_curve
         })
     }
 }
@@ -447,24 +454,27 @@ impl PublicKey {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(1));
-        try!(e.u8(0).and(e.bytes(&self.pub_edward.0)));
+        e.object(1)?;
+        e.u8(0).and(e.bytes(&self.pub_edward.0))?;
         Ok(())
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PublicKey> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut pub_edward = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => pub_edward = Some(try!(Bytes32::decode(d).map(|v| sign::PublicKey(v.array)))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("PublicKey::pub_edward", pub_edward, Bytes32::decode(d).map(|v| sign::PublicKey(v.array))?),
+                _ => d.skip()?
             }
         }
-        let pub_curve = pub_edward.as_ref().map(|ed| ecdh::GroupElement(from_ed25519_pk(ed)));
+        let pub_edward = pub_edward.ok_or(DecodeError::MissingField("PublicKey::pub_edward"))?;
+        let pub_curve  = from_ed25519_pk(&pub_edward)
+            .map(ecdh::GroupElement)
+            .map_err(|()| DecodeError::InvalidField("PublicKey::pub_edward"))?;
         Ok(PublicKey {
-            pub_edward: to_field!(pub_edward, "PublicKey::pub_edward"),
-            pub_curve:  to_field!(pub_curve, "PublicKey::pub_curve")
+            pub_edward: pub_edward,
+            pub_curve:  pub_curve
         })
     }
 }
@@ -484,18 +494,18 @@ pub struct Signature {
 
 impl Signature {
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(1));
-        try!(e.u8(0).and(e.bytes(&self.sig.0)));
+        e.object(1)?;
+        e.u8(0).and(e.bytes(&self.sig.0))?;
         Ok(())
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Signature> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut sig = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => sig = Some(try!(Bytes64::decode(d).map(|v| sign::Signature(v.array)))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("Signature::sig", sig, Bytes64::decode(d).map(|v| sign::Signature(v.array))?),
+                _ => d.skip()?
             }
         }
         Ok(Signature {
@@ -506,20 +516,26 @@ impl Signature {
 
 // Internal /////////////////////////////////////////////////////////////////
 
-pub fn from_ed25519_pk(k: &sign::PublicKey) -> [u8; ecdh::GROUPELEMENTBYTES] {
+pub fn from_ed25519_pk(k: &sign::PublicKey) -> Result<[u8; ecdh::GROUPELEMENTBYTES], ()> {
     let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
     unsafe {
-        ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr());
+        if ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
+            Ok(ep)
+        } else {
+            Err(())
+        }
     }
-    ep
 }
 
-pub fn from_ed25519_sk(k: &sign::SecretKey) -> [u8; ecdh::SCALARBYTES] {
+pub fn from_ed25519_sk(k: &sign::SecretKey) -> Result<[u8; ecdh::SCALARBYTES], ()> {
     let mut es = [0u8; ecdh::SCALARBYTES];
     unsafe {
-        ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr());
+        if ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
+            Ok(es)
+        } else {
+            Err(())
+        }
     }
-    es
 }
 
 // Tests ////////////////////////////////////////////////////////////////////
@@ -589,5 +605,14 @@ mod tests {
         assert_eq!(b, r);
         assert_eq!(PreKeyAuth::Valid, b.verify());
         assert_eq!(PreKeyAuth::Valid, r.verify());
+    }
+
+    #[test]
+    fn degenerated_key() {
+        let mut k = KeyPair::new();
+        for i in 0 .. k.public_key.pub_curve.0.len() {
+            k.public_key.pub_curve.0[i] = 0
+        }
+        assert_eq!(Err(Zero()), k.secret_key.shared_secret(&k.public_key))
     }
 }

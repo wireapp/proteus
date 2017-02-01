@@ -34,6 +34,16 @@ macro_rules! to_field {
     }
 }
 
+macro_rules! uniq {
+    ($msg: expr, $name: ident, $action: expr) => {
+        if $name.is_some() {
+            return Err(DecodeError::DuplicateField($msg))
+        } else {
+            $name = Some($action)
+        }
+    }
+}
+
 // Optional Values //////////////////////////////////////////////////////////
 
 pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {
@@ -50,13 +60,10 @@ pub struct Bytes32 { pub array: [u8; 32] }
 
 impl Bytes32 {
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Bytes32> {
-        let v = try!(d.bytes());
-        if 32 != v.len() {
-            return Err(DecodeError::InvalidArrayLen(v.len()))
-        }
         let mut a = [0u8; 32];
-        for i in 0..32 {
-            a[i] = v[i]
+        let n = d.read_bytes(&mut a)?;
+        if 32 != n {
+            return Err(DecodeError::InvalidArrayLen(n))
         }
         Ok(Bytes32 { array: a })
     }
@@ -68,13 +75,10 @@ pub struct Bytes64 { pub array: [u8; 64] }
 
 impl Bytes64 {
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Bytes64> {
-        let v = try!(d.bytes());
-        if 64 != v.len() {
-            return Err(DecodeError::InvalidArrayLen(v.len()))
-        }
         let mut a = [0u8; 64];
-        for i in 0..64 {
-            a[i] = v[i]
+        let n = d.read_bytes(&mut a)?;
+        if 64 != n {
+            return Err(DecodeError::InvalidArrayLen(n))
         }
         Ok(Bytes64 { array: a })
     }

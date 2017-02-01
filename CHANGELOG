@@ -1,0 +1,19 @@
+0.6.0
+
+    * `proteus::session::DecryptError` has been renamed to
+      `proteus::session::Error`.
+
+    * Added new error `proteus::session::Error::DegeneratedKey` in case
+      libsodium's scalar multiplication yields a zero vector.
+
+    * `proteus::init` no longer ignores the return code of `sodiumoxide::init`
+
+    * Decoding of CBOR objects disallows duplicate keys
+      (cf. `proteus::DecodeError::DuplicateField`).
+
+    * Conversion of Ed25519 to Curve25519 is now checked. Failed conversions
+      of public keys yield a `proteus::DecodeError::InvalidField` error.
+
+    * The `IdentityKeyPair` in sessions is now an instance of `Borrow` instead
+      of a reference.
+

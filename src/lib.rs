@@ -26,8 +26,8 @@ pub mod keys;
 pub mod session;
 pub mod message;
 
-pub fn init() {
-    sodiumoxide::init();
+pub fn init() -> bool {
+    sodiumoxide::init()
 }
 
 pub use internal::types::{DecodeError, EncodeError};

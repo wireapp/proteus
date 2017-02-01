@@ -42,8 +42,8 @@ impl DerivedSecrets {
         let len = Len::new(64).expect("Unexpected hkdf::HASH_LEN.");
         let okm = hkdf(salt, input, info, len);
 
-        ck.as_mut().write_all(&okm[0  .. 32]).unwrap();
-        mk.as_mut().write_all(&okm[32 .. 64]).unwrap();
+        ck.as_mut().write_all(&okm.0[0  .. 32]).unwrap();
+        mk.as_mut().write_all(&okm.0[32 .. 64]).unwrap();
 
         DerivedSecrets {
             cipher_key: CipherKey::new(ck),
@@ -77,18 +77,18 @@ impl CipherKey {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(1));
-        try!(e.u8(0).and(e.bytes(&self.key.0)));
+        e.object(1)?;
+        e.u8(0).and(e.bytes(&self.key.0))?;
         Ok(())
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherKey> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut key = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => key = Some(try!(Bytes32::decode(d).map(|v| stream::Key(v.array)))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("CipherKey::key", key, Bytes32::decode(d).map(|v| stream::Key(v.array))?),
+                _ => d.skip()?
             }
         }
         Ok(CipherKey { key: to_field!(key, "CipherKey::key") })
@@ -135,18 +135,18 @@ impl MacKey {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(1));
-        try!(e.u8(0).and(e.bytes(&self.key.0)));
+        e.object(1)?;
+        e.u8(0).and(e.bytes(&self.key.0))?;
         Ok(())
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MacKey> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut key = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => key = Some(try!(Bytes32::decode(d).map(|v| mac::Key(v.array)))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("MacKey::key", key, Bytes32::decode(d).map(|v| mac::Key(v.array))?),
+                _ => d.skip()?
             }
         }
         Ok(MacKey { key: to_field!(key, "MacKey::key") })
@@ -166,18 +166,18 @@ impl Mac {
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        try!(e.object(1));
-        try!(e.u8(0).and(e.bytes(&self.sig.0)));
+        e.object(1)?;
+        e.u8(0).and(e.bytes(&self.sig.0))?;
         Ok(())
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Mac> {
-        let n = try!(d.object());
+        let n = d.object()?;
         let mut sig = None;
         for _ in 0 .. n {
-            match try!(d.u8()) {
-                0 => sig = Some(try!(Bytes32::decode(d).map(|v| mac::Tag(v.array)))),
-                _ => try!(d.skip())
+            match d.u8()? {
+                0 => uniq!("Mac::sig", sig, Bytes32::decode(d).map(|v| mac::Tag(v.array))?),
+                _ => d.skip()?
             }
         }
         Ok(Mac { sig: to_field!(sig, "Mac::sig") })
