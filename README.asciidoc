@@ -9,7 +9,7 @@ For licensing information, see the attached LICENSE file and the list of third-p
 = Proteus
 
 // Links
-:axolotl: https://github.com/trevp/axolotl/wiki
+:double_ratchet: https://github.com/trevp/double_ratchet/wiki
 :whisper: https://whispersystems.org/blog/asynchronous-security/
 :sodium: https://github.com/jedisct1/libsodium
 :chacha: https://en.wikipedia.org/wiki/Salsa20#ChaCha_variant
@@ -21,7 +21,7 @@ For licensing information, see the attached LICENSE file and the list of third-p
 :cbor: https://tools.ietf.org/html/rfc7049
 :wiki: https://github.com/wireapp/proteus/wiki/Serialisation-format
 
-Proteus is an implementation of the link:{axolotl}[axolotl protocol] without
+Proteus is an implementation of the link:{double_ratchet}[Double Ratchet Algorithm] without
 header keys. It is suitable for use in asynchronous environments through its
 use of link:{whisper}[prekeys].
 
