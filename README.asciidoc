@@ -21,7 +21,7 @@ For licensing information, see the attached LICENSE file and the list of third-p
 :cbor: https://tools.ietf.org/html/rfc7049
 :wiki: https://github.com/wireapp/proteus/wiki/Serialisation-format
 
-Proteus is an implementation of the link:{axolotl}[axolotl protocol] without
+Proteus is an implementation of the link:{axolotl}[axolotl protocol] (later renamed to Double Ratchet Algorithm) without
 header keys. It is suitable for use in asynchronous environments through its
 use of link:{whisper}[prekeys].
 
