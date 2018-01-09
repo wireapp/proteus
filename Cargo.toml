@@ -13,5 +13,5 @@ byteorder     = ">  0.2.0"
 cbor-codec    = ">= 0.7.0"
 hkdf          = { git = "https://github.com/wireapp/hkdf", branch = "develop"}
 libc          = ">  0.1.0"
-sodiumoxide   = { version = ">= 0.0.14", default-features = false, features = ["std"] }
+sodiumoxide   = { version = ">= 0.0.16", default-features = false, features = ["std"] }
 
