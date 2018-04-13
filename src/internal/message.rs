@@ -257,7 +257,7 @@ impl<'r> Envelope<'r> {
         m.encode(&mut Encoder::new(&mut c))?;
 
         Ok(Envelope {
-            version:     1,
+            version:     2,
             mac:         k.sign(c.get_ref()),
             message:     m,
             message_enc: c.into_inner()
