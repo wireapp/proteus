@@ -777,7 +777,7 @@ impl SessionState {
     }
 
     fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, Error<E>> {
-        let mut rchain =
+        let rchain: &mut RecvChain =
             match self.recv_chains.iter().position(|c| c.ratchet_key == *m.ratchet_key) {
                 Some(i) => &mut self.recv_chains[i],
                 None    => {
