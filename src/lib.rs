@@ -16,7 +16,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 extern crate cbor;
-extern crate byteorder;
 extern crate hkdf;
 extern crate libc;
 extern crate sodiumoxide;

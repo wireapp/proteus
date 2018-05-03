@@ -15,7 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use byteorder::{BigEndian, ByteOrder};
 use cbor::{Config, Decoder, Encoder};
 use cbor::skip::Skip;
 use internal::derived::{Mac, MacKey, Nonce};
@@ -48,7 +47,10 @@ impl Counter {
 
     pub fn as_nonce(&self) -> Nonce {
         let mut nonce = [0; 8];
-        BigEndian::write_u32(&mut nonce, self.0);
+        nonce[0] = (self.0 >> 24) as u8;
+        nonce[1] = (self.0 >> 16) as u8;
+        nonce[2] = (self.0 >> 8) as u8;
+        nonce[3] = self.0 as u8;
         Nonce::new(nonce)
     }
 
