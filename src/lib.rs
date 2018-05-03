@@ -17,7 +17,6 @@
 
 extern crate cbor;
 extern crate hkdf;
-extern crate libc;
 extern crate sodiumoxide;
 
 pub mod internal;
