@@ -17,7 +17,7 @@
 
 use std::os::raw::c_int;
 
-extern {
+extern "C" {
     pub fn crypto_sign_ed25519_pk_to_curve25519(c: *mut u8, e: *const u8) -> c_int;
     pub fn crypto_sign_ed25519_sk_to_curve25519(c: *mut u8, e: *const u8) -> c_int;
 }
