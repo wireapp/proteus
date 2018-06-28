@@ -22,13 +22,13 @@ use std::fmt;
 
 #[derive(Debug)]
 pub enum InternalError {
-    NoSessionForTag
+    NoSessionForTag,
 }
 
 impl fmt::Display for InternalError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            InternalError::NoSessionForTag => write!(f, "No session found for session tag.")
+            InternalError::NoSessionForTag => write!(f, "No session found for session tag."),
         }
     }
 }
@@ -46,14 +46,14 @@ pub type EncodeResult<A> = Result<A, EncodeError>;
 #[derive(Debug)]
 pub enum EncodeError {
     Internal(InternalError),
-    Encoder(cbor::EncodeError)
+    Encoder(cbor::EncodeError),
 }
 
 impl fmt::Display for EncodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             EncodeError::Internal(ref e) => write!(f, "Internal error: {}", e),
-            EncodeError::Encoder(ref e)  => write!(f, "CBOR encoder error: {}", e)
+            EncodeError::Encoder(ref e) => write!(f, "CBOR encoder error: {}", e),
         }
     }
 }
@@ -66,7 +66,7 @@ impl Error for EncodeError {
     fn cause(&self) -> Option<&Error> {
         match *self {
             EncodeError::Internal(ref e) => Some(e),
-            EncodeError::Encoder(ref e)  => Some(e),
+            EncodeError::Encoder(ref e) => Some(e),
         }
     }
 }
@@ -95,19 +95,19 @@ pub enum DecodeError {
     InvalidType(u8, &'static str),
     MissingField(&'static str),
     InvalidField(&'static str),
-    DuplicateField(&'static str)
+    DuplicateField(&'static str),
 }
 
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            DecodeError::Decoder(ref e)          => write!(f, "CBOR decoder error: {}", e),
-            DecodeError::InvalidArrayLen(n)      => write!(f, "CBOR array length mismatch: {}", n),
+            DecodeError::Decoder(ref e) => write!(f, "CBOR decoder error: {}", e),
+            DecodeError::InvalidArrayLen(n) => write!(f, "CBOR array length mismatch: {}", n),
             DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
-            DecodeError::InvalidType(t, ref s)   => write!(f, "Invalid type {}: {}", t, s),
-            DecodeError::MissingField(ref s)     => write!(f, "Missing field: {}", s),
-            DecodeError::InvalidField(ref s)     => write!(f, "Invalid field: {}", s),
-            DecodeError::DuplicateField(ref s)   => write!(f, "Duplicate field: {}", s),
+            DecodeError::InvalidType(t, ref s) => write!(f, "Invalid type {}: {}", t, s),
+            DecodeError::MissingField(ref s) => write!(f, "Missing field: {}", s),
+            DecodeError::InvalidField(ref s) => write!(f, "Invalid field: {}", s),
+            DecodeError::DuplicateField(ref s) => write!(f, "Duplicate field: {}", s),
         }
     }
 }
@@ -120,7 +120,7 @@ impl Error for DecodeError {
     fn cause(&self) -> Option<&Error> {
         match *self {
             DecodeError::Decoder(ref e) => Some(e),
-            _                           => None
+            _ => None,
         }
     }
 }

@@ -15,10 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-pub use internal::message::Counter;
-pub use internal::derived::Nonce;
 pub use internal::derived::Mac;
+pub use internal::derived::Nonce;
+pub use internal::message::CipherMessage;
+pub use internal::message::Counter;
+pub use internal::message::Envelope;
 pub use internal::message::Message;
 pub use internal::message::PreKeyMessage;
-pub use internal::message::CipherMessage;
-pub use internal::message::Envelope;

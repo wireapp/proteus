@@ -15,13 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor::{Decoder, Encoder};
 use cbor::skip::Skip;
-use hkdf::{Info, Input, Len, Salt, hkdf};
+use cbor::{Decoder, Encoder};
+use hkdf::{hkdf, Info, Input, Len, Salt};
 use internal::types::{DecodeError, DecodeResult, EncodeResult};
 use internal::util::Bytes32;
-use sodiumoxide::crypto::stream::chacha20 as stream;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
+use sodiumoxide::crypto::stream::chacha20 as stream;
 use std::io::{Read, Write};
 use std::ops::Deref;
 use std::vec::Vec;
@@ -31,7 +31,7 @@ use std::vec::Vec;
 #[derive(Clone)]
 pub struct DerivedSecrets {
     pub cipher_key: CipherKey,
-    pub mac_key:    MacKey
+    pub mac_key: MacKey,
 }
 
 impl DerivedSecrets {
@@ -42,12 +42,12 @@ impl DerivedSecrets {
         let len = Len::new(64).expect("Unexpected hkdf::HASH_LEN.");
         let okm = hkdf(salt, input, info, len);
 
-        ck.as_mut().write_all(&okm.0[0  .. 32]).unwrap();
-        mk.as_mut().write_all(&okm.0[32 .. 64]).unwrap();
+        ck.as_mut().write_all(&okm.0[0..32]).unwrap();
+        mk.as_mut().write_all(&okm.0[32..64]).unwrap();
 
         DerivedSecrets {
             cipher_key: CipherKey::new(ck),
-            mac_key:    MacKey::new(mk)
+            mac_key: MacKey::new(mk),
         }
     }
 
@@ -60,12 +60,14 @@ impl DerivedSecrets {
 
 #[derive(Clone)]
 pub struct CipherKey {
-    key: stream::Key
+    key: stream::Key,
 }
 
 impl CipherKey {
     pub fn new(b: [u8; 32]) -> CipherKey {
-        CipherKey { key: stream::Key(b) }
+        CipherKey {
+            key: stream::Key(b),
+        }
     }
 
     pub fn encrypt(&self, text: &[u8], nonce: &Nonce) -> Vec<u8> {
@@ -85,13 +87,19 @@ impl CipherKey {
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherKey> {
         let n = d.object()?;
         let mut key = None;
-        for _ in 0 .. n {
+        for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("CipherKey::key", key, Bytes32::decode(d).map(|v| stream::Key(v.array))?),
-                _ => d.skip()?
+                0 => uniq!(
+                    "CipherKey::key",
+                    key,
+                    Bytes32::decode(d).map(|v| stream::Key(v.array))?
+                ),
+                _ => d.skip()?,
             }
         }
-        Ok(CipherKey { key: to_field!(key, "CipherKey::key") })
+        Ok(CipherKey {
+            key: to_field!(key, "CipherKey::key"),
+        })
     }
 }
 
@@ -118,7 +126,7 @@ impl Nonce {
 
 #[derive(Clone)]
 pub struct MacKey {
-    key: mac::Key
+    key: mac::Key,
 }
 
 impl MacKey {
@@ -127,7 +135,9 @@ impl MacKey {
     }
 
     pub fn sign(&self, msg: &[u8]) -> Mac {
-        Mac { sig: mac::authenticate(msg, &self.key) }
+        Mac {
+            sig: mac::authenticate(msg, &self.key),
+        }
     }
 
     pub fn verify(&self, sig: &Mac, msg: &[u8]) -> bool {
@@ -143,13 +153,19 @@ impl MacKey {
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MacKey> {
         let n = d.object()?;
         let mut key = None;
-        for _ in 0 .. n {
+        for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("MacKey::key", key, Bytes32::decode(d).map(|v| mac::Key(v.array))?),
-                _ => d.skip()?
+                0 => uniq!(
+                    "MacKey::key",
+                    key,
+                    Bytes32::decode(d).map(|v| mac::Key(v.array))?
+                ),
+                _ => d.skip()?,
             }
         }
-        Ok(MacKey { key: to_field!(key, "MacKey::key") })
+        Ok(MacKey {
+            key: to_field!(key, "MacKey::key"),
+        })
     }
 }
 
@@ -157,7 +173,7 @@ impl MacKey {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Mac {
-    sig: mac::Tag
+    sig: mac::Tag,
 }
 
 impl Mac {
@@ -174,13 +190,19 @@ impl Mac {
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Mac> {
         let n = d.object()?;
         let mut sig = None;
-        for _ in 0 .. n {
+        for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("Mac::sig", sig, Bytes32::decode(d).map(|v| mac::Tag(v.array))?),
-                _ => d.skip()?
+                0 => uniq!(
+                    "Mac::sig",
+                    sig,
+                    Bytes32::decode(d).map(|v| mac::Tag(v.array))?
+                ),
+                _ => d.skip()?,
             }
         }
-        Ok(Mac { sig: to_field!(sig, "Mac::sig") })
+        Ok(Mac {
+            sig: to_field!(sig, "Mac::sig"),
+        })
     }
 }
 

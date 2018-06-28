@@ -15,17 +15,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-pub use internal::keys::SecretKey;
-pub use internal::keys::PublicKey;
 pub use internal::keys::IdentityKey;
 pub use internal::keys::IdentityKeyPair;
 pub use internal::keys::PreKey;
-pub use internal::keys::PreKeyId;
-pub use internal::keys::MAX_PREKEY_ID;
 pub use internal::keys::PreKeyAuth;
 pub use internal::keys::PreKeyBundle;
+pub use internal::keys::PreKeyId;
+pub use internal::keys::PublicKey;
+pub use internal::keys::SecretKey;
 pub use internal::keys::Signature;
 pub use internal::keys::Zero;
+pub use internal::keys::MAX_PREKEY_ID;
 
 pub use internal::keys::gen_prekeys;
 pub use internal::keys::rand_bytes;
