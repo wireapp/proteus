@@ -1,6 +1,6 @@
 # Wire
 
-image:https://travis-ci.org/wireapp/proteus.svg?branch=master["Build Status", link="https://travis-ci.org/wireapp/proteus"]
+image:https://travis-ci.org/wireapp/proteus.svg?branch=develop["Build Status", link="https://travis-ci.org/wireapp/proteus"]
 
 This repository is part of the source code of Wire. You can find more information at https://wire.com[wire.com] or by contacting opensource@wire.com.
 
