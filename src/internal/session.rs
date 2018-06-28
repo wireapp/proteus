@@ -88,7 +88,7 @@ pub struct ChainKey {
 
 impl ChainKey {
     pub fn from_mac_key(k: MacKey, idx: Counter) -> ChainKey {
-        ChainKey { key: k, idx: idx }
+        ChainKey { key: k, idx }
     }
 
     pub fn next(&self) -> ChainKey {
@@ -260,7 +260,7 @@ impl RecvChain {
             self.message_keys.pop_front();
         }
 
-        for m in mks.into_iter() {
+        for m in mks {
             self.message_keys.push_back(m)
         }
 
@@ -306,7 +306,7 @@ impl RecvChain {
         Ok(RecvChain {
             chain_key: to_field!(chain_key, "RecvChain::chain_key"),
             ratchet_key: to_field!(ratchet_key, "RecvChain::ratchet_key"),
-            message_keys: message_keys.unwrap_or_else(|| VecDeque::new()),
+            message_keys: message_keys.unwrap_or_else(VecDeque::new),
         })
     }
 }
@@ -426,7 +426,7 @@ struct BobParams<'r> {
 impl<I: Borrow<IdentityKeyPair>> Session<I> {
     pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> Result<Session<I>, Error<E>> {
         let alice_base = KeyPair::new();
-        let state = SessionState::init_as_alice(AliceParams {
+        let state = SessionState::init_as_alice(&AliceParams {
             alice_ident: alice.borrow(),
             alice_base: &alice_base,
             bob: &pk,
@@ -435,7 +435,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         let session_tag = SessionTag::new();
         let mut session = Session {
             version: 1,
-            session_tag: session_tag,
+            session_tag,
             counter: 0,
             local_identity: alice,
             remote_identity: pk.identity_key,
@@ -447,6 +447,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         Ok(session)
     }
 
+    #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
     pub fn init_from_message<S: PreKeyStore>(
         ours: I,
         store: &mut S,
@@ -579,9 +580,12 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     // state left is the one to be inserted, but if Alice and Bob do not
     // manage to agree on a session state within `usize::MAX` it is probably
     // of least concern.
+    #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
     fn insert_session_state(&mut self, t: SessionTag, s: SessionState) {
         if self.session_states.contains_key(&t) {
-            self.session_states.get_mut(&t).map(|x| x.val = s);
+            if let Some(x) = self.session_states.get_mut(&t) {
+                x.val = s;
+            }
         } else {
             if self.counter == usize::MAX {
                 // See note [counter_overflow]
@@ -589,7 +593,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 self.counter = 0;
             }
             self.session_states.insert(t, Indexed::new(self.counter, s));
-            self.counter = self.counter + 1;
+            self.counter += 1;
         }
 
         // See note [session_tag]
@@ -603,7 +607,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 .iter()
                 .filter(|s| s.0 != &self.session_tag)
                 .min_by_key(|s| s.1.idx)
-                .map(|s| s.0.clone())
+                .map(|s| *s.0)
                 .map(|k| self.session_states.remove(&k));
         }
     }
@@ -709,7 +713,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                         let t = SessionTag::decode(d)?;
                         let s = SessionState::decode(d)?;
                         rb.insert(t, Indexed::new(counter, s));
-                        counter = counter + 1
+                        counter += 1;
                     }
                     rb
                 }),
@@ -719,7 +723,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         Ok(Session {
             version: to_field!(version, "Session::version"),
             session_tag: to_field!(session_tag, "Session::session_tag"),
-            counter: counter,
+            counter,
             local_identity: ident,
             remote_identity: to_field!(remote_identity, "Session::remote_identity"),
             pending_prekey: pending_prekey.unwrap_or(None),
@@ -739,7 +743,7 @@ pub struct SessionState {
 }
 
 impl SessionState {
-    fn init_as_alice<E>(p: AliceParams) -> Result<SessionState, Error<E>> {
+    fn init_as_alice<E>(p: &AliceParams) -> Result<SessionState, Error<E>> {
         let master_key = {
             let mut buf = Vec::new();
             buf.extend(&p.alice_ident.secret_key.shared_secret(&p.bob.public_key)?);
@@ -767,8 +771,8 @@ impl SessionState {
         let send_chain = SendChain::new(chk, send_ratchet);
 
         Ok(SessionState {
-            recv_chains: recv_chains,
-            send_chain: send_chain,
+            recv_chains,
+            send_chain,
             root_key: rok,
             prev_counter: Counter::zero(),
         })
@@ -796,7 +800,7 @@ impl SessionState {
 
         Ok(SessionState {
             recv_chains: VecDeque::with_capacity(MAX_RECV_CHAINS + 1),
-            send_chain: send_chain,
+            send_chain,
             root_key: rootkey,
             prev_counter: Counter::zero(),
         })

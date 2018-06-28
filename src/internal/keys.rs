@@ -74,6 +74,12 @@ pub struct IdentityKeyPair {
     pub public_key: IdentityKey,
 }
 
+impl Default for IdentityKeyPair {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IdentityKeyPair {
     pub fn new() -> IdentityKeyPair {
         let k = KeyPair::new();
@@ -200,7 +206,7 @@ impl PreKey {
 
 pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
     (1..)
-        .map(|i| ((start.value() as u32 + i) % (MAX_PREKEY_ID.value() as u32)))
+        .map(|i| ((u32::from(start.value()) + i) % u32::from(MAX_PREKEY_ID.value())))
         .map(|i| PreKey::new(PreKeyId::new(i as u16)))
         .take(size as usize)
         .collect()
@@ -340,11 +346,11 @@ impl PreKeyId {
         PreKeyId(i)
     }
 
-    pub fn value(&self) -> u16 {
+    pub fn value(self) -> u16 {
         self.0
     }
 
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    pub fn encode<W: Write>(self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.u16(self.0).map_err(From::from)
     }
 
@@ -365,6 +371,12 @@ impl fmt::Display for PreKeyId {
 pub struct KeyPair {
     pub secret_key: SecretKey,
     pub public_key: PublicKey,
+}
+
+impl Default for KeyPair {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KeyPair {
@@ -460,8 +472,8 @@ impl SecretKey {
             .map(ecdh::Scalar)
             .map_err(|()| DecodeError::InvalidField("SecretKey::sec_edward"))?;
         Ok(SecretKey {
-            sec_edward: sec_edward,
-            sec_curve: sec_curve,
+            sec_edward,
+            sec_curve,
         })
     }
 }
@@ -476,7 +488,7 @@ pub struct PublicKey {
 
 impl PartialEq for PublicKey {
     fn eq(&self, other: &PublicKey) -> bool {
-        &self.pub_edward.0 == &other.pub_edward.0 && &self.pub_curve.0 == &other.pub_curve.0
+        self.pub_edward.0 == other.pub_edward.0 && self.pub_curve.0 == other.pub_curve.0
     }
 }
 
@@ -521,8 +533,8 @@ impl PublicKey {
             .map(ecdh::GroupElement)
             .map_err(|()| DecodeError::InvalidField("PublicKey::pub_edward"))?;
         Ok(PublicKey {
-            pub_edward: pub_edward,
-            pub_curve: pub_curve,
+            pub_edward,
+            pub_curve,
         })
     }
 }

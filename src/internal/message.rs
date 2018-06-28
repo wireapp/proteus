@@ -37,15 +37,15 @@ impl Counter {
         Counter(0)
     }
 
-    pub fn value(&self) -> u32 {
+    pub fn value(self) -> u32 {
         self.0
     }
 
-    pub fn next(&self) -> Counter {
+    pub fn next(self) -> Counter {
         Counter(self.0 + 1)
     }
 
-    pub fn as_nonce(&self) -> Nonce {
+    pub fn as_nonce(self) -> Nonce {
         let mut nonce = [0; 8];
         nonce[0] = (self.0 >> 24) as u8;
         nonce[1] = (self.0 >> 16) as u8;
@@ -54,7 +54,7 @@ impl Counter {
         Nonce::new(nonce)
     }
 
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
+    pub fn encode<W: Write>(self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.u32(self.0).map_err(From::from)
     }
 
@@ -65,7 +65,7 @@ impl Counter {
 
 // Session Tag //////////////////////////////////////////////////////////////
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct SessionTag {
     tag: [u8; 16],
 }
@@ -87,9 +87,7 @@ impl SessionTag {
             return Err(DecodeError::InvalidArrayLen(v.len()));
         }
         let mut a = [0u8; 16];
-        for i in 0..16 {
-            a[i] = v[i]
-        }
+        a[..16].clone_from_slice(&v[..16]);
         Ok(SessionTag { tag: a })
     }
 }
@@ -307,7 +305,7 @@ impl<'r> Envelope<'r> {
     }
 
     pub fn version(&self) -> u16 {
-        self.version as u16
+        u16::from(self.version)
     }
 
     pub fn mac(&self) -> &Mac {

@@ -24,7 +24,7 @@ pub mod keys;
 pub mod message;
 pub mod session;
 
-pub fn init() -> bool {
+pub fn init() -> Result<(), ()> {
     sodiumoxide::init()
 }
 

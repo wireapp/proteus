@@ -90,7 +90,7 @@ impl Bytes64 {
 
 // Hex formatting ///////////////////////////////////////////////////////////
 
-const HEX_DIGITS: &'static [u8] = b"0123456789abcdef";
+const HEX_DIGITS: &[u8] = b"0123456789abcdef";
 
 pub fn fmt_hex(xs: &[u8]) -> String {
     let mut v = Vec::with_capacity(xs.len() * 2);
