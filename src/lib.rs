@@ -27,7 +27,7 @@ pub mod session;
 pub mod message;
 
 pub fn init() -> bool {
-    sodiumoxide::init()
+    sodiumoxide::init().is_ok()
 }
 
 pub use internal::types::{DecodeError, EncodeError};
