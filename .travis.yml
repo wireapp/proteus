@@ -3,5 +3,5 @@ rust: nightly
 
 before_script:
     - wget "https://github.com/jedisct1/libsodium/releases/download/1.0.16/libsodium-1.0.16.tar.gz"
-    - tar -xzvf libsodium-1.0.3.tar.gz
-    - cd libsodium-1.0.3 && ./configure --prefix=/usr && make && sudo make install
+    - tar -xzvf libsodium-1.0.16.tar.gz
+    - cd libsodium-1.0.16 && ./configure --prefix=/usr && make && sudo make install
