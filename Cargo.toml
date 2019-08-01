@@ -10,6 +10,6 @@ license      = "GPL-3.0"
 
 [dependencies]
 cbor-codec    = ">= 0.7.0"
-hkdf          = { git = "https://github.com/wireapp/hkdf", branch = "develop"}
+hkdf          = { git = "https://github.com/wireapp/hkdf", branch = "bump_sodiumoxide"}
 sodiumoxide   = { version = "^0.2.0", default-features = false, features = ["std"] }
 
