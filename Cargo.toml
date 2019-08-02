@@ -1,7 +1,7 @@
 [package]
 
 name         = "proteus"
-version      = "1.0.0"
+version      = "1.0.2"
 authors      = ["Wire Swiss GmbH <support@wire.com>"]
 description  = "Axolotl protocol implementation"
 homepage     = "https://github.com/wireapp/proteus"
@@ -10,6 +10,6 @@ license      = "GPL-3.0"
 
 [dependencies]
 cbor-codec    = ">= 0.7.0"
-hkdf          = { git = "https://github.com/wireapp/hkdf", branch = "bump_sodiumoxide"}
+hkdf          = { git = "https://github.com/wireapp/hkdf", tag = "v0.3.1"}
 sodiumoxide   = { version = "^0.2.0", default-features = false, features = ["std"] }
 
