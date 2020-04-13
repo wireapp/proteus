@@ -126,9 +126,9 @@ impl IdentityKeyPair {
         e.object(3)?;
         e.u8(0)?;
         e.u8(version)?;
-        e.u8(3)?;
+        e.u8(1)?;
         self.secret_key.encode(e)?;
-        e.u8(4)?;
+        e.u8(2)?;
         self.public_key.encode(e)
     }
 
