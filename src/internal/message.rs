@@ -18,7 +18,7 @@
 use cbor::skip::Skip;
 use cbor::{Config, Decoder, Encoder};
 use internal::derived::{Mac, MacKey, Nonce};
-use internal::keys::{IdentityKey, PreKeyId, PublicKey};
+use internal::keys::{DHPublicKey, IdentityKey, PreKeyId};
 use internal::types::{DecodeError, DecodeResult, EncodeResult};
 use internal::util::fmt_hex;
 use sodiumoxide::randombytes;
@@ -139,7 +139,7 @@ impl<'r> Message<'r> {
 
 pub struct PreKeyMessage<'r> {
     pub prekey_id: PreKeyId,
-    pub base_key: Cow<'r, PublicKey>,
+    pub base_key: Cow<'r, DHPublicKey>,
     pub identity_key: Cow<'r, IdentityKey>,
     pub message: CipherMessage<'r>,
 }
@@ -175,7 +175,7 @@ impl<'r> PreKeyMessage<'r> {
         for _ in 0..n {
             match d.u8()? {
                 0 => uniq!("PreKeyMessage::prekey_id", prekey_id, PreKeyId::decode(d)?),
-                1 => uniq!("PreKeyMessage::base_key", base_key, PublicKey::decode(d)?),
+                1 => uniq!("PreKeyMessage::base_key", base_key, DHPublicKey::decode(d)?),
                 2 => uniq!(
                     "PreKeyMessage::identity_key",
                     identity_key,
@@ -200,7 +200,7 @@ pub struct CipherMessage<'r> {
     pub session_tag: SessionTag,
     pub counter: Counter,
     pub prev_counter: Counter,
-    pub ratchet_key: Cow<'r, PublicKey>,
+    pub ratchet_key: Cow<'r, DHPublicKey>,
     pub cipher_text: Vec<u8>,
 }
 
@@ -253,7 +253,7 @@ impl<'r> CipherMessage<'r> {
                 3 => uniq!(
                     "CipherMessage::ratchet_key",
                     ratchet_key,
-                    PublicKey::decode(d)?
+                    DHPublicKey::decode(d)?
                 ),
                 4 => uniq!("CipherMessage::cipher_text", cipher_text, d.bytes()?),
                 _ => d.skip()?,
@@ -375,15 +375,15 @@ impl<'r> Envelope<'r> {
 mod tests {
     use super::*;
     use internal::derived::MacKey;
-    use internal::keys::{IdentityKey, KeyPair, PreKeyId};
+    use internal::keys::{DHKeyPair, IdentityKeyPair, PreKeyId};
     use std::borrow::Cow;
 
     #[test]
     fn enc_dec_envelope() {
         let mk = MacKey::new([1; 32]);
-        let bk = KeyPair::new().public_key;
-        let ik = IdentityKey::new(KeyPair::new().public_key);
-        let rk = KeyPair::new().public_key;
+        let bk = DHKeyPair::new().public_key;
+        let ik = IdentityKeyPair::new().public_key;
+        let rk = DHKeyPair::new().public_key;
 
         let tg = SessionTag::new();
         let m1 = Message::Keyed(PreKeyMessage {

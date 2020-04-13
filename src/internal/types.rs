@@ -63,7 +63,7 @@ impl Error for EncodeError {
         "EncodeError"
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         match *self {
             EncodeError::Internal(ref e) => Some(e),
             EncodeError::Encoder(ref e) => Some(e),
@@ -117,7 +117,7 @@ impl Error for DecodeError {
         "DecodeError"
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         match *self {
             DecodeError::Decoder(ref e) => Some(e),
             _ => None,
