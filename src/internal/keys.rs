@@ -426,7 +426,7 @@ impl DHKeyPair {
     pub fn new() -> DHKeyPair {
         let random_bytes = rand_bytes(ecdh::SCALARBYTES);
         let mut private_key = ecdh::Scalar([0u8; ecdh::SCALARBYTES]);
-        private_key.0[..ecdh::SCALARBYTES].clone_from_slice(&random_bytes[..ecdh::SCALARBYTES]);
+        private_key.0.clone_from_slice(&random_bytes);
         let public_key = ecdh::scalarmult_base(&private_key);
 
         DHKeyPair {
