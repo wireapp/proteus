@@ -184,7 +184,7 @@ impl IdentityKeyPair {
 
 // Prekey ///////////////////////////////////////////////////////////////////
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct PreKey {
     pub version: u8,
     pub key_id: PreKeyId,
@@ -410,7 +410,7 @@ impl fmt::Display for PreKeyId {
 
 // DHKeypair //////////////////////////////////////////////////////////////////
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct DHKeyPair {
     pub secret_key: DHSecretKey,
     pub public_key: DHPublicKey,
@@ -531,7 +531,7 @@ impl IdentitySecretKey {
 
 // DHSecretKey ////////////////////////////////////////////////////////////////
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct DHSecretKey {
     pub sec_curve: ecdh::Scalar,
 }
