@@ -34,7 +34,7 @@ use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
 
 // Root key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RootKey {
     key: CipherKey,
 }
@@ -80,7 +80,7 @@ impl RootKey {
 
 // Chain key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChainKey {
     key: MacKey,
     idx: Counter,
@@ -136,7 +136,7 @@ impl ChainKey {
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SendChain {
     chain_key: ChainKey,
     ratchet_key: KeyPair,
@@ -180,7 +180,7 @@ impl SendChain {
 
 const MAX_COUNTER_GAP: usize = 1000;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RecvChain {
     chain_key: ChainKey,
     ratchet_key: PublicKey,
@@ -224,7 +224,11 @@ impl RecvChain {
                     Err(Error::InvalidSignature)
                 }
             }
-            None => Err(Error::DuplicateMessage),
+            None => {
+                println!("Didn't find a message key for mesg.counter: {:?}", mesg.counter);
+                println!("These are the message keys I have: {:?}", self.message_keys);
+                Err(Error::DuplicateMessage)
+            },
         }
     }
 
@@ -313,7 +317,7 @@ impl RecvChain {
 
 // Message Keys /////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MessageKeys {
     cipher_key: CipherKey,
     mac_key: MacKey,
@@ -379,6 +383,7 @@ pub trait PreKeyStore {
 const MAX_RECV_CHAINS: usize = 5;
 const MAX_SESSION_STATES: usize = 100;
 
+#[derive(Debug)]
 pub struct Indexed<A> {
     pub idx: usize,
     pub val: A,
@@ -400,9 +405,10 @@ impl<A> Indexed<A> {
 // `Session::encrypt` can not succeed. The only places where we change
 // it after initialisation is in `Session::insert_session_state` which
 // sets it to the value of the state which is inserted.
+#[derive(Debug)]
 pub struct Session<I> {
     version: u8,
-    session_tag: SessionTag,
+    pub session_tag: SessionTag,
     counter: usize,
     local_identity: I,
     remote_identity: IdentityKey,
@@ -734,7 +740,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
 
 // Session State ////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SessionState {
     recv_chains: VecDeque<RecvChain>,
     send_chain: SendChain,
