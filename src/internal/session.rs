@@ -537,10 +537,10 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             Some(s) => s.val.clone(),
             None => return Err(Error::InvalidMessage),
         };
-        let plain = s.decrypt(env, &m)?;
+        let plain = s.decrypt(env, &m);
         self.pending_prekey = None;
         self.insert_session_state(m.session_tag, s);
-        Ok(plain)
+        plain
     }
 
     // Attempt to create a new session state based on the prekey that we
@@ -879,21 +879,21 @@ impl SessionState {
             Ordering::Less => rchain.try_message_keys(env, m),
             Ordering::Greater => {
                 let (chk, mk, mks) = rchain.stage_message_keys(m)?;
-                if !env.verify(&mk.mac_key) {
-                    return Err(Error::InvalidSignature);
-                }
                 let plain = mk.decrypt(&m.cipher_text);
                 rchain.chain_key = chk.next();
                 rchain.commit_message_keys(mks);
+                if !env.verify(&mk.mac_key) {
+                    return Err(Error::InvalidSignature);
+                }
                 Ok(plain)
             }
             Ordering::Equal => {
                 let mks = rchain.chain_key.message_keys();
+                let plain = mks.decrypt(&m.cipher_text);
+                rchain.chain_key = rchain.chain_key.next();
                 if !env.verify(&mks.mac_key) {
                     return Err(Error::InvalidSignature);
                 }
-                let plain = mks.decrypt(&m.cipher_text);
-                rchain.chain_key = rchain.chain_key.next();
                 Ok(plain)
             }
         }
@@ -1553,8 +1553,8 @@ mod tests {
         let mut bob =
             assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
 
-        let mut buffer = Vec::with_capacity(1000);
-        for _ in 0..1000 {
+        let mut buffer = Vec::new();
+        for _ in 0..1001 {
             buffer.push(bob.encrypt(b"Hello Alice!").unwrap().serialise().unwrap())
         }
 
@@ -1564,6 +1564,26 @@ mod tests {
                 alice.decrypt(&mut alice_store, &Envelope::deserialise(msg).unwrap()),
             );
         }
+
+        buffer.clear();
+        for _ in 0..1001 {
+            let mut msg = bob.encrypt(b"Hello Alice!").unwrap().serialise().unwrap();
+            msg[10] ^= 0xFF; // Flip some bits in the Mac.
+            buffer.push(msg);
+        }
+
+        for msg in &buffer {
+            let env = Envelope::deserialise(msg).unwrap();
+            assert!(
+                alice.decrypt(&mut alice_store, &env).is_err(),
+            );
+        }
+
+        let msg = bob.encrypt(b"Hello Alice, after more than 1000 failed messages!").unwrap().serialise().unwrap();
+        assert_decrypt(
+            b"Hello Alice, after more than 1000 failed messages!",
+            alice.decrypt(&mut alice_store, &Envelope::deserialise(&msg).unwrap()),
+        );
     }
 
     #[test]
