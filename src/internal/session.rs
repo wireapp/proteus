@@ -1813,33 +1813,17 @@ mod tests {
             .0;
         assert_eq!(1, bob2alice.session_states.len());
 
-        // alice2bob.encrypt(&[1,2,3]).unwrap();
-
         let a2b_m1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        for _ in 0..999 {
+            let _ = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        }
         let a2b_m2 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _a2b_m3 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _a2b_m4 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _a2b_m5 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _a2b_m6 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _a2b_m7 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _a2b_m8 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _a2b_m9 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _a2b_m10 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
 
         let b_m1 = bob2alice.decrypt(&mut bob_store, &a2b_m1).unwrap();
 
         assert_eq!(b_m1, &[1,2,3]);
 
         let b2a_m1 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m3 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m4 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m5 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m6 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m7 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m8 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m9 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
-        let _b2a_m10 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
 
         let _a_m1 = alice2bob.decrypt(&mut alice_store, &b2a_m1).unwrap();
 
@@ -1869,7 +1853,9 @@ mod tests {
         let _b2a_s6e2 = alice2bob.decrypt(&mut bob_store, &a2b_s6e2).unwrap();
 
         // At this point we don't have the key material to decrypt.
-        assert!(bob2alice.decrypt(&mut bob_store, &a2b_m2).is_err());
+        let out = bob2alice.decrypt(&mut bob_store, &a2b_m2);
+        assert_eq!(out, Err(Error::TooDistantFuture));
+        assert!(out.is_err());
     }
 
     #[test]
