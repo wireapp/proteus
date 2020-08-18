@@ -34,7 +34,7 @@ use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
 
 // Root key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RootKey {
     key: CipherKey,
 }
@@ -80,7 +80,7 @@ impl RootKey {
 
 // Chain key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChainKey {
     key: MacKey,
     idx: Counter,
@@ -136,7 +136,7 @@ impl ChainKey {
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SendChain {
     chain_key: ChainKey,
     ratchet_key: KeyPair,
@@ -180,7 +180,7 @@ impl SendChain {
 
 const MAX_COUNTER_GAP: usize = 1000;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RecvChain {
     chain_key: ChainKey,
     ratchet_key: PublicKey,
@@ -313,7 +313,7 @@ impl RecvChain {
 
 // Message Keys /////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MessageKeys {
     cipher_key: CipherKey,
     mac_key: MacKey,
@@ -379,6 +379,7 @@ pub trait PreKeyStore {
 const MAX_RECV_CHAINS: usize = 5;
 const MAX_SESSION_STATES: usize = 100;
 
+#[derive(Debug)]
 pub struct Indexed<A> {
     pub idx: usize,
     pub val: A,
@@ -400,6 +401,7 @@ impl<A> Indexed<A> {
 // `Session::encrypt` can not succeed. The only places where we change
 // it after initialisation is in `Session::insert_session_state` which
 // sets it to the value of the state which is inserted.
+#[derive(Debug)]
 pub struct Session<I> {
     version: u8,
     session_tag: SessionTag,
@@ -734,7 +736,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
 
 // Session State ////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SessionState {
     recv_chains: VecDeque<RecvChain>,
     send_chain: SendChain,
@@ -1041,6 +1043,7 @@ mod tests {
     use std::usize;
     use std::vec::Vec;
 
+    #[derive(Debug)]
     struct TestStore {
         prekeys: Vec<PreKey>,
     }
@@ -1780,6 +1783,93 @@ mod tests {
                 assert_eq!(false, bob2alice.session_states.contains_key(&to_remove))
             }
         }
+    }
+
+    #[test]
+    fn interrupted_sessions() {
+        let alice = IdentityKeyPair::new();
+        let bob = IdentityKeyPair::new();
+
+        let mut bob_store = TestStore {
+            prekeys: gen_prekeys(PreKeyId::new(0), 1),
+        };
+
+        let mut alice_store = TestStore {
+            prekeys: gen_prekeys(PreKeyId::new(1), 1),
+        };
+
+        let get_bob = |i, store: &mut TestStore| {
+            PreKeyBundle::new(bob.public_key.clone(), &store.prekey(i).unwrap().unwrap())
+        };
+
+        let mut alice2bob =
+            Session::init_from_prekey::<()>(&alice, get_bob(PreKeyId::new(1), &mut bob_store))
+                .unwrap();
+        let hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
+        assert_is_msg(&hello_bob, MsgType::Keyed);
+
+        let mut bob2alice = Session::init_from_message(&bob, &mut bob_store, &hello_bob)
+            .unwrap()
+            .0;
+        assert_eq!(1, bob2alice.session_states.len());
+
+        // alice2bob.encrypt(&[1,2,3]).unwrap();
+
+        let a2b_m1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_m2 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _a2b_m3 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _a2b_m4 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _a2b_m5 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _a2b_m6 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _a2b_m7 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _a2b_m8 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _a2b_m9 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _a2b_m10 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+
+        let b_m1 = bob2alice.decrypt(&mut bob_store, &a2b_m1).unwrap();
+
+        assert_eq!(b_m1, &[1,2,3]);
+
+        let b2a_m1 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m3 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m4 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m5 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m6 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m7 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m8 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m9 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_m10 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+
+        let _a_m1 = alice2bob.decrypt(&mut alice_store, &b2a_m1).unwrap();
+
+        let a2b_s2e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s2e1 = bob2alice.decrypt(&mut bob_store, &a2b_s2e1).unwrap();
+        let a2b_s2e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s2e2 = alice2bob.decrypt(&mut bob_store, &a2b_s2e2).unwrap();
+
+        let a2b_s3e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s3e1 = bob2alice.decrypt(&mut bob_store, &a2b_s3e1).unwrap();
+        let a2b_s3e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s3e2 = alice2bob.decrypt(&mut bob_store, &a2b_s3e2).unwrap();
+
+        let a2b_s4e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s4e1 = bob2alice.decrypt(&mut bob_store, &a2b_s4e1).unwrap();
+        let a2b_s4e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s4e2 = alice2bob.decrypt(&mut bob_store, &a2b_s4e2).unwrap();
+
+        let a2b_s5e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s5e1 = bob2alice.decrypt(&mut bob_store, &a2b_s5e1).unwrap();
+        let a2b_s5e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s5e2 = alice2bob.decrypt(&mut bob_store, &a2b_s5e2).unwrap();
+
+        let a2b_s6e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s6e1 = bob2alice.decrypt(&mut bob_store, &a2b_s6e1).unwrap();
+        let a2b_s6e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let _b2a_s6e2 = alice2bob.decrypt(&mut bob_store, &a2b_s6e2).unwrap();
+
+        // At this point we don't have the key material to decrypt.
+        assert!(bob2alice.decrypt(&mut bob_store, &a2b_m2).is_err());
     }
 
     #[test]

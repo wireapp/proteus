@@ -67,7 +67,7 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IdentityKeyPair {
     pub version: u8,
     pub secret_key: SecretKey,
@@ -143,7 +143,7 @@ impl IdentityKeyPair {
 
 // Prekey ///////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PreKey {
     pub version: u8,
     pub key_id: PreKeyId,
@@ -367,7 +367,7 @@ impl fmt::Display for PreKeyId {
 
 // Keypair //////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KeyPair {
     pub secret_key: SecretKey,
     pub public_key: PublicKey,
@@ -429,7 +429,7 @@ impl KeyPair {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SecretKey {
     sec_edward: sign::SecretKey,
     sec_curve: ecdh::Scalar,
