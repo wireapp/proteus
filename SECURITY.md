@@ -2,55 +2,55 @@
 
 To report a vulnerability see contact details [below](#reporting-a-vulnerability)
 
+## Security incident policy
+Security bug reports are treated withe special attention and are handled differently from normal bugs.
+In particular, security sensitive bugs are not handled on public issue trackers on Github or other company-wide accessible tools but in a private bug tracker.
+Information about the bug and access to it is restricted to people in the security bug group, the individual engineers that work on fixing it, and any other person who needs to be involved for organisational reasons.
+The process is handled by the security team, which decides on the people involved in order to fix the issue.
+It is also guaranteed that the person reporting the issue has visibility into the process of fixing it.
+Any security issue gets prioritized according to its security rating.
+The issue is opened up to the public in coordination with the release schedule and the reporter.
+Security fixes are mentioned in the release notes in a separate section called "Security Fixes" and link to the according advisory and/or issue.
+The issue might not be public at the time of the release, depending on the agreed embargo time, but fully documents the issue and any fixes.
+
 ## Tracking security issues
-Security issues are tracked on an internal vulnerabilities project that can only be accessed by a small number of people who have to have access.
-Once a security issue is triaged and the appropriate code repository is identified a draft security advisory is created on the corresponding Github repository.
-This gives the corresponding team access to the vulnerability and allows to get all people involved necessary to fix the issue.
-Once the issue is fixed and the embargo ends, the advisory is published to the Github advisory database.
+Security issues are tracked on an internal vulnerabilities project that can only be accessed by a small number of people.
+Once a security issue is triaged and the appropriate code repository is identified, a draft security advisory is created on the corresponding Github repository.
+This gives the corresponding team access to the vulnerability and allows to involve all people necessary to fix the issue.
+Once the issue has been fixed and the embargo ends the advisory is published to the Github advisory database.
 
 ## Post mortems
 Any security issues must be followed by a post mortem to analyze the cause and resolution for the incident.
-This template should be used.
+This template should be used for that purpose.
 The document is then stored alongside the vulnerability for future reference.
 
-## Security incident policy
-Security bug reports are treated as special and handled differently than normal bugs.
-In particular, security sensitive bugs are not handled on the public issue trackers on Github or another company-wide accessible tool but in a private bug tracker.
-Information about the bug and access to it is restricted to people in the security bug group, the individual engineers that work on fixing it, and any other person who needs to be involved for example for organisational reasons.
-The process is handled by the security team, which decides who needs to get involved in order to fix the issue.
-It is also guaranteed that the person reporting the issue has visibility into the process of fixing it.
-Any security issue gets prioritised according to its security rating.
-The issue is opened up to the public in coordination with the release schedule and the reporter.
-Security fixes are mentioned in the release notes in a separate section called “Security Fixes” and link to the according advisory and/or issue.
-The issue might not be public at the time of the release, depending on the agreed embargo time, but fully documents the issue and any fixes.
-
 ### Vulnerability Approval Process
-While working on security issues it is important that we don’t 0-day ourselves.
-It is therefore necessary that any commits related to security fixes can not be obviously identified as such.
+While working on security issues, it is important that we don’t disclose the issue to a wider audience prematurely.
+It is therefore necessary that any commit related to security fixes should not obviously be identifiable as such.
 Therefore tests pointing to the issue might be landed later, commit messages should be obscured, and comments and code should not refer to the issue in any obvious way.
 Any security fix must be approved by the security team before it can be merged.
-This ensures that the principles above are adhered to.
+This ensures that the principles above are followed.
 
 ## Internal escalation path
 When a security issue is identified and entered in the vulnerability tracker it first gets assessed by the security team.
-After the assessment the team-leads responsible for the component where the vulnerability lies and the engineering VPs get involved.
-Depending on the security rating the CTO and CEO may get informed as well.
-If the vulnerability might involve personally identifiable data, the data protection officer is also informed.
+After the assessment, the team leads responsible for the component where the vulnerability lies and the engineering VPs get involved.
+Depending on the security rating, the CTO and CEO may get informed as well.
+If the vulnerability is relevant to data protection laws, the data protection officer is also informed.
 
 ## Disclosure Policy
-Everyone involved in the handling of a security issue, including the reporter, is expected to follow the following policy.
+Everyone involved in the handling of a security issue – including the reporter – is expected to adhere to the following policy.
 Any information related to a security issue must be treated as confidential and only shared with trusted partners if necessary, for example to coordinate a release or manage exposure of clients to the issue.
 No information must be disclosed to the public before the embargo ends. The embargo time is agreed upon by all involved parties.
 It should be as short as possible without putting any users at risk.
 
 ## Supported Versions
-Only the most recent version of each application is being supported.
+Only the most recent version of each application is supported.
 
 While there’s currently no bug bounty program we appreciate every report (see [contact details](#reporting-a-vulnerability) below).
 
 ## Reporting a Vulnerability
-Every vulnerability will be assessed within 24 hours of receiving it.
-If it is an actual security issue, it is transferred into an issue on the internal vulnerability project for further processing.
+Every vulnerability report will be assessed within 24 hours of receiving it.
+If the outcome of the assessment is that the report describes a security issue, the report will be transferred into an issue on the internal vulnerability project for further processing.
 The reporter is updated on each step of the process.
 We commit to fixing any security issue that we rate MODERATE or higher within 90 days.
 
