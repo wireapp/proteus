@@ -27,7 +27,7 @@ use cbor::skip::Skip;
 use cbor::{self, Config, Decoder, Encoder};
 use hkdf::{Info, Input, Salt};
 use internal::derived::{CipherKey, DerivedSecrets, MacKey};
-use internal::keys::{self, KeyPair, PublicKey};
+use internal::keys::{self, DHKeyPair, DHPublicKey};
 use internal::keys::{IdentityKey, IdentityKeyPair, PreKey, PreKeyBundle, PreKeyId};
 use internal::message::{CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag};
 use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
@@ -46,8 +46,8 @@ impl RootKey {
 
     pub fn dh_ratchet<E>(
         &self,
-        ours: &KeyPair,
-        theirs: &PublicKey,
+        ours: &DHKeyPair,
+        theirs: &DHPublicKey,
     ) -> Result<(RootKey, ChainKey), Error<E>> {
         let secret = ours.secret_key.shared_secret(theirs)?;
         let dsecs = DerivedSecrets::kdf(Input(&secret), Salt(&self.key), Info(b"dh_ratchet"));
@@ -139,11 +139,11 @@ impl ChainKey {
 #[derive(Clone)]
 pub struct SendChain {
     chain_key: ChainKey,
-    ratchet_key: KeyPair,
+    ratchet_key: DHKeyPair,
 }
 
 impl SendChain {
-    pub fn new(ck: ChainKey, rk: KeyPair) -> SendChain {
+    pub fn new(ck: ChainKey, rk: DHKeyPair) -> SendChain {
         SendChain {
             chain_key: ck,
             ratchet_key: rk,
@@ -165,7 +165,7 @@ impl SendChain {
         for _ in 0..n {
             match d.u8()? {
                 0 => uniq!("SendChain::chain_key", chain_key, ChainKey::decode(d)?),
-                1 => uniq!("SendChain::ratchet_key", ratchet_key, KeyPair::decode(d)?),
+                1 => uniq!("SendChain::ratchet_key", ratchet_key, DHKeyPair::decode(d)?),
                 _ => d.skip()?,
             }
         }
@@ -183,12 +183,12 @@ const MAX_COUNTER_GAP: usize = 1000;
 #[derive(Clone)]
 pub struct RecvChain {
     chain_key: ChainKey,
-    ratchet_key: PublicKey,
+    ratchet_key: DHPublicKey,
     message_keys: VecDeque<MessageKeys>,
 }
 
 impl RecvChain {
-    pub fn new(ck: ChainKey, rk: PublicKey) -> RecvChain {
+    pub fn new(ck: ChainKey, rk: DHPublicKey) -> RecvChain {
         RecvChain {
             chain_key: ck,
             ratchet_key: rk,
@@ -291,7 +291,11 @@ impl RecvChain {
         for _ in 0..n {
             match d.u8()? {
                 0 => uniq!("RecvChain::chain_key", chain_key, ChainKey::decode(d)?),
-                1 => uniq!("RecvChain::ratchet_key", ratchet_key, PublicKey::decode(d)?),
+                1 => uniq!(
+                    "RecvChain::ratchet_key",
+                    ratchet_key,
+                    DHPublicKey::decode(d)?
+                ),
                 2 => uniq!("RecvChain::message_keys", message_keys, {
                     let lv = d.array()?;
                     let mut vm = VecDeque::with_capacity(lv);
@@ -406,26 +410,26 @@ pub struct Session<I> {
     counter: usize,
     local_identity: I,
     remote_identity: IdentityKey,
-    pending_prekey: Option<(PreKeyId, PublicKey)>,
+    pending_prekey: Option<(PreKeyId, DHPublicKey)>,
     session_states: BTreeMap<SessionTag, Indexed<SessionState>>,
 }
 
 struct AliceParams<'r> {
     alice_ident: &'r IdentityKeyPair,
-    alice_base: &'r KeyPair,
+    alice_base: &'r DHKeyPair,
     bob: &'r PreKeyBundle,
 }
 
 struct BobParams<'r> {
     bob_ident: &'r IdentityKeyPair,
-    bob_prekey: KeyPair,
+    bob_prekey: DHKeyPair,
     alice_ident: &'r IdentityKey,
-    alice_base: &'r PublicKey,
+    alice_base: &'r DHPublicKey,
 }
 
 impl<I: Borrow<IdentityKeyPair>> Session<I> {
     pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> Result<Session<I>, Error<E>> {
-        let alice_base = KeyPair::new();
+        let alice_base = DHKeyPair::new();
         let state = SessionState::init_as_alice(&AliceParams {
             alice_ident: alice.borrow(),
             alice_base: &alice_base,
@@ -447,7 +451,6 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         Ok(session)
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
     pub fn init_from_message<S: PreKeyStore>(
         ours: I,
         store: &mut S,
@@ -580,7 +583,6 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     // state left is the one to be inserted, but if Alice and Bob do not
     // manage to agree on a session state within `usize::MAX` it is probably
     // of least concern.
-    #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
     fn insert_session_state(&mut self, t: SessionTag, s: SessionState) {
         if self.session_states.contains_key(&t) {
             if let Some(x) = self.session_states.get_mut(&t) {
@@ -694,7 +696,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                         for _ in 0..n {
                             match d.u8()? {
                                 0 => uniq!("PendingPreKey::id", id, PreKeyId::decode(d)?),
-                                1 => uniq!("PendingPreKey::pk", pk, PublicKey::decode(d)?),
+                                1 => uniq!("PendingPreKey::pk", pk, DHPublicKey::decode(d)?),
                                 _ => d.skip()?,
                             }
                         }
@@ -750,7 +752,7 @@ impl SessionState {
             buf.extend(
                 &p.alice_base
                     .secret_key
-                    .shared_secret(&p.bob.identity_key.public_key)?,
+                    .shared_secret(&p.bob.identity_key.public_key.to_dh_public_key())?,
             );
             buf.extend(&p.alice_base.secret_key.shared_secret(&p.bob.public_key)?);
             buf
@@ -766,7 +768,7 @@ impl SessionState {
         recv_chains.push_front(RecvChain::new(chainkey, p.bob.public_key.clone()));
 
         // sending chain
-        let send_ratchet = KeyPair::new();
+        let send_ratchet = DHKeyPair::new();
         let (rok, chk) = rootkey.dh_ratchet(&send_ratchet, &p.bob.public_key)?;
         let send_chain = SendChain::new(chk, send_ratchet);
 
@@ -784,7 +786,7 @@ impl SessionState {
             buf.extend(
                 &p.bob_prekey
                     .secret_key
-                    .shared_secret(&p.alice_ident.public_key)?,
+                    .shared_secret(&p.alice_ident.public_key.to_dh_public_key())?,
             );
             buf.extend(&p.bob_ident.secret_key.shared_secret(p.alice_base)?);
             buf.extend(&p.bob_prekey.secret_key.shared_secret(p.alice_base)?);
@@ -806,14 +808,15 @@ impl SessionState {
         })
     }
 
-    fn ratchet<E>(&mut self, ratchet_key: PublicKey) -> Result<(), Error<E>> {
-        let new_ratchet = KeyPair::new();
+    fn ratchet<E>(&mut self, ratchet_key: DHPublicKey) -> Result<(), Error<E>> {
+        let new_ratchet = DHKeyPair::new();
 
         let (recv_root_key, recv_chain_key) = self
             .root_key
             .dh_ratchet(&self.send_chain.ratchet_key, &ratchet_key)?;
 
-        let (send_root_key, send_chain_key) = recv_root_key.dh_ratchet(&new_ratchet, &ratchet_key)?;
+        let (send_root_key, send_chain_key) =
+            recv_root_key.dh_ratchet(&new_ratchet, &ratchet_key)?;
 
         let recv_chain = RecvChain::new(recv_chain_key, ratchet_key);
         let send_chain = SendChain::new(send_chain_key, new_ratchet);
@@ -833,7 +836,7 @@ impl SessionState {
     fn encrypt<'r>(
         self: &'r mut SessionState,
         ident: &'r IdentityKey,
-        pending: &'r Option<(PreKeyId, PublicKey)>,
+        pending: &'r Option<(PreKeyId, DHPublicKey)>,
         tag: SessionTag,
         plain: &[u8],
     ) -> EncodeResult<Envelope> {
@@ -1099,8 +1102,9 @@ mod tests {
             &bob_ident,
             &mut bob_store,
             &alices[0].encrypt(b"hello").unwrap().into_owned(),
-        ).unwrap()
-            .0;
+        )
+        .unwrap()
+        .0;
 
         for a in &mut alices {
             for _ in 0..900 {
@@ -1114,10 +1118,9 @@ mod tests {
         assert_eq!(total_size, bob.session_states.len());
 
         for a in &mut alices {
-            assert!(
-                bob.decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap())
-                    .is_ok()
-            );
+            assert!(bob
+                .decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap())
+                .is_ok());
         }
     }
 
