@@ -537,10 +537,10 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             Some(s) => s.val.clone(),
             None => return Err(Error::InvalidMessage),
         };
-        let plain = s.decrypt(env, &m);
+        let plain = s.decrypt(env, &m)?;
         self.pending_prekey = None;
         self.insert_session_state(m.session_tag, s);
-        plain
+        Ok(plain)
     }
 
     // Attempt to create a new session state based on the prekey that we
@@ -813,7 +813,8 @@ impl SessionState {
             .root_key
             .dh_ratchet(&self.send_chain.ratchet_key, &ratchet_key)?;
 
-        let (send_root_key, send_chain_key) = recv_root_key.dh_ratchet(&new_ratchet, &ratchet_key)?;
+        let (send_root_key, send_chain_key) =
+            recv_root_key.dh_ratchet(&new_ratchet, &ratchet_key)?;
 
         let recv_chain = RecvChain::new(recv_chain_key, ratchet_key);
         let send_chain = SendChain::new(send_chain_key, new_ratchet);
@@ -880,20 +881,20 @@ impl SessionState {
             Ordering::Greater => {
                 let (chk, mk, mks) = rchain.stage_message_keys(m)?;
                 let plain = mk.decrypt(&m.cipher_text);
-                rchain.chain_key = chk.next();
-                rchain.commit_message_keys(mks);
                 if !env.verify(&mk.mac_key) {
                     return Err(Error::InvalidSignature);
                 }
+                rchain.chain_key = chk.next();
+                rchain.commit_message_keys(mks);
                 Ok(plain)
             }
             Ordering::Equal => {
                 let mks = rchain.chain_key.message_keys();
                 let plain = mks.decrypt(&m.cipher_text);
-                rchain.chain_key = rchain.chain_key.next();
                 if !env.verify(&mks.mac_key) {
                     return Err(Error::InvalidSignature);
                 }
+                rchain.chain_key = rchain.chain_key.next();
                 Ok(plain)
             }
         }
@@ -1099,8 +1100,9 @@ mod tests {
             &bob_ident,
             &mut bob_store,
             &alices[0].encrypt(b"hello").unwrap().into_owned(),
-        ).unwrap()
-            .0;
+        )
+        .unwrap()
+        .0;
 
         for a in &mut alices {
             for _ in 0..900 {
@@ -1114,10 +1116,9 @@ mod tests {
         assert_eq!(total_size, bob.session_states.len());
 
         for a in &mut alices {
-            assert!(
-                bob.decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap())
-                    .is_ok()
-            );
+            assert!(bob
+                .decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap())
+                .is_ok());
         }
     }
 
@@ -1574,14 +1575,16 @@ mod tests {
 
         for msg in &buffer {
             let env = Envelope::deserialise(msg).unwrap();
-            assert!(
-                alice.decrypt(&mut alice_store, &env).is_err(),
-            );
+            assert!(alice.decrypt(&mut alice_store, &env).is_err(),);
         }
 
-        let msg = bob.encrypt(b"Hello Alice, after more than 1000 failed messages!").unwrap().serialise().unwrap();
-        assert_decrypt(
-            b"Hello Alice, after more than 1000 failed messages!",
+        let msg = bob
+            .encrypt(b"Hello Alice, after more than 1000 failed messages!")
+            .unwrap()
+            .serialise()
+            .unwrap();
+        assert_eq!(
+            Err(Error::TooDistantFuture),
             alice.decrypt(&mut alice_store, &Envelope::deserialise(&msg).unwrap()),
         );
     }
