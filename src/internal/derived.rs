@@ -58,7 +58,7 @@ impl DerivedSecrets {
 
 // Cipher Key ///////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CipherKey {
     key: stream::Key,
 }
@@ -124,7 +124,7 @@ impl Nonce {
 
 // MAC Key //////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MacKey {
     key: mac::Key,
 }
