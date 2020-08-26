@@ -1859,6 +1859,79 @@ mod tests {
     }
 
     #[test]
+    fn send_messages_before_processing() {
+        let alice = IdentityKeyPair::new();
+        let bob = IdentityKeyPair::new();
+
+        let mut bob_store = TestStore {
+            prekeys: gen_prekeys(PreKeyId::new(0), 1),
+        };
+
+        let mut alice_store = TestStore {
+            prekeys: gen_prekeys(PreKeyId::new(1), 1),
+        };
+
+        let get_bob = |i, store: &mut TestStore| {
+            PreKeyBundle::new(bob.public_key.clone(), &store.prekey(i).unwrap().unwrap())
+        };
+
+        let mut alice2bob =
+            Session::init_from_prekey::<()>(&alice, get_bob(PreKeyId::new(1), &mut bob_store))
+                .unwrap();
+        let hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
+        assert_is_msg(&hello_bob, MsgType::Keyed);
+
+        let mut bob2alice = Session::init_from_message(&bob, &mut bob_store, &hello_bob)
+            .unwrap()
+            .0;
+        assert_eq!(1, bob2alice.session_states.len());
+
+        let alice_first = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let alice_first_dec = bob2alice.decrypt(&mut bob_store, &alice_first).unwrap();
+        assert_eq!(alice_first_dec, &[1,2,3]);
+
+        let bob_first = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let bob_first_dec = alice2bob.decrypt(&mut alice_store, &bob_first).unwrap();
+        assert_eq!(bob_first_dec, &[1,2,3]);
+
+        let range: Vec<u32> = (0..10000).collect();
+        let alice_thousands: Vec<Envelope> = range.into_iter().map(|_| alice2bob.encrypt(&[1,2,3]).unwrap().into_owned()).collect();
+
+        for i in 0..999 {
+            assert!(bob2alice.decrypt(&mut bob_store, &alice_thousands[i]).is_ok());
+        }
+        let bob1 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        for i in 1000..1999 {
+            assert!(bob2alice.decrypt(&mut bob_store, &alice_thousands[i]).is_ok());
+        }
+        let bob2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        for i in 2000..2999 {
+            assert!(bob2alice.decrypt(&mut bob_store, &alice_thousands[i]).is_ok());
+        }
+        let bob3 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        for i in 3000..3999 {
+            assert!(bob2alice.decrypt(&mut bob_store, &alice_thousands[i]).is_ok());
+        }
+        let bob4 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        for i in 4000..4999 {
+            assert!(bob2alice.decrypt(&mut bob_store, &alice_thousands[i]).is_ok());
+        }
+        let bob5 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        for i in 5000..5999 {
+            assert!(bob2alice.decrypt(&mut bob_store, &alice_thousands[i]).is_ok());
+        }
+        let bob6 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+
+        assert!(bob2alice.decrypt(&mut bob_store, &alice_thousands[6000]).is_ok());
+        assert!(alice2bob.decrypt(&mut alice_store, &bob1).is_ok());
+        assert!(alice2bob.decrypt(&mut alice_store, &bob2).is_ok());
+        assert!(alice2bob.decrypt(&mut alice_store, &bob3).is_ok());
+        assert!(alice2bob.decrypt(&mut alice_store, &bob4).is_ok());
+        assert!(alice2bob.decrypt(&mut alice_store, &bob5).is_ok());
+        assert!(alice2bob.decrypt(&mut alice_store, &bob6).is_ok());
+    }
+
+    #[test]
     fn replaced_prekeys() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
