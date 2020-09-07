@@ -815,7 +815,8 @@ impl SessionState {
             .root_key
             .dh_ratchet(&self.send_chain.ratchet_key, &ratchet_key)?;
 
-        let (send_root_key, send_chain_key) = recv_root_key.dh_ratchet(&new_ratchet, &ratchet_key)?;
+        let (send_root_key, send_chain_key) =
+            recv_root_key.dh_ratchet(&new_ratchet, &ratchet_key)?;
 
         let recv_chain = RecvChain::new(recv_chain_key, ratchet_key);
         let send_chain = SendChain::new(send_chain_key, new_ratchet);
@@ -881,20 +882,20 @@ impl SessionState {
             Ordering::Less => rchain.try_message_keys(env, m),
             Ordering::Greater => {
                 let (chk, mk, mks) = rchain.stage_message_keys(m)?;
+                let plain = mk.decrypt(&m.cipher_text);
                 if !env.verify(&mk.mac_key) {
                     return Err(Error::InvalidSignature);
                 }
-                let plain = mk.decrypt(&m.cipher_text);
                 rchain.chain_key = chk.next();
                 rchain.commit_message_keys(mks);
                 Ok(plain)
             }
             Ordering::Equal => {
                 let mks = rchain.chain_key.message_keys();
+                let plain = mks.decrypt(&m.cipher_text);
                 if !env.verify(&mks.mac_key) {
                     return Err(Error::InvalidSignature);
                 }
-                let plain = mks.decrypt(&m.cipher_text);
                 rchain.chain_key = rchain.chain_key.next();
                 Ok(plain)
             }
@@ -1102,8 +1103,9 @@ mod tests {
             &bob_ident,
             &mut bob_store,
             &alices[0].encrypt(b"hello").unwrap().into_owned(),
-        ).unwrap()
-            .0;
+        )
+        .unwrap()
+        .0;
 
         for a in &mut alices {
             for _ in 0..900 {
@@ -1117,10 +1119,9 @@ mod tests {
         assert_eq!(total_size, bob.session_states.len());
 
         for a in &mut alices {
-            assert!(
-                bob.decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap())
-                    .is_ok()
-            );
+            assert!(bob
+                .decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap())
+                .is_ok());
         }
     }
 
@@ -1556,8 +1557,8 @@ mod tests {
         let mut bob =
             assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
 
-        let mut buffer = Vec::with_capacity(1000);
-        for _ in 0..1000 {
+        let mut buffer = Vec::new();
+        for _ in 0..1001 {
             buffer.push(bob.encrypt(b"Hello Alice!").unwrap().serialise().unwrap())
         }
 
@@ -1567,6 +1568,28 @@ mod tests {
                 alice.decrypt(&mut alice_store, &Envelope::deserialise(msg).unwrap()),
             );
         }
+
+        buffer.clear();
+        for _ in 0..1001 {
+            let mut msg = bob.encrypt(b"Hello Alice!").unwrap().serialise().unwrap();
+            msg[10] ^= 0xFF; // Flip some bits in the Mac.
+            buffer.push(msg);
+        }
+
+        for msg in &buffer {
+            let env = Envelope::deserialise(msg).unwrap();
+            assert!(alice.decrypt(&mut alice_store, &env).is_err(),);
+        }
+
+        let msg = bob
+            .encrypt(b"Hello Alice, after more than 1000 failed messages!")
+            .unwrap()
+            .serialise()
+            .unwrap();
+        assert_eq!(
+            Err(Error::TooDistantFuture),
+            alice.decrypt(&mut alice_store, &Envelope::deserialise(&msg).unwrap()),
+        );
     }
 
     #[test]
