@@ -3,3 +3,4 @@
 *.swo
 tags
 .DS_Store
+.vscode
