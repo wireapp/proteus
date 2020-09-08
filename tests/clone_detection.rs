@@ -125,6 +125,21 @@ fn test_clone_bob_alice_init() {
             );
         }
     }
+    // Check if bob_clone can communicate with alice.
+    println!("Bob -> Alice");
+    let b2a = bob_clone.encrypt(msg2).unwrap().into_owned();
+    assert_eq!(
+        Err(Error::InvalidSignature),
+        alice.decrypt(&mut alice_store, &b2a)
+    );
+
+    println!("Alice -> Bob");
+    let a2b = alice.encrypt(msg1).unwrap().into_owned();
+    alice_messages.push(a2b.clone());
+    assert_eq!(
+        Err(Error::InvalidSignature),
+        bob_clone.decrypt(&mut bob_store, &a2b)
+    );
 }
 
 #[test]
@@ -193,6 +208,22 @@ fn test_clone_bob_bob_init() {
             );
         }
     }
+
+    // Check if bob_clone can communicate with alice.
+    println!("Bob -> Alice");
+    let b2a = bob_clone.encrypt(msg2).unwrap().into_owned();
+    assert_eq!(
+        Err(Error::InvalidSignature),
+        alice.decrypt(&mut alice_store, &b2a)
+    );
+
+    println!("Alice -> Bob");
+    let a2b = alice.encrypt(msg1).unwrap().into_owned();
+    alice_messages.push(a2b.clone());
+    assert_eq!(
+        Err(Error::InvalidSignature),
+        bob_clone.decrypt(&mut bob_store, &a2b)
+    );
 }
 
 #[test]
@@ -236,7 +267,6 @@ fn test_clone_bob_bob_init2() {
         let b2a = bob.encrypt(msg2).unwrap().into_owned();
         let b2a_msg = alice.decrypt(&mut alice_store, &b2a).unwrap();
         assert_eq!(&msg2[..], &b2a_msg[..]);
-        
         println!("Alice -> Bob");
         let a2b = alice.encrypt(msg1).unwrap().into_owned();
         alice_messages.push(a2b.clone());
@@ -261,4 +291,20 @@ fn test_clone_bob_bob_init2() {
             );
         }
     }
+
+    // Check if bob_clone can communicate with alice.
+    println!("Bob -> Alice");
+    let b2a = bob_clone.encrypt(msg2).unwrap().into_owned();
+    assert_eq!(
+        Err(Error::InvalidSignature),
+        alice.decrypt(&mut alice_store, &b2a)
+    );
+
+    println!("Alice -> Bob");
+    let a2b = alice.encrypt(msg1).unwrap().into_owned();
+    alice_messages.push(a2b.clone());
+    assert_eq!(
+        Err(Error::InvalidSignature),
+        bob_clone.decrypt(&mut bob_store, &a2b)
+    );
 }
