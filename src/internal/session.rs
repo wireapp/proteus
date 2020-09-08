@@ -379,13 +379,19 @@ pub trait PreKeyStore {
 const MAX_RECV_CHAINS: usize = 5;
 const MAX_SESSION_STATES: usize = 100;
 
-#[derive(Debug)]
-pub struct Indexed<A> {
+#[derive(Debug, Clone)]
+pub struct Indexed<A>
+where
+    A: Clone,
+{
     pub idx: usize,
     pub val: A,
 }
 
-impl<A> Indexed<A> {
+impl<A> Indexed<A>
+where
+    A: Clone,
+{
     pub fn new(i: usize, a: A) -> Indexed<A> {
         Indexed { idx: i, val: a }
     }
@@ -401,7 +407,7 @@ impl<A> Indexed<A> {
 // `Session::encrypt` can not succeed. The only places where we change
 // it after initialisation is in `Session::insert_session_state` which
 // sets it to the value of the state which is inserted.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Session<I> {
     version: u8,
     session_tag: SessionTag,
@@ -841,6 +847,7 @@ impl SessionState {
         plain: &[u8],
     ) -> EncodeResult<Envelope> {
         let msgkeys = self.send_chain.chain_key.message_keys();
+        println!("Sender msgkeys: {:?}", msgkeys);
 
         let cmessage = CipherMessage {
             session_tag: tag,
@@ -877,6 +884,7 @@ impl SessionState {
                 &mut self.recv_chains[0]
             }
         };
+        println!(" >>> ratchet key (m): {:?}", m.ratchet_key);
 
         match m.counter.cmp(&rchain.chain_key.idx) {
             Ordering::Less => rchain.try_message_keys(env, m),
@@ -892,6 +900,7 @@ impl SessionState {
             }
             Ordering::Equal => {
                 let mks = rchain.chain_key.message_keys();
+                println!("Receiver msgkeys: {:?}", mks);
                 let plain = mks.decrypt(&m.cipher_text);
                 if !env.verify(&mks.mac_key) {
                     return Err(Error::InvalidSignature);
@@ -1836,43 +1845,43 @@ mod tests {
             .0;
         assert_eq!(1, bob2alice.session_states.len());
 
-        let a2b_m1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_m1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         for _ in 0..999 {
-            let _ = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+            let _ = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         }
-        let a2b_m2 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_m2 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
 
         let b_m1 = bob2alice.decrypt(&mut bob_store, &a2b_m1).unwrap();
 
-        assert_eq!(b_m1, &[1,2,3]);
+        assert_eq!(b_m1, &[1, 2, 3]);
 
-        let b2a_m1 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let b2a_m1 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
 
         let _a_m1 = alice2bob.decrypt(&mut alice_store, &b2a_m1).unwrap();
 
-        let a2b_s2e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s2e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s2e1 = bob2alice.decrypt(&mut bob_store, &a2b_s2e1).unwrap();
-        let a2b_s2e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s2e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s2e2 = alice2bob.decrypt(&mut bob_store, &a2b_s2e2).unwrap();
 
-        let a2b_s3e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s3e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s3e1 = bob2alice.decrypt(&mut bob_store, &a2b_s3e1).unwrap();
-        let a2b_s3e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s3e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s3e2 = alice2bob.decrypt(&mut bob_store, &a2b_s3e2).unwrap();
 
-        let a2b_s4e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s4e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s4e1 = bob2alice.decrypt(&mut bob_store, &a2b_s4e1).unwrap();
-        let a2b_s4e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s4e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s4e2 = alice2bob.decrypt(&mut bob_store, &a2b_s4e2).unwrap();
 
-        let a2b_s5e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s5e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s5e1 = bob2alice.decrypt(&mut bob_store, &a2b_s5e1).unwrap();
-        let a2b_s5e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s5e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s5e2 = alice2bob.decrypt(&mut bob_store, &a2b_s5e2).unwrap();
 
-        let a2b_s6e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s6e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s6e1 = bob2alice.decrypt(&mut bob_store, &a2b_s6e1).unwrap();
-        let a2b_s6e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s6e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s6e2 = alice2bob.decrypt(&mut bob_store, &a2b_s6e2).unwrap();
 
         // At this point we don't have the key material to decrypt.

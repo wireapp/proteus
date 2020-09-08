@@ -100,6 +100,7 @@ impl fmt::Debug for SessionTag {
 
 // Message //////////////////////////////////////////////////////////////////
 
+#[derive(Clone)]
 pub enum Message<'r> {
     Plain(CipherMessage<'r>),
     Keyed(PreKeyMessage<'r>),
@@ -137,6 +138,7 @@ impl<'r> Message<'r> {
 
 // Prekey Message ///////////////////////////////////////////////////////////
 
+#[derive(Clone)]
 pub struct PreKeyMessage<'r> {
     pub prekey_id: PreKeyId,
     pub base_key: Cow<'r, PublicKey>,
@@ -196,6 +198,7 @@ impl<'r> PreKeyMessage<'r> {
 
 // CipherMessage ////////////////////////////////////////////////////////////
 
+#[derive(Clone)]
 pub struct CipherMessage<'r> {
     pub session_tag: SessionTag,
     pub counter: Counter,
@@ -271,6 +274,7 @@ impl<'r> CipherMessage<'r> {
 
 // Message Envelope /////////////////////////////////////////////////////////
 
+#[derive(Clone)]
 pub struct Envelope<'r> {
     version: u8,
     mac: Mac,

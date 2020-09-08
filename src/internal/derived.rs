@@ -58,9 +58,18 @@ impl DerivedSecrets {
 
 // Cipher Key ///////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CipherKey {
     key: stream::Key,
+}
+
+// FIXME: remove and derive again
+impl std::fmt::Debug for CipherKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CipherKey")
+         .field("key", &self.key.0)
+         .finish()
+    }
 }
 
 impl CipherKey {
@@ -124,9 +133,18 @@ impl Nonce {
 
 // MAC Key //////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct MacKey {
     key: mac::Key,
+}
+
+// FIXME: remove and derive again
+impl std::fmt::Debug for MacKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MacKey")
+         .field("key", &self.key.0)
+         .finish()
+    }
 }
 
 impl MacKey {
