@@ -1271,6 +1271,7 @@ mod tests {
     }
 
     #[test]
+    // @SF.Messages @TSFI.RESTfulAPI
     fn counter_mismatch() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1593,6 +1594,7 @@ mod tests {
     }
 
     #[test]
+    // @SF.Messages @TSFI.RESTfulAPI
     fn retry_init_from_message() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1724,6 +1726,7 @@ mod tests {
     }
 
     #[test]
+    // @SF.Messages @TSFI.RESTfulAPI
     fn signed_prekeys() {
         let bob_ident = IdentityKeyPair::new();
         let eve_ident = IdentityKeyPair::new();
@@ -1809,6 +1812,7 @@ mod tests {
     }
 
     #[test]
+    // @SF.Messages @TSFI.RESTfulAPI
     fn interrupted_sessions() {
         let alice = IdentityKeyPair::new();
         let bob = IdentityKeyPair::new();
