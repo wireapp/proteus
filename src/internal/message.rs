@@ -379,6 +379,7 @@ mod tests {
     use std::borrow::Cow;
 
     #[test]
+    // @SF.Messages @TSFI.RESTfulAPI
     fn enc_dec_envelope() {
         let mk = MacKey::new([1; 32]);
         let bk = KeyPair::new().public_key;
