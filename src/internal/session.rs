@@ -1727,7 +1727,7 @@ mod tests {
 
     #[test]
     // @SF.Messages @TSFI.RESTfulAPI
-    fn signed_prekeys() {
+    fn fail_on_unknown_and_invalid_prekeys_and_verify_valid_prekeys() {
         let bob_ident = IdentityKeyPair::new();
         let eve_ident = IdentityKeyPair::new();
 
