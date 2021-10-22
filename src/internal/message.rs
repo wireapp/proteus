@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     // @SF.Messages @TSFI.RESTfulAPI
-    fn enc_dec_envelope() {
+    fn envelope_created_with_MacKey_should_be_verified_with_that_key_after_serialization_deserialization() {
         let mk = MacKey::new([1; 32]);
         let bk = KeyPair::new().public_key;
         let ik = IdentityKey::new(KeyPair::new().public_key);
