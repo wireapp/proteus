@@ -1271,7 +1271,7 @@ mod tests {
     }
 
     #[test]
-    // @SF.Messages @TSFI.RESTfulAPI
+    // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn counter_mismatch() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1594,7 +1594,7 @@ mod tests {
     }
 
     #[test]
-    // @SF.Messages @TSFI.RESTfulAPI
+    // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn retry_of_init_from_message_for_the_same_message_should_return_PreKeyNotFound() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1726,7 +1726,7 @@ mod tests {
     }
 
     #[test]
-    // @SF.Messages @TSFI.RESTfulAPI
+    // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn fail_on_unknown_and_invalid_prekeys_and_verify_valid_prekeys() {
         let bob_ident = IdentityKeyPair::new();
         let eve_ident = IdentityKeyPair::new();
@@ -1812,7 +1812,7 @@ mod tests {
     }
 
     #[test]
-    // @SF.Messages @TSFI.RESTfulAPI
+    // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn fail_on_decryption_of_a_too_old_message() {
         let alice = IdentityKeyPair::new();
         let bob = IdentityKeyPair::new();

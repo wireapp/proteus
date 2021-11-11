@@ -379,7 +379,7 @@ mod tests {
     use std::borrow::Cow;
 
     #[test]
-    // @SF.Messages @TSFI.RESTfulAPI
+    // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn envelope_created_with_MacKey_should_be_verified_with_that_key_after_serialization_deserialization() {
         let mk = MacKey::new([1; 32]);
         let bk = KeyPair::new().public_key;
