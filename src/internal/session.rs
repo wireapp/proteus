@@ -1271,14 +1271,7 @@ mod tests {
     }
 
     #[test]
-    // The counter_mismatch test conforms to the following testing standards:
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
-    //
-    // The test valides encrypting and decrpyting a message, a message order and
-    // duplicate messages. It does so by encrypting messages, then decrypting
-    // them in a different order and asserting the number of messages in between
-    // to be decrypted. Finally, it expects that an attempt to decrypt already
-    // decrypted messages fails.
     fn counter_mismatch() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
