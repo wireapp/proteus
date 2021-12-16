@@ -15,17 +15,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor::skip::Skip;
-use cbor::{Config, Decoder, Encoder};
-use crate::internal::derived::{Mac, MacKey, Nonce};
-use crate::internal::keys::{IdentityKey, PreKeyId, PublicKey};
-use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
-use crate::internal::util::fmt_hex;
-use sodiumoxide::randombytes;
-use std::borrow::Cow;
-use std::fmt;
-use std::io::{Cursor, Read, Write};
-use std::vec::Vec;
+use crate::internal::{
+    derived::{Mac, MacKey},
+    keys::{IdentityKey, PreKeyId, PublicKey},
+    types::{DecodeError, DecodeResult, EncodeResult},
+    util::fmt_hex,
+};
+use cbor::{skip::Skip, Config, Decoder, Encoder};
+use std::{
+    borrow::Cow,
+    fmt,
+    io::{Cursor, Read, Write},
+    vec::Vec,
+};
 
 // Counter ////////////////////////////////////////////////////////////////////
 
@@ -45,13 +47,13 @@ impl Counter {
         Counter(self.0 + 1)
     }
 
-    pub fn as_nonce(self) -> Nonce {
+    pub fn as_nonce(self) -> zeroize::Zeroizing<[u8; 8]> {
         let mut nonce = [0; 8];
         nonce[0] = (self.0 >> 24) as u8;
         nonce[1] = (self.0 >> 16) as u8;
         nonce[2] = (self.0 >> 8) as u8;
         nonce[3] = self.0 as u8;
-        Nonce::new(nonce)
+        zeroize::Zeroizing::new(nonce)
     }
 
     pub fn encode<W: Write>(self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -73,7 +75,9 @@ pub struct SessionTag {
 impl SessionTag {
     pub fn new() -> SessionTag {
         let mut bytes = [0; 16];
-        randombytes::randombytes_into(&mut bytes);
+        use rand::{RngCore as _, SeedableRng as _};
+        let mut rng = chacha20::ChaCha12Rng::from_entropy();
+        rng.fill_bytes(&mut bytes);
         SessionTag { tag: bytes }
     }
 
@@ -101,15 +105,15 @@ impl fmt::Debug for SessionTag {
 // Message //////////////////////////////////////////////////////////////////
 
 pub enum Message<'r> {
-    Plain(CipherMessage<'r>),
-    Keyed(PreKeyMessage<'r>),
+    Plain(Box<CipherMessage<'r>>),
+    Keyed(Box<PreKeyMessage<'r>>),
 }
 
 impl<'r> Message<'r> {
     fn into_owned<'s>(self) -> Message<'s> {
         match self {
-            Message::Plain(m) => Message::Plain(m.into_owned()),
-            Message::Keyed(m) => Message::Keyed(m.into_owned()),
+            Message::Plain(m) => Message::Plain(Box::new(m.into_owned())),
+            Message::Keyed(m) => Message::Keyed(Box::new(m.into_owned())),
         }
     }
 
@@ -128,8 +132,8 @@ impl<'r> Message<'r> {
 
     fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Message<'s>> {
         match d.u8()? {
-            1 => CipherMessage::decode(d).map(Message::Plain),
-            2 => PreKeyMessage::decode(d).map(Message::Keyed),
+            1 => CipherMessage::decode(d).map(|m| Message::Plain(Box::new(m))),
+            2 => PreKeyMessage::decode(d).map(|m| Message::Keyed(Box::new(m))),
             t => Err(DecodeError::InvalidType(t, "unknown message type")),
         }
     }
@@ -174,22 +178,22 @@ impl<'r> PreKeyMessage<'r> {
         let mut message = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("PreKeyMessage::prekey_id", prekey_id, PreKeyId::decode(d)?),
-                1 => uniq!("PreKeyMessage::base_key", base_key, PublicKey::decode(d)?),
-                2 => uniq!(
-                    "PreKeyMessage::identity_key",
-                    identity_key,
-                    IdentityKey::decode(d)?
-                ),
-                3 => uniq!("PreKeyMessage::message", message, CipherMessage::decode(d)?),
+                0 if prekey_id.is_none() => prekey_id = Some(PreKeyId::decode(d)?),
+                1 if base_key.is_none() => base_key = Some(PublicKey::decode(d)?),
+                2 if identity_key.is_none() => identity_key = Some(IdentityKey::decode(d)?),
+                3 if message.is_none() => message = Some(CipherMessage::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(PreKeyMessage {
-            prekey_id: to_field!(prekey_id, "PreKeyMessage::prekey_id"),
-            base_key: Cow::Owned(to_field!(base_key, "PreKeyMessage::base_key")),
-            identity_key: Cow::Owned(to_field!(identity_key, "PreKeyMessage::identity_key")),
-            message: to_field!(message, "PreKeyMessage::message"),
+            prekey_id: prekey_id.ok_or(DecodeError::MissingField("PreKeyMessage::prekey_id"))?,
+            base_key: Cow::Owned(
+                base_key.ok_or(DecodeError::MissingField("PreKeyMessage::base_key"))?,
+            ),
+            identity_key: Cow::Owned(
+                identity_key.ok_or(DecodeError::MissingField("PreKeyMessage::identity_key"))?,
+            ),
+            message: message.ok_or(DecodeError::MissingField("PreKeyMessage::message"))?,
         })
     }
 }
@@ -239,32 +243,25 @@ impl<'r> CipherMessage<'r> {
         let mut cipher_text = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!(
-                    "CipherMessage::session_tag",
-                    session_tag,
-                    SessionTag::decode(d)?
-                ),
-                1 => uniq!("CipherMessage::counter", counter, Counter::decode(d)?),
-                2 => uniq!(
-                    "CipherMessage::prev_counter",
-                    prev_counter,
-                    Counter::decode(d)?
-                ),
-                3 => uniq!(
-                    "CipherMessage::ratchet_key",
-                    ratchet_key,
-                    PublicKey::decode(d)?
-                ),
-                4 => uniq!("CipherMessage::cipher_text", cipher_text, d.bytes()?),
+                0 if session_tag.is_none() => session_tag = Some(SessionTag::decode(d)?),
+                1 if counter.is_none() => counter = Some(Counter::decode(d)?),
+                2 if prev_counter.is_none() => prev_counter = Some(Counter::decode(d)?),
+                3 if ratchet_key.is_none() => ratchet_key = Some(PublicKey::decode(d)?),
+                4 if cipher_text.is_none() => cipher_text = Some(d.bytes()?),
                 _ => d.skip()?,
             }
         }
         Ok(CipherMessage {
-            session_tag: to_field!(session_tag, "CipherMessage::session_tag"),
-            counter: to_field!(counter, "CipherMessage::counter"),
-            prev_counter: to_field!(prev_counter, "CipherMessage::prev_counter"),
-            ratchet_key: Cow::Owned(to_field!(ratchet_key, "CipherMessage::ratchet_key")),
-            cipher_text: to_field!(cipher_text, "CipherMessage::cipher_text"),
+            session_tag: session_tag
+                .ok_or(DecodeError::MissingField("CipherMessage::session_tag"))?,
+            counter: counter.ok_or(DecodeError::MissingField("CipherMessage::counter"))?,
+            prev_counter: prev_counter
+                .ok_or(DecodeError::MissingField("CipherMessage::prev_counter"))?,
+            ratchet_key: Cow::Owned(
+                ratchet_key.ok_or(DecodeError::MissingField("CipherMessage::ratchet_key"))?,
+            ),
+            cipher_text: cipher_text
+                .ok_or(DecodeError::MissingField("CipherMessage::cipher_text"))?,
         })
     }
 }
@@ -344,8 +341,8 @@ impl<'r> Envelope<'r> {
         let mut message_enc = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("Envelope::version", version, d.u8()?),
-                1 => uniq!("Envelope::mac", mac, Mac::decode(d)?),
+                0 if version.is_none() => version = Some(d.u8()?),
+                1 if mac.is_none() => mac = Some(Mac::decode(d)?),
                 2 if message.is_some() => {
                     return Err(DecodeError::DuplicateField("Envelope::message"))
                 }
@@ -361,10 +358,10 @@ impl<'r> Envelope<'r> {
             }
         }
         Ok(Envelope {
-            version: to_field!(version, "Envelope::version"),
-            message: to_field!(message, "Envelope::message"),
-            message_enc: to_field!(message_enc, "Envelope::message_enc"),
-            mac: to_field!(mac, "Envelope::mac"),
+            version: version.ok_or(DecodeError::MissingField("Envelope::version"))?,
+            message: message.ok_or(DecodeError::MissingField("Envelope::message"))?,
+            message_enc: message_enc.ok_or(DecodeError::MissingField("Envelope::message_enc"))?,
+            mac: mac.ok_or(DecodeError::MissingField("Envelope::mac"))?,
         })
     }
 }
@@ -387,7 +384,7 @@ mod tests {
         let rk = KeyPair::new().public_key;
 
         let tg = SessionTag::new();
-        let m1 = Message::Keyed(PreKeyMessage {
+        let m1 = Message::Keyed(Box::new(PreKeyMessage {
             prekey_id: PreKeyId::new(42),
             base_key: Cow::Borrowed(&bk),
             identity_key: Cow::Borrowed(&ik),
@@ -398,15 +395,15 @@ mod tests {
                 ratchet_key: Cow::Borrowed(&rk),
                 cipher_text: vec![1, 2, 3, 4],
             },
-        });
+        }));
 
-        let m2 = Message::Plain(CipherMessage {
+        let m2 = Message::Plain(Box::new(CipherMessage {
             session_tag: tg,
             counter: Counter(42),
             prev_counter: Counter(3),
             ratchet_key: Cow::Borrowed(&rk),
             cipher_text: vec![1, 2, 3, 4, 5],
-        });
+        }));
 
         let env1 = Envelope::new(&mk, m1).unwrap();
         let env2 = Envelope::new(&mk, m2).unwrap();

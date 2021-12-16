@@ -15,126 +15,47 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor;
 use crate::internal::keys::IdentityKey;
-use std::error::Error;
-use std::fmt;
+use cbor;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum InternalError {
+    #[error("No session found for session tag.")]
     NoSessionForTag,
-}
-
-impl fmt::Display for InternalError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            InternalError::NoSessionForTag => write!(f, "No session found for session tag."),
-        }
-    }
-}
-
-impl Error for InternalError {
-    fn description(&self) -> &str {
-        "InternalError"
-    }
 }
 
 // EncodeError //////////////////////////////////////////////////////////////
 
 pub type EncodeResult<A> = Result<A, EncodeError>;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum EncodeError {
-    Internal(InternalError),
-    Encoder(cbor::EncodeError),
-}
-
-impl fmt::Display for EncodeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            EncodeError::Internal(ref e) => write!(f, "Internal error: {}", e),
-            EncodeError::Encoder(ref e) => write!(f, "CBOR encoder error: {}", e),
-        }
-    }
-}
-
-impl Error for EncodeError {
-    fn description(&self) -> &str {
-        "EncodeError"
-    }
-
-    fn cause(&self) -> Option<&dyn Error> {
-        match *self {
-            EncodeError::Internal(ref e) => Some(e),
-            EncodeError::Encoder(ref e) => Some(e),
-        }
-    }
-}
-
-impl From<cbor::EncodeError> for EncodeError {
-    fn from(err: cbor::EncodeError) -> EncodeError {
-        EncodeError::Encoder(err)
-    }
-}
-
-impl From<InternalError> for EncodeError {
-    fn from(err: InternalError) -> EncodeError {
-        EncodeError::Internal(err)
-    }
+    #[error("Internal error: {0}")]
+    Internal(#[from] InternalError),
+    #[error("CBOR encoder error: {0}")]
+    Encoder(#[from] cbor::EncodeError),
 }
 
 // DecodeError //////////////////////////////////////////////////////////////
 
 pub type DecodeResult<A> = Result<A, DecodeError>;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
-    Decoder(cbor::DecodeError),
-    Signature(sodiumoxide::crypto::sign::Error),
+    #[error("CBOR decoder error: {0}")]
+    Decoder(#[from] cbor::DecodeError),
+    #[error("ed25519 Signature error: {0}")]
+    Signature(#[from] ed25519::Error),
+    #[error("CBOR array length mismatch: {0}")]
     InvalidArrayLen(usize),
+    #[error("Local identity changed")]
     LocalIdentityChanged(IdentityKey),
+    #[error("Invalid type {0}: {1}")]
     InvalidType(u8, &'static str),
+    #[error("Missing field: {0}")]
     MissingField(&'static str),
+    #[error("Invalid field: ")]
     InvalidField(&'static str),
+    #[error("Duplicate field: ")]
     DuplicateField(&'static str),
-}
-
-impl fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            DecodeError::Decoder(ref e) => write!(f, "CBOR decoder error: {}", e),
-            DecodeError::Signature(ref e) => write!(f, "Signature build error: {}", e),
-            DecodeError::InvalidArrayLen(n) => write!(f, "CBOR array length mismatch: {}", n),
-            DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
-            DecodeError::InvalidType(t, ref s) => write!(f, "Invalid type {}: {}", t, s),
-            DecodeError::MissingField(ref s) => write!(f, "Missing field: {}", s),
-            DecodeError::InvalidField(ref s) => write!(f, "Invalid field: {}", s),
-            DecodeError::DuplicateField(ref s) => write!(f, "Duplicate field: {}", s),
-        }
-    }
-}
-
-impl Error for DecodeError {
-    fn description(&self) -> &str {
-        "DecodeError"
-    }
-
-    fn cause(&self) -> Option<&dyn Error> {
-        match *self {
-            DecodeError::Decoder(ref e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl From<cbor::DecodeError> for DecodeError {
-    fn from(err: cbor::DecodeError) -> DecodeError {
-        DecodeError::Decoder(err)
-    }
-}
-
-impl From<sodiumoxide::crypto::sign::Error> for DecodeError {
-    fn from(err: sodiumoxide::crypto::sign::Error) -> DecodeError {
-        DecodeError::Signature(err)
-    }
 }
