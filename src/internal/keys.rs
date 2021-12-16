@@ -22,7 +22,6 @@ use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
 use crate::internal::util::{fmt_hex, opt, Bytes32, Bytes64};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
-use sodiumoxide::randombytes;
 use std::fmt::{self, Debug, Error, Formatter};
 use std::io::{Cursor, Read, Write};
 use std::u16;
@@ -544,7 +543,11 @@ impl PublicKey {
 // Random ///////////////////////////////////////////////////////////////////
 
 pub fn rand_bytes(size: usize) -> Vec<u8> {
-    randombytes::randombytes(size)
+    let mut buf = Vec::with_capacity(size);
+    use rand::{RngCore as _, SeedableRng as _};
+    let mut rng = chacha20::ChaCha12Rng::from_entropy();
+    rng.fill_bytes(&mut buf);
+    buf
 }
 
 // Signature ////////////////////////////////////////////////////////////////

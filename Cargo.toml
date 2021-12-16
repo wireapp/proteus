@@ -10,8 +10,10 @@ edition      = "2021"
 
 [dependencies]
 cbor-codec    = "=0.7.1"
-hkdf          = { git = "https://github.com/wireapp/hkdf", tag = "v0.3.2"}
-sodiumoxide   = { version = "=0.2.7", default-features = false, features = ["std"] }
+chacha20 = { version = "=0.8.1", features = ["rng"] }
+eyre = "=0.6.5"
+rand = "=0.8.4"
+thiserror = "=1.0.30"
 
 [dev-dependencies]
 criterion = "0.3"

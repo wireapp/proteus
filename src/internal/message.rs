@@ -15,17 +15,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor::skip::Skip;
-use cbor::{Config, Decoder, Encoder};
-use crate::internal::derived::{Mac, MacKey, Nonce};
-use crate::internal::keys::{IdentityKey, PreKeyId, PublicKey};
-use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
-use crate::internal::util::fmt_hex;
-use sodiumoxide::randombytes;
-use std::borrow::Cow;
-use std::fmt;
-use std::io::{Cursor, Read, Write};
-use std::vec::Vec;
+use crate::internal::{
+    derived::{Mac, MacKey, Nonce},
+    keys::{IdentityKey, PreKeyId, PublicKey},
+    types::{DecodeError, DecodeResult, EncodeResult},
+    util::fmt_hex,
+};
+use cbor::{skip::Skip, Config, Decoder, Encoder};
+use std::{
+    borrow::Cow,
+    fmt,
+    io::{Cursor, Read, Write},
+    vec::Vec,
+};
 
 // Counter ////////////////////////////////////////////////////////////////////
 
@@ -73,7 +75,9 @@ pub struct SessionTag {
 impl SessionTag {
     pub fn new() -> SessionTag {
         let mut bytes = [0; 16];
-        randombytes::randombytes_into(&mut bytes);
+        use rand::{RngCore as _, SeedableRng as _};
+        let mut rng = chacha20::ChaCha12Rng::from_entropy();
+        rng.fill_bytes(&mut bytes);
         SessionTag { tag: bytes }
     }
 

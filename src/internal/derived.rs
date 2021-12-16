@@ -17,6 +17,7 @@
 
 use cbor::skip::Skip;
 use cbor::{Decoder, Encoder};
+use chacha20::cipher::StreamCipher;
 use hkdf::{hkdf, Info, Input, Len, Salt};
 use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
 use crate::internal::util::Bytes32;
@@ -60,27 +61,42 @@ impl DerivedSecrets {
 
 #[derive(Clone, Debug)]
 pub struct CipherKey {
-    key: stream::Key,
+    key: chacha20::Key,
 }
 
 impl CipherKey {
     pub fn new(b: [u8; 32]) -> CipherKey {
         CipherKey {
-            key: stream::Key(b),
+            key: chacha20::Key::clone_from_slice(&b),
         }
     }
 
-    pub fn encrypt(&self, text: &[u8], nonce: &Nonce) -> Vec<u8> {
-        stream::stream_xor(text, &nonce.0, &self.key)
+    pub fn encrypt(&self, text: &[u8], nonce: &[u8]) -> Vec<u8> {
+        use chacha20::cipher::{StreamCipher as _, NewCipher as _};
+        let nonce = chacha20::Nonce::from_slice(nonce);
+        let mut cipher = chacha20::ChaCha20::new(&self.key, nonce);
+        let mut data = Vec::from(text);
+        cipher.apply_keystream(&mut data);
+        data
     }
 
-    pub fn decrypt(&self, text: &[u8], nonce: &Nonce) -> Vec<u8> {
-        stream::stream_xor(text, &nonce.0, &self.key)
+    pub fn decrypt(&self, data: &[u8], nonce: &[u8]) -> Vec<u8> {
+        use chacha20::cipher::{
+            StreamCipher as _,
+            StreamCipherSeek as _,
+            NewCipher as _
+        };
+        let nonce = chacha20::Nonce::from_slice(nonce);
+        let mut cipher = chacha20::ChaCha20::new(&self.key, nonce);
+        let mut text = Vec::from(data);
+        cipher.seek(0);
+        cipher.apply_keystream(&mut text);
+        text
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.key.0))?;
+        e.u8(0).and(e.bytes(self.key.as_slice()))?;
         Ok(())
     }
 
@@ -92,7 +108,7 @@ impl CipherKey {
                 0 => uniq!(
                     "CipherKey::key",
                     key,
-                    Bytes32::decode(d).map(|v| stream::Key(v.array))?
+                    Bytes32::decode(d).map(|v| chacha20::Key::from_slice(&v.array))?
                 ),
                 _ => d.skip()?,
             }
@@ -107,18 +123,7 @@ impl Deref for CipherKey {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &self.key.0
-    }
-}
-
-// Nonce ////////////////////////////////////////////////////////////////////
-
-#[derive(Clone)]
-pub struct Nonce(stream::Nonce);
-
-impl Nonce {
-    pub fn new(b: [u8; 8]) -> Nonce {
-        Nonce(stream::Nonce(b))
+        self.key.as_slice()
     }
 }
 
@@ -218,7 +223,7 @@ impl Deref for Mac {
 
 #[test]
 fn derive_secrets() {
-    let nc = Nonce::new([0; 8]);
+    let nc = chacha20::Nonce::from_slice(&[0; 8]);
     let ds = DerivedSecrets::kdf_without_salt(Input(b"346234876"), Info(b"foobar"));
     let ct = ds.cipher_key.encrypt(b"plaintext", &nc);
     assert_eq!(ct.len(), b"plaintext".len());
