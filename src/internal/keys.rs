@@ -555,7 +555,7 @@ pub struct Signature {
 impl Signature {
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.sig.0))?;
+        e.u8(0).and(e.bytes(&self.sig.to_bytes()))?;
         Ok(())
     }
 
@@ -567,7 +567,7 @@ impl Signature {
                 0 => uniq!(
                     "Signature::sig",
                     sig,
-                    Bytes64::decode(d).map(|v| sign::Signature(v.array))?
+                    sign::Signature::from_bytes(&Bytes64::decode(d)?.array)?
                 ),
                 _ => d.skip()?,
             }

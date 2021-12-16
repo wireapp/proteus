@@ -90,6 +90,7 @@ pub type DecodeResult<A> = Result<A, DecodeError>;
 #[derive(Debug)]
 pub enum DecodeError {
     Decoder(cbor::DecodeError),
+    Signature(sodiumoxide::crypto::sign::Error),
     InvalidArrayLen(usize),
     LocalIdentityChanged(IdentityKey),
     InvalidType(u8, &'static str),
@@ -102,6 +103,7 @@ impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             DecodeError::Decoder(ref e) => write!(f, "CBOR decoder error: {}", e),
+            DecodeError::Signature(ref e) => write!(f, "Signature build error: {}", e),
             DecodeError::InvalidArrayLen(n) => write!(f, "CBOR array length mismatch: {}", n),
             DecodeError::LocalIdentityChanged(_) => write!(f, "Local identity changed"),
             DecodeError::InvalidType(t, ref s) => write!(f, "Invalid type {}: {}", t, s),
@@ -128,5 +130,11 @@ impl Error for DecodeError {
 impl From<cbor::DecodeError> for DecodeError {
     fn from(err: cbor::DecodeError) -> DecodeError {
         DecodeError::Decoder(err)
+    }
+}
+
+impl From<sodiumoxide::crypto::sign::Error> for DecodeError {
+    fn from(err: sodiumoxide::crypto::sign::Error) -> DecodeError {
+        DecodeError::Signature(err)
     }
 }
