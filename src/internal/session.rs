@@ -449,7 +449,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         Ok(session)
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
+    #[allow(clippy::type_complexity)]
     pub fn init_from_message<S: PreKeyStore>(
         ours: I,
         store: &mut S,
@@ -539,7 +539,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             Some(s) => s.val.clone(),
             None => return Err(Error::InvalidMessage),
         };
-        let plain = s.decrypt(env, &m)?;
+        let plain = s.decrypt(env, m)?;
         self.pending_prekey = None;
         self.insert_session_state(m.session_tag, s);
         Ok(plain)
@@ -582,7 +582,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     // state left is the one to be inserted, but if Alice and Bob do not
     // manage to agree on a session state within `usize::MAX` it is probably
     // of least concern.
-    #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
+    #[allow(clippy::map_entry)]
     fn insert_session_state(&mut self, t: SessionTag, s: SessionState) {
         if self.session_states.contains_key(&t) {
             if let Some(x) = self.session_states.get_mut(&t) {
@@ -855,7 +855,7 @@ impl SessionState {
             Some(ref pp) => Message::Keyed(PreKeyMessage {
                 prekey_id: pp.0,
                 base_key: Cow::Borrowed(&pp.1),
-                identity_key: Cow::Borrowed(&ident),
+                identity_key: Cow::Borrowed(ident),
                 message: cmessage,
             }),
         };
@@ -1613,7 +1613,7 @@ mod tests {
         // the prekey will be gone and a retry cause an error (and thus a lost message).
         match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob) {
             Err(Error::PreKeyNotFound(_)) => {} // expected
-            Err(e) => panic!(format!("{:?}", e)),
+            Err(e) => panic!("{:?}", e),
             Ok(_) => panic!("Unexpected success on retrying init_from_message"),
         }
     }
@@ -1836,43 +1836,43 @@ mod tests {
             .0;
         assert_eq!(1, bob2alice.session_states.len());
 
-        let a2b_m1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_m1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         for _ in 0..999 {
-            let _ = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+            let _ = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         }
-        let a2b_m2 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_m2 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
 
         let b_m1 = bob2alice.decrypt(&mut bob_store, &a2b_m1).unwrap();
 
-        assert_eq!(b_m1, &[1,2,3]);
+        assert_eq!(b_m1, &[1, 2, 3]);
 
-        let b2a_m1 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let b2a_m1 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
 
         let _a_m1 = alice2bob.decrypt(&mut alice_store, &b2a_m1).unwrap();
 
-        let a2b_s2e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s2e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s2e1 = bob2alice.decrypt(&mut bob_store, &a2b_s2e1).unwrap();
-        let a2b_s2e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s2e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s2e2 = alice2bob.decrypt(&mut bob_store, &a2b_s2e2).unwrap();
 
-        let a2b_s3e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s3e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s3e1 = bob2alice.decrypt(&mut bob_store, &a2b_s3e1).unwrap();
-        let a2b_s3e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s3e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s3e2 = alice2bob.decrypt(&mut bob_store, &a2b_s3e2).unwrap();
 
-        let a2b_s4e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s4e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s4e1 = bob2alice.decrypt(&mut bob_store, &a2b_s4e1).unwrap();
-        let a2b_s4e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s4e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s4e2 = alice2bob.decrypt(&mut bob_store, &a2b_s4e2).unwrap();
 
-        let a2b_s5e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s5e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s5e1 = bob2alice.decrypt(&mut bob_store, &a2b_s5e1).unwrap();
-        let a2b_s5e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s5e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s5e2 = alice2bob.decrypt(&mut bob_store, &a2b_s5e2).unwrap();
 
-        let a2b_s6e1 = alice2bob.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s6e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s6e1 = bob2alice.decrypt(&mut bob_store, &a2b_s6e1).unwrap();
-        let a2b_s6e2 = bob2alice.encrypt(&[1,2,3]).unwrap().into_owned();
+        let a2b_s6e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
         let _b2a_s6e2 = alice2bob.decrypt(&mut bob_store, &a2b_s6e2).unwrap();
 
         // At this point we don't have the key material to decrypt.
@@ -1947,7 +1947,7 @@ mod tests {
                 let r: &[u8] = b.as_ref();
                 assert_eq!(expected, r)
             }
-            Err(e) => assert!(false, format!("{:?}", e)),
+            Err(e) => panic!("{:?}", e),
         }
     }
 
@@ -1968,8 +1968,7 @@ mod tests {
                 s
             }
             Err(e) => {
-                assert!(false, format!("{:?}", e));
-                unreachable!()
+                panic!("{:?}", e);
             }
         }
     }
