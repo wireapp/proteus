@@ -17,9 +17,9 @@
 
 use cbor::skip::Skip;
 use cbor::{Config, Decoder, Encoder};
-use internal::ffi;
-use internal::types::{DecodeError, DecodeResult, EncodeResult};
-use internal::util::{fmt_hex, opt, Bytes32, Bytes64};
+use crate::internal::ffi;
+use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
+use crate::internal::util::{fmt_hex, opt, Bytes32, Bytes64};
 use sodiumoxide::crypto::scalarmult as ecdh;
 use sodiumoxide::crypto::sign;
 use sodiumoxide::randombytes;
@@ -611,7 +611,7 @@ pub fn from_ed25519_sk(k: &sign::SecretKey) -> Result<[u8; ecdh::SCALARBYTES], (
 #[cfg(test)]
 mod tests {
     use super::*;
-    use internal::util::roundtrip;
+    use crate::internal::util::roundtrip;
 
     #[test]
     fn prekey_generation() {

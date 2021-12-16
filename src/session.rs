@@ -15,6 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-pub use internal::session::Error;
-pub use internal::session::PreKeyStore;
-pub use internal::session::Session;
+pub use crate::internal::session::Error;
+pub use crate::internal::session::PreKeyStore;
+pub use crate::internal::session::Session;

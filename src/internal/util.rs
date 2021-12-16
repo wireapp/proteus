@@ -16,14 +16,14 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use cbor::{self, Decoder};
-use internal::types::{DecodeError, DecodeResult};
+use crate::internal::types::{DecodeError, DecodeResult};
 use std::io::Read;
 
 #[cfg(test)]
 use std::io::Cursor;
 
 #[cfg(test)]
-use internal::types::EncodeResult;
+use crate::internal::types::EncodeResult;
 
 macro_rules! to_field {
     ($test:expr, $msg:expr) => {

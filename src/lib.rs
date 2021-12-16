@@ -28,4 +28,4 @@ pub fn init() -> bool {
     sodiumoxide::init().is_ok()
 }
 
-pub use internal::types::{DecodeError, EncodeError};
+pub use crate::internal::types::{DecodeError, EncodeError};
