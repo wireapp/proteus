@@ -18,8 +18,8 @@
 use cbor::skip::Skip;
 use cbor::{Decoder, Encoder};
 use hkdf::{hkdf, Info, Input, Len, Salt};
-use internal::types::{DecodeError, DecodeResult, EncodeResult};
-use internal::util::Bytes32;
+use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
+use crate::internal::util::Bytes32;
 use sodiumoxide::crypto::auth::hmacsha256 as mac;
 use sodiumoxide::crypto::stream::chacha20 as stream;
 use std::io::{Read, Write};

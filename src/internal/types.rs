@@ -16,7 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use cbor;
-use internal::keys::IdentityKey;
+use crate::internal::keys::IdentityKey;
 use std::error::Error;
 use std::fmt;
 

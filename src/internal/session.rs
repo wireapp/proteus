@@ -26,11 +26,11 @@ use std::usize;
 use cbor::skip::Skip;
 use cbor::{self, Config, Decoder, Encoder};
 use hkdf::{Info, Input, Salt};
-use internal::derived::{CipherKey, DerivedSecrets, MacKey};
-use internal::keys::{self, KeyPair, PublicKey};
-use internal::keys::{IdentityKey, IdentityKeyPair, PreKey, PreKeyBundle, PreKeyId};
-use internal::message::{CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag};
-use internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
+use crate::internal::derived::{CipherKey, DerivedSecrets, MacKey};
+use crate::internal::keys::{self, KeyPair, PublicKey};
+use crate::internal::keys::{IdentityKey, IdentityKeyPair, PreKey, PreKeyBundle, PreKeyId};
+use crate::internal::message::{CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag};
+use crate::internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
 
 // Root key /////////////////////////////////////////////////////////////////
 
@@ -1035,9 +1035,9 @@ impl<E> From<keys::Zero> for Error<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use internal::keys::gen_prekeys;
-    use internal::keys::{IdentityKeyPair, PreKey, PreKeyAuth, PreKeyBundle, PreKeyId};
-    use internal::message::{Counter, Envelope, Message, SessionTag};
+    use crate::internal::keys::gen_prekeys;
+    use crate::internal::keys::{IdentityKeyPair, PreKey, PreKeyAuth, PreKeyBundle, PreKeyId};
+    use crate::internal::message::{Counter, Envelope, Message, SessionTag};
     use std::borrow::Borrow;
     use std::collections::BTreeMap;
     use std::fmt;

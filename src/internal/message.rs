@@ -17,10 +17,10 @@
 
 use cbor::skip::Skip;
 use cbor::{Config, Decoder, Encoder};
-use internal::derived::{Mac, MacKey, Nonce};
-use internal::keys::{IdentityKey, PreKeyId, PublicKey};
-use internal::types::{DecodeError, DecodeResult, EncodeResult};
-use internal::util::fmt_hex;
+use crate::internal::derived::{Mac, MacKey, Nonce};
+use crate::internal::keys::{IdentityKey, PreKeyId, PublicKey};
+use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
+use crate::internal::util::fmt_hex;
 use sodiumoxide::randombytes;
 use std::borrow::Cow;
 use std::fmt;
@@ -374,8 +374,8 @@ impl<'r> Envelope<'r> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use internal::derived::MacKey;
-    use internal::keys::{IdentityKey, KeyPair, PreKeyId};
+    use crate::internal::derived::MacKey;
+    use crate::internal::keys::{IdentityKey, KeyPair, PreKeyId};
     use std::borrow::Cow;
 
     #[test]

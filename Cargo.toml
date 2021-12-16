@@ -1,5 +1,4 @@
 [package]
-
 name         = "proteus"
 version      = "1.0.4"
 authors      = ["Wire Swiss GmbH <seceng@wire.com>"]
@@ -7,6 +6,7 @@ description  = "Axolotl protocol implementation"
 homepage     = "https://github.com/wireapp/proteus"
 repository   = "git@github.com:wireapp/proteus.git"
 license      = "GPL-3.0"
+edition      = "2021"
 
 [dependencies]
 cbor-codec    = "=0.7.1"
