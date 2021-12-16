@@ -255,15 +255,17 @@ impl PreKeyBundle {
 
     pub fn verify(&self) -> PreKeyAuth {
         match self.signature {
-            Some(ref sig) => if self
-                .identity_key
-                .public_key
-                .verify(sig, &self.public_key.pub_edward.0)
-            {
-                PreKeyAuth::Valid
-            } else {
-                PreKeyAuth::Invalid
-            },
+            Some(ref sig) => {
+                if self
+                    .identity_key
+                    .public_key
+                    .verify(sig, &self.public_key.pub_edward.0)
+                {
+                    PreKeyAuth::Valid
+                } else {
+                    PreKeyAuth::Invalid
+                }
+            }
             None => PreKeyAuth::Unknown,
         }
     }
@@ -580,6 +582,7 @@ impl Signature {
 
 // Internal /////////////////////////////////////////////////////////////////
 
+#[allow(clippy::result_unit_err)]
 pub fn from_ed25519_pk(k: &sign::PublicKey) -> Result<[u8; ecdh::GROUPELEMENTBYTES], ()> {
     let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
     unsafe {
@@ -591,6 +594,7 @@ pub fn from_ed25519_pk(k: &sign::PublicKey) -> Result<[u8; ecdh::GROUPELEMENTBYT
     }
 }
 
+#[allow(clippy::result_unit_err)]
 pub fn from_ed25519_sk(k: &sign::SecretKey) -> Result<[u8; ecdh::SCALARBYTES], ()> {
     let mut es = [0u8; ecdh::SCALARBYTES];
     unsafe {
