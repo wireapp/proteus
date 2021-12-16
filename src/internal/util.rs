@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor::{self, Decoder};
 use crate::internal::types::{DecodeError, DecodeResult};
+use cbor::{self, Decoder};
 use std::io::Read;
 
 #[cfg(test)]
@@ -25,27 +25,9 @@ use std::io::Cursor;
 #[cfg(test)]
 use crate::internal::types::EncodeResult;
 
-macro_rules! to_field {
-    ($test:expr, $msg:expr) => {
-        match $test {
-            Some(val) => val,
-            None => return Err(DecodeError::MissingField($msg)),
-        }
-    };
-}
-
-macro_rules! uniq {
-    ($msg:expr, $name:ident, $action:expr) => {
-        if $name.is_some() {
-            return Err(DecodeError::DuplicateField($msg));
-        } else {
-            $name = Some($action)
-        }
-    };
-}
-
 // Optional Values //////////////////////////////////////////////////////////
 
+#[inline]
 pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {
     match r {
         Ok(x) => Ok(Some(x)),
@@ -57,7 +39,7 @@ pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {
 // Bytes32 //////////////////////////////////////////////////////////////////
 
 pub struct Bytes32 {
-    pub array: [u8; 32],
+    pub array: zeroize::Zeroizing<[u8; 32]>,
 }
 
 impl Bytes32 {
@@ -67,14 +49,16 @@ impl Bytes32 {
         if 32 != n {
             return Err(DecodeError::InvalidArrayLen(n));
         }
-        Ok(Bytes32 { array: a })
+        Ok(Bytes32 {
+            array: zeroize::Zeroizing::new(a),
+        })
     }
 }
 
 // Bytes64 //////////////////////////////////////////////////////////////////
 
 pub struct Bytes64 {
-    pub array: [u8; 64],
+    pub array: zeroize::Zeroizing<[u8; 64]>,
 }
 
 impl Bytes64 {
@@ -84,21 +68,32 @@ impl Bytes64 {
         if 64 != n {
             return Err(DecodeError::InvalidArrayLen(n));
         }
-        Ok(Bytes64 { array: a })
+        Ok(Bytes64 {
+            array: zeroize::Zeroizing::new(a),
+        })
     }
 }
 
 // Hex formatting ///////////////////////////////////////////////////////////
 
-const HEX_DIGITS: &[u8] = b"0123456789abcdef";
+struct HexSlice<'a>(&'a [u8]);
+impl<'a> HexSlice<'a> {
+    fn new<T: ?Sized + AsRef<[u8]> + 'a>(data: &'a T) -> Self {
+        Self(data.as_ref())
+    }
+}
+
+impl std::fmt::Display for HexSlice<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for b in self.0 {
+            write!(f, "{:x}", b)?;
+        }
+        Ok(())
+    }
+}
 
 pub fn fmt_hex(xs: &[u8]) -> String {
-    let mut v = Vec::with_capacity(xs.len() * 2);
-    for x in xs {
-        v.push(HEX_DIGITS[(x >> 4) as usize]);
-        v.push(HEX_DIGITS[(x & 0xf) as usize])
-    }
-    unsafe { String::from_utf8_unchecked(v) }
+    format!("{}", HexSlice::new(xs))
 }
 
 // Test support /////////////////////////////////////////////////////////////

@@ -23,14 +23,15 @@ use std::fmt;
 use std::io::{Cursor, Read, Write};
 use std::usize;
 
-use cbor::skip::Skip;
-use cbor::{self, Config, Decoder, Encoder};
-use hkdf::{Info, Input, Salt};
 use crate::internal::derived::{CipherKey, DerivedSecrets, MacKey};
 use crate::internal::keys::{self, KeyPair, PublicKey};
 use crate::internal::keys::{IdentityKey, IdentityKeyPair, PreKey, PreKeyBundle, PreKeyId};
-use crate::internal::message::{CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag};
+use crate::internal::message::{
+    CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag,
+};
 use crate::internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
+use cbor::skip::Skip;
+use cbor::{self, Config, Decoder, Encoder};
 
 // Root key /////////////////////////////////////////////////////////////////
 
@@ -50,7 +51,7 @@ impl RootKey {
         theirs: &PublicKey,
     ) -> Result<(RootKey, ChainKey), Error<E>> {
         let secret = ours.secret_key.shared_secret(theirs)?;
-        let dsecs = DerivedSecrets::kdf(Input(&secret), Salt(&self.key), Info(b"dh_ratchet"));
+        let dsecs = DerivedSecrets::kdf(&secret, Some(&self.key), b"dh_ratchet");
         Ok((
             RootKey::from_cipher_key(dsecs.cipher_key),
             ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()),
@@ -68,12 +69,12 @@ impl RootKey {
         let mut key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("RootKey::key", key, CipherKey::decode(d)?),
+                0 if key.is_none() => key = Some(CipherKey::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(RootKey {
-            key: to_field!(key, "RootKey::key"),
+            key: key.ok_or(DecodeError::MissingField("RootKey::key"))?,
         })
     }
 }
@@ -100,7 +101,7 @@ impl ChainKey {
 
     pub fn message_keys(&self) -> MessageKeys {
         let base = self.key.sign(b"0");
-        let dsecs = DerivedSecrets::kdf_without_salt(Input(&base), Info(b"hash_ratchet"));
+        let dsecs = DerivedSecrets::kdf_without_salt(&base, b"hash_ratchet");
         MessageKeys {
             cipher_key: dsecs.cipher_key,
             mac_key: dsecs.mac_key,
@@ -122,21 +123,21 @@ impl ChainKey {
         let mut idx = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("ChainKey::key", key, MacKey::decode(d)?),
-                1 => uniq!("ChainKey::idx", idx, Counter::decode(d)?),
+                0 if key.is_none() => key = Some(MacKey::decode(d)?),
+                1 if idx.is_none() => idx = Some(Counter::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(ChainKey {
-            key: to_field!(key, "ChainKey::key"),
-            idx: to_field!(idx, "ChainKey::idx"),
+            key: key.ok_or(DecodeError::MissingField("ChainKey::key"))?,
+            idx: idx.ok_or(DecodeError::MissingField("ChainKey::idx"))?,
         })
     }
 }
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct SendChain {
     chain_key: ChainKey,
     ratchet_key: KeyPair,
@@ -164,14 +165,14 @@ impl SendChain {
         let mut ratchet_key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("SendChain::chain_key", chain_key, ChainKey::decode(d)?),
-                1 => uniq!("SendChain::ratchet_key", ratchet_key, KeyPair::decode(d)?),
+                0 if chain_key.is_none() => chain_key = Some(ChainKey::decode(d)?),
+                1 if ratchet_key.is_none() => ratchet_key = Some(KeyPair::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(SendChain {
-            chain_key: to_field!(chain_key, "SendChain::chain_key"),
-            ratchet_key: to_field!(ratchet_key, "SendChain::ratchet_key"),
+            chain_key: chain_key.ok_or(DecodeError::MissingField("SendChain::chain_key"))?,
+            ratchet_key: ratchet_key.ok_or(DecodeError::MissingField("SendChain::ratchet_key"))?,
         })
     }
 }
@@ -290,22 +291,24 @@ impl RecvChain {
         let mut message_keys = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("RecvChain::chain_key", chain_key, ChainKey::decode(d)?),
-                1 => uniq!("RecvChain::ratchet_key", ratchet_key, PublicKey::decode(d)?),
-                2 => uniq!("RecvChain::message_keys", message_keys, {
-                    let lv = d.array()?;
-                    let mut vm = VecDeque::with_capacity(lv);
-                    for _ in 0..lv {
-                        vm.push_back(MessageKeys::decode(d)?)
-                    }
-                    vm
-                }),
+                0 if chain_key.is_none() => chain_key = Some(ChainKey::decode(d)?),
+                1 if ratchet_key.is_none() => ratchet_key = Some(PublicKey::decode(d)?),
+                2 if message_keys.is_none() => {
+                    message_keys = Some({
+                        let lv = d.array()?;
+                        let mut vm = VecDeque::with_capacity(lv);
+                        for _ in 0..lv {
+                            vm.push_back(MessageKeys::decode(d)?)
+                        }
+                        vm
+                    })
+                }
                 _ => d.skip()?,
             }
         }
         Ok(RecvChain {
-            chain_key: to_field!(chain_key, "RecvChain::chain_key"),
-            ratchet_key: to_field!(ratchet_key, "RecvChain::ratchet_key"),
+            chain_key: chain_key.ok_or(DecodeError::MissingField("RecvChain::chain_key"))?,
+            ratchet_key: ratchet_key.ok_or(DecodeError::MissingField("RecvChain::ratchet_key"))?,
             message_keys: message_keys.unwrap_or_else(VecDeque::new),
         })
     }
@@ -323,12 +326,12 @@ pub struct MessageKeys {
 impl MessageKeys {
     fn encrypt(&self, plain_text: &[u8]) -> Vec<u8> {
         self.cipher_key
-            .encrypt(plain_text, &self.counter.as_nonce())
+            .encrypt(plain_text, &*self.counter.as_nonce())
     }
 
     fn decrypt(&self, cipher_text: &[u8]) -> Vec<u8> {
         self.cipher_key
-            .decrypt(cipher_text, &self.counter.as_nonce())
+            .decrypt(cipher_text, &*self.counter.as_nonce())
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -348,16 +351,16 @@ impl MessageKeys {
         let mut counter = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("MessageKeys::cipher_key", cipher_key, CipherKey::decode(d)?),
-                1 => uniq!("MessageKeys::mac_key", mac_key, MacKey::decode(d)?),
-                2 => uniq!("MessageKeys::counter", counter, Counter::decode(d)?),
+                0 if cipher_key.is_none() => cipher_key = Some(CipherKey::decode(d)?),
+                1 if mac_key.is_none() => mac_key = Some(MacKey::decode(d)?),
+                2 if counter.is_none() => counter = Some(Counter::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(MessageKeys {
-            cipher_key: to_field!(cipher_key, "MessageKeys::cipher_key"),
-            mac_key: to_field!(mac_key, "MessageKeys::mac_key"),
-            counter: to_field!(counter, "MessageKeys::counter"),
+            cipher_key: cipher_key.ok_or(DecodeError::MissingField("MessageKeys::cipher_key"))?,
+            mac_key: mac_key.ok_or(DecodeError::MissingField("MessageKeys::mac_key"))?,
+            counter: counter.ok_or(DecodeError::MissingField("MessageKeys::counter"))?,
         })
     }
 }
@@ -676,67 +679,69 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         let mut session_states = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("Session::version", version, d.u8()?),
-                1 => uniq!("Session::session_tag", session_tag, SessionTag::decode(d)?),
+                0 if version.is_none() => version = Some(d.u8()?),
+                1 if session_tag.is_none() => session_tag = Some(SessionTag::decode(d)?),
                 2 => {
                     let li = IdentityKey::decode(d)?;
                     if ident.borrow().public_key != li {
                         return Err(DecodeError::LocalIdentityChanged(li));
                     }
                 }
-                3 => uniq!(
-                    "Session::remote_identity",
-                    remote_identity,
-                    IdentityKey::decode(d)?
-                ),
-                4 => uniq!("Session::pending_prekey", pending_prekey, {
-                    if let Some(n) = cbor::opt(d.object())? {
-                        let mut id = None;
-                        let mut pk = None;
-                        for _ in 0..n {
-                            match d.u8()? {
-                                0 => uniq!("PendingPreKey::id", id, PreKeyId::decode(d)?),
-                                1 => uniq!("PendingPreKey::pk", pk, PublicKey::decode(d)?),
-                                _ => d.skip()?,
+                3 if remote_identity.is_none() => remote_identity = Some(IdentityKey::decode(d)?),
+                4 if pending_prekey.is_none() => {
+                    pending_prekey = Some({
+                        if let Some(n) = cbor::opt(d.object())? {
+                            let mut id = None;
+                            let mut pk = None;
+                            for _ in 0..n {
+                                match d.u8()? {
+                                    0 if id.is_none() => id = Some(PreKeyId::decode(d)?),
+                                    1 if pk.is_none() => pk = Some(PublicKey::decode(d)?),
+                                    _ => d.skip()?,
+                                }
                             }
+                            Some((
+                                id.ok_or(DecodeError::MissingField("Session::pending_prekey_id"))?,
+                                pk.ok_or(DecodeError::MissingField("Session::pending_prekey"))?,
+                            ))
+                        } else {
+                            None
                         }
-                        Some((
-                            to_field!(id, "Session::pending_prekey_id"),
-                            to_field!(pk, "Session::pending_prekey"),
-                        ))
-                    } else {
-                        None
-                    }
-                }),
-                5 => uniq!("Session::session_states", session_states, {
-                    let ls = d.object()?;
-                    let mut rb = BTreeMap::new();
-                    for _ in 0..ls {
-                        let t = SessionTag::decode(d)?;
-                        let s = SessionState::decode(d)?;
-                        rb.insert(t, Indexed::new(counter, s));
-                        counter += 1;
-                    }
-                    rb
-                }),
+                    })
+                }
+                5 if session_states.is_none() => {
+                    session_states = Some({
+                        let ls = d.object()?;
+                        let mut rb = BTreeMap::new();
+                        for _ in 0..ls {
+                            let t = SessionTag::decode(d)?;
+                            let s = SessionState::decode(d)?;
+                            rb.insert(t, Indexed::new(counter, s));
+                            counter += 1;
+                        }
+                        rb
+                    })
+                }
                 _ => d.skip()?,
             }
         }
         Ok(Session {
-            version: to_field!(version, "Session::version"),
-            session_tag: to_field!(session_tag, "Session::session_tag"),
+            version: version.ok_or(DecodeError::MissingField("Session::version"))?,
+            session_tag: session_tag.ok_or(DecodeError::MissingField("Session::session_tag"))?,
             counter,
             local_identity: ident,
-            remote_identity: to_field!(remote_identity, "Session::remote_identity"),
-            pending_prekey: pending_prekey.unwrap_or(None),
-            session_states: to_field!(session_states, "Session::session_states"),
+            remote_identity: remote_identity
+                .ok_or(DecodeError::MissingField("Session::remote_identity"))?,
+            pending_prekey: pending_prekey.flatten(),
+            session_states: session_states
+                .ok_or(DecodeError::MissingField("Session::session_states"))?,
         })
     }
 }
 
 // Session State ////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct SessionState {
     recv_chains: VecDeque<RecvChain>,
     send_chain: SendChain,
@@ -758,7 +763,7 @@ impl SessionState {
             buf
         };
 
-        let dsecs = DerivedSecrets::kdf_without_salt(Input(&master_key), Info(b"handshake"));
+        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake");
 
         // receiving chain
         let rootkey = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -793,7 +798,7 @@ impl SessionState {
             buf
         };
 
-        let dsecs = DerivedSecrets::kdf_without_salt(Input(&master_key), Info(b"handshake"));
+        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake");
 
         // sending chain
         let rootkey = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -851,13 +856,13 @@ impl SessionState {
         };
 
         let message = match *pending {
-            None => Message::Plain(cmessage),
-            Some(ref pp) => Message::Keyed(PreKeyMessage {
+            None => Message::Plain(Box::new(cmessage)),
+            Some(ref pp) => Message::Keyed(Box::new(PreKeyMessage {
                 prekey_id: pp.0,
                 base_key: Cow::Borrowed(&pp.1),
                 identity_key: Cow::Borrowed(ident),
                 message: cmessage,
-            }),
+            })),
         };
 
         let env = Envelope::new(&msgkeys.mac_key, message);
@@ -868,10 +873,10 @@ impl SessionState {
     fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, Error<E>> {
         let rchain: &mut RecvChain = match self
             .recv_chains
-            .iter()
-            .position(|c| c.ratchet_key == *m.ratchet_key)
+            .iter_mut()
+            .find(|c| c.ratchet_key == *m.ratchet_key)
         {
-            Some(i) => &mut self.recv_chains[i],
+            Some(chain) => chain,
             None => {
                 self.ratchet((*m.ratchet_key).clone())?;
                 &mut self.recv_chains[0]
@@ -929,33 +934,29 @@ impl SessionState {
         let mut prev_counter = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("SessionState::recv_chains", recv_chains, {
-                    let lr = d.array()?;
-                    let mut rr = VecDeque::with_capacity(lr);
-                    for _ in 0..lr {
-                        rr.push_back(RecvChain::decode(d)?)
-                    }
-                    rr
-                }),
-                1 => uniq!(
-                    "SessionState::send_chain",
-                    send_chain,
-                    SendChain::decode(d)?
-                ),
-                2 => uniq!("SessionState::root_key", root_key, RootKey::decode(d)?),
-                3 => uniq!(
-                    "SessionState::prev_counter",
-                    prev_counter,
-                    Counter::decode(d)?
-                ),
+                0 if recv_chains.is_none() => {
+                    recv_chains = Some({
+                        let lr = d.array()?;
+                        let mut rr = VecDeque::with_capacity(lr);
+                        for _ in 0..lr {
+                            rr.push_back(RecvChain::decode(d)?)
+                        }
+                        rr
+                    })
+                }
+                1 if send_chain.is_none() => send_chain = Some(SendChain::decode(d)?),
+                2 if root_key.is_none() => root_key = Some(RootKey::decode(d)?),
+                3 if prev_counter.is_none() => prev_counter = Some(Counter::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(SessionState {
-            recv_chains: to_field!(recv_chains, "SessionState::recv_chains"),
-            send_chain: to_field!(send_chain, "SessionState::send_chain"),
-            root_key: to_field!(root_key, "SessionState::root_key"),
-            prev_counter: to_field!(prev_counter, "SessionState::prev_counter"),
+            recv_chains: recv_chains
+                .ok_or(DecodeError::MissingField("SessionState::recv_chains"))?,
+            send_chain: send_chain.ok_or(DecodeError::MissingField("SessionState::send_chain"))?,
+            root_key: root_key.ok_or(DecodeError::MissingField("SessionState::root_key"))?,
+            prev_counter: prev_counter
+                .ok_or(DecodeError::MissingField("SessionState::prev_counter"))?,
         })
     }
 }
