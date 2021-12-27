@@ -54,12 +54,12 @@ impl IdentityKey {
         let mut public_key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("IdentityKey::public_key", public_key, PublicKey::decode(d)?),
+                0 if public_key.is_none() => public_key = Some(PublicKey::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(IdentityKey {
-            public_key: to_field!(public_key, "IdentityKey::public_key"),
+            public_key: public_key.ok_or_else(|| DecodeError::MissingField("IdentityKey::public_key"))?,
         })
     }
 }
@@ -118,24 +118,16 @@ impl IdentityKeyPair {
         let mut public_key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("IdentityKeyPair::version", version, d.u8()?),
-                1 => uniq!(
-                    "IdentityKeyPair::secret_key",
-                    secret_key,
-                    SecretKey::decode(d)?
-                ),
-                2 => uniq!(
-                    "IdentityKeyPair::public_key",
-                    public_key,
-                    IdentityKey::decode(d)?
-                ),
+                0 if version.is_none() => version = Some(d.u8()?),
+                1 if secret_key.is_none() => secret_key = Some(SecretKey::decode(d)?),
+                2 if public_key.is_none() => public_key = Some(IdentityKey::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(IdentityKeyPair {
-            version: to_field!(version, "IdentityKeyPair::version"),
-            secret_key: to_field!(secret_key, "IdentityKeyPair::secret_key"),
-            public_key: to_field!(public_key, "IdentityKeyPair::public_key"),
+            version: version.ok_or_else(|| DecodeError::MissingField("IdentityKeyPair::version"))?,
+            secret_key: secret_key.ok_or_else(|| DecodeError::MissingField("IdentityKeyPair::secret_key"))?,
+            public_key: public_key.ok_or_else(|| DecodeError::MissingField("IdentityKeyPair::public_key"))?,
         })
     }
 }
@@ -189,16 +181,16 @@ impl PreKey {
         let mut key_pair = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("PreKey::version", version, d.u8()?),
-                1 => uniq!("PreKey::key_id", key_id, PreKeyId::decode(d)?),
-                2 => uniq!("PreKey::key_pair", key_pair, KeyPair::decode(d)?),
+                0 if version.is_none() => version = Some(d.u8()?),
+                1 if key_id.is_none() => key_id = Some(PreKeyId::decode(d)?),
+                2 if key_pair.is_none() => key_pair = Some(KeyPair::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(PreKey {
-            version: to_field!(version, "PreKey::version"),
-            key_id: to_field!(key_id, "PreKey::key_id"),
-            key_pair: to_field!(key_pair, "PreKey::key_pair"),
+            version: version.ok_or_else(|| DecodeError::MissingField("PreKey::version"))?,
+            key_id: key_id.ok_or_else(|| DecodeError::MissingField("PreKey::key_id"))?,
+            key_pair: key_pair.ok_or_else(|| DecodeError::MissingField("PreKey::key_pair"))?,
         })
     }
 }
@@ -305,31 +297,19 @@ impl PreKeyBundle {
         let mut signature = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("PreKeyBundle::version", version, d.u8()?),
-                1 => uniq!("PreKeyBundle::prekey_id", prekey_id, PreKeyId::decode(d)?),
-                2 => uniq!(
-                    "PreKeyBundle::public_key",
-                    public_key,
-                    PublicKey::decode(d)?
-                ),
-                3 => uniq!(
-                    "PreKeyBundle::identity_key",
-                    identity_key,
-                    IdentityKey::decode(d)?
-                ),
-                4 => uniq!(
-                    "PreKeyBundle::signature",
-                    signature,
-                    opt(Signature::decode(d))?
-                ),
+                0 if version.is_none() => version = Some(d.u8()?),
+                1 if prekey_id.is_none() => prekey_id = Some(PreKeyId::decode(d)?),
+                2 if public_key.is_none() => public_key = Some(PublicKey::decode(d)?),
+                3 if identity_key.is_none() => identity_key = Some(IdentityKey::decode(d)?),
+                4 if signature.is_none() => signature = Some(opt(Signature::decode(d))?),
                 _ => d.skip()?,
             }
         }
         Ok(PreKeyBundle {
-            version: to_field!(version, "PreKeyBundle::version"),
-            prekey_id: to_field!(prekey_id, "PreKeyBundle::prekey_id"),
-            public_key: to_field!(public_key, "PreKeyBundle::public_key"),
-            identity_key: to_field!(identity_key, "PreKeyBundle::identity_key"),
+            version: version.ok_or_else(|| DecodeError::MissingField("PreKeyBundle::version"))?,
+            prekey_id: prekey_id.ok_or_else(|| DecodeError::MissingField("PreKeyBundle::prekey_id"))?,
+            public_key: public_key.ok_or_else(|| DecodeError::MissingField("PreKeyBundle::public_key"))?,
+            identity_key: identity_key.ok_or_else(|| DecodeError::MissingField("PreKeyBundle::identity_key"))?,
             signature: signature.unwrap_or(None),
         })
     }
@@ -413,14 +393,14 @@ impl KeyPair {
         let mut public_key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("KeyPair::secret_key", secret_key, SecretKey::decode(d)?),
-                1 => uniq!("KeyPair::public_key", public_key, PublicKey::decode(d)?),
+                0 if secret_key.is_none() => secret_key = Some(SecretKey::decode(d)?),
+                1 if public_key.is_none() => public_key = Some(PublicKey::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(KeyPair {
-            secret_key: to_field!(secret_key, "KeyPair::secret_key"),
-            public_key: to_field!(public_key, "KeyPair::public_key"),
+            secret_key: secret_key.ok_or_else(|| DecodeError::MissingField("KeyPair::secret_key"))?,
+            public_key: public_key.ok_or_else(|| DecodeError::MissingField("KeyPair::public_key"))?,
         })
     }
 }
@@ -430,9 +410,9 @@ impl KeyPair {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero {}
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SecretKey {
-    sec_edward: sign::SecretKey,
+    sec_edward: ed25519_dalek::SecretKey,
     sec_curve: ecdh::Scalar,
 }
 
@@ -460,10 +440,8 @@ impl SecretKey {
         let mut sec_edward = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!(
-                    "SecretKey::sec_edward",
-                    sec_edward,
-                    Bytes64::decode(d).map(|v| sign::SecretKey(v.array))?
+                0 if sec_edward.is_none() => sec_edward = Some(
+                    ed25519_dalek::SecretKey::from_bytes(&*Bytes64::decode(d)?.array)?
                 ),
                 _ => d.skip()?,
             }
@@ -483,7 +461,7 @@ impl SecretKey {
 
 #[derive(Clone)]
 pub struct PublicKey {
-    pub_edward: sign::PublicKey,
+    pub_edward: ed25519_dalek::PublicKey,
     pub_curve: ecdh::GroupElement,
 }
 

@@ -17,15 +17,15 @@
 
 use cbor::skip::Skip;
 use cbor::{Decoder, Encoder};
-use chacha20::cipher::StreamCipher;
-use hkdf::{hkdf, Info, Input, Len, Salt};
 use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
 use crate::internal::util::Bytes32;
-use sodiumoxide::crypto::auth::hmacsha256 as mac;
-use sodiumoxide::crypto::stream::chacha20 as stream;
+use hmac::Mac as _;
 use std::io::{Read, Write};
 use std::ops::Deref;
 use std::vec::Vec;
+
+type HmacSha256 = hmac::SimpleHmac<sha2::Sha256>;
+type HkdfSha256 = hkdf::Hkdf<sha2::Sha256>;
 
 // Derived Secrets //////////////////////////////////////////////////////////
 
@@ -36,15 +36,17 @@ pub struct DerivedSecrets {
 }
 
 impl DerivedSecrets {
-    pub fn kdf(input: Input, salt: Salt, info: Info) -> DerivedSecrets {
+    pub fn kdf(input: &[u8], salt: Option<&[u8]>, info: &[u8]) -> DerivedSecrets {
         let mut ck = [0u8; 32];
         let mut mk = [0u8; 32];
 
-        let len = Len::new(64).expect("Unexpected hkdf::HASH_LEN.");
-        let okm = hkdf(salt, input, info, len);
+        let hkdf = HkdfSha256::new(salt, input);
+        let mut okm = zeroize::Zeroizing::new([0u8; 64]);
+        // FIXME: Expand phase is faillible, we should break API and return a Result
+        hkdf.expand(info, okm.as_mut()).unwrap();
 
-        ck.as_mut().write_all(&okm.0[0..32]).unwrap();
-        mk.as_mut().write_all(&okm.0[32..64]).unwrap();
+        ck.as_mut().write_all(&okm[0..32]).unwrap();
+        mk.as_mut().write_all(&okm[32..64]).unwrap();
 
         DerivedSecrets {
             cipher_key: CipherKey::new(ck),
@@ -52,8 +54,8 @@ impl DerivedSecrets {
         }
     }
 
-    pub fn kdf_without_salt(input: Input, info: Info) -> DerivedSecrets {
-        DerivedSecrets::kdf(input, Salt(b""), info)
+    pub fn kdf_without_salt(input: &[u8], info: &[u8]) -> DerivedSecrets {
+        Self::kdf(input, None, info)
     }
 }
 
@@ -105,16 +107,16 @@ impl CipherKey {
         let mut key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!(
-                    "CipherKey::key",
-                    key,
-                    Bytes32::decode(d).map(|v| chacha20::Key::from_slice(&v.array))?
+                0 if key.is_none() => key = Some(
+                    Bytes32::decode(d).map(|v|
+                        chacha20::Key::clone_from_slice(&*v.array)
+                    )?
                 ),
                 _ => d.skip()?,
             }
         }
         Ok(CipherKey {
-            key: to_field!(key, "CipherKey::key"),
+            key: key.ok_or_else(|| DecodeError::MissingField("CipherKey::key"))?,
         })
     }
 }
@@ -131,27 +133,32 @@ impl Deref for CipherKey {
 
 #[derive(Clone, Debug)]
 pub struct MacKey {
-    key: mac::Key,
+    key: zeroize::Zeroizing<[u8; 32]>,
 }
 
 impl MacKey {
     pub fn new(b: [u8; 32]) -> MacKey {
-        MacKey { key: mac::Key(b) }
+        MacKey { key: zeroize::Zeroizing::new(b) }
     }
 
     pub fn sign(&self, msg: &[u8]) -> Mac {
+        let mut mac = HmacSha256::new_from_slice(&*self.key).unwrap();
+        mac.update(msg);
+
         Mac {
-            sig: mac::authenticate(msg, &self.key),
+            sig: mac.finalize(),
         }
     }
 
     pub fn verify(&self, sig: &Mac, msg: &[u8]) -> bool {
-        mac::verify(&sig.sig, msg, &self.key)
+        let mut mac = HmacSha256::new_from_slice(&*self.key).unwrap();
+        mac.update(msg);
+        mac.verify_slice(sig).map(|_| true).unwrap_or(false)
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.key.0))?;
+        e.u8(0).and(e.bytes(&*self.key))?;
         Ok(())
     }
 
@@ -160,17 +167,22 @@ impl MacKey {
         let mut key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!(
-                    "MacKey::key",
-                    key,
-                    Bytes32::decode(d).map(|v| mac::Key(v.array))?
-                ),
+                0 if key.is_none() => key = Some(Bytes32::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(MacKey {
-            key: to_field!(key, "MacKey::key"),
+            key: key
+                .map(|bytes| bytes.array)
+                .ok_or_else(|| DecodeError::MissingField("MacKey::key"))?,
         })
+    }
+}
+
+impl Drop for MacKey {
+    fn drop(&mut self) {
+        use zeroize::Zeroize as _;
+        self.key.zeroize();
     }
 }
 
@@ -178,17 +190,19 @@ impl MacKey {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Mac {
-    sig: mac::Tag,
+    sig: hmac::digest::CtOutput<HmacSha256>,
 }
 
 impl Mac {
     pub fn into_bytes(self) -> [u8; 32] {
-        self.sig.0
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&self.sig.into_bytes().as_slice()[..32]);
+        bytes
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.sig.0))?;
+        e.u8(0).and(e.bytes(&self.sig.into_bytes()))?;
         Ok(())
     }
 
@@ -197,16 +211,17 @@ impl Mac {
         let mut sig = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!(
-                    "Mac::sig",
-                    sig,
-                    Bytes32::decode(d).map(|v| mac::Tag(v.array))?
+                0 if sig.is_none() => sig = Some(
+                    Bytes32::decode(d)
+                        .map(|v| hmac::digest::CtOutput::new(
+                            (*v.array).into()
+                        ))?
                 ),
                 _ => d.skip()?,
             }
         }
         Ok(Mac {
-            sig: to_field!(sig, "Mac::sig"),
+            sig: sig.ok_or_else(|| DecodeError::MissingField("Mac::sig"))?,
         })
     }
 }
@@ -215,7 +230,7 @@ impl Deref for Mac {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &self.sig.0
+        &self.sig.into_bytes()
     }
 }
 
@@ -224,7 +239,7 @@ impl Deref for Mac {
 #[test]
 fn derive_secrets() {
     let nc = chacha20::Nonce::from_slice(&[0; 8]);
-    let ds = DerivedSecrets::kdf_without_salt(Input(b"346234876"), Info(b"foobar"));
+    let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar");
     let ct = ds.cipher_key.encrypt(b"plaintext", &nc);
     assert_eq!(ct.len(), b"plaintext".len());
     assert!(ct != b"plaintext");

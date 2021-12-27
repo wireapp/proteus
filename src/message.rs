@@ -16,7 +16,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub use crate::internal::derived::Mac;
-pub use crate::internal::derived::Nonce;
 pub use crate::internal::message::CipherMessage;
 pub use crate::internal::message::Counter;
 pub use crate::internal::message::Envelope;

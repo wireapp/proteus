@@ -16,7 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::internal::{
-    derived::{Mac, MacKey, Nonce},
+    derived::{Mac, MacKey},
     keys::{IdentityKey, PreKeyId, PublicKey},
     types::{DecodeError, DecodeResult, EncodeResult},
     util::fmt_hex,
@@ -47,13 +47,13 @@ impl Counter {
         Counter(self.0 + 1)
     }
 
-    pub fn as_nonce(self) -> Nonce {
+    pub fn as_nonce(self) -> zeroize::Zeroizing<[u8; 8]> {
         let mut nonce = [0; 8];
         nonce[0] = (self.0 >> 24) as u8;
         nonce[1] = (self.0 >> 16) as u8;
         nonce[2] = (self.0 >> 8) as u8;
         nonce[3] = self.0 as u8;
-        Nonce::new(nonce)
+        zeroize::Zeroizing::new(nonce)
     }
 
     pub fn encode<W: Write>(self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -178,22 +178,18 @@ impl<'r> PreKeyMessage<'r> {
         let mut message = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("PreKeyMessage::prekey_id", prekey_id, PreKeyId::decode(d)?),
-                1 => uniq!("PreKeyMessage::base_key", base_key, PublicKey::decode(d)?),
-                2 => uniq!(
-                    "PreKeyMessage::identity_key",
-                    identity_key,
-                    IdentityKey::decode(d)?
-                ),
-                3 => uniq!("PreKeyMessage::message", message, CipherMessage::decode(d)?),
+                0 if prekey_id.is_none() => prekey_id = Some(PreKeyId::decode(d)?),
+                1 if base_key.is_none() => base_key = Some(PublicKey::decode(d)?),
+                2 if identity_key.is_none() => identity_key = Some(IdentityKey::decode(d)?),
+                3 if message.is_none() => message = Some(CipherMessage::decode(d)?),
                 _ => d.skip()?,
             }
         }
         Ok(PreKeyMessage {
-            prekey_id: to_field!(prekey_id, "PreKeyMessage::prekey_id"),
-            base_key: Cow::Owned(to_field!(base_key, "PreKeyMessage::base_key")),
-            identity_key: Cow::Owned(to_field!(identity_key, "PreKeyMessage::identity_key")),
-            message: to_field!(message, "PreKeyMessage::message"),
+            prekey_id: prekey_id.ok_or_else(|| DecodeError::MissingField("PreKeyMessage::prekey_id"))?,
+            base_key: Cow::Owned(base_key.ok_or_else(|| DecodeError::MissingField("PreKeyMessage::base_key"))?),
+            identity_key: Cow::Owned(identity_key.ok_or_else(|| DecodeError::MissingField("PreKeyMessage::identity_key"))?),
+            message: message.ok_or_else(|| DecodeError::MissingField("PreKeyMessage::message"))?,
         })
     }
 }
@@ -243,32 +239,20 @@ impl<'r> CipherMessage<'r> {
         let mut cipher_text = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!(
-                    "CipherMessage::session_tag",
-                    session_tag,
-                    SessionTag::decode(d)?
-                ),
-                1 => uniq!("CipherMessage::counter", counter, Counter::decode(d)?),
-                2 => uniq!(
-                    "CipherMessage::prev_counter",
-                    prev_counter,
-                    Counter::decode(d)?
-                ),
-                3 => uniq!(
-                    "CipherMessage::ratchet_key",
-                    ratchet_key,
-                    PublicKey::decode(d)?
-                ),
-                4 => uniq!("CipherMessage::cipher_text", cipher_text, d.bytes()?),
+                0 if session_tag.is_none() => session_tag = Some(SessionTag::decode(d)?),
+                1 if counter.is_none() => counter = Some(Counter::decode(d)?),
+                2 if prev_counter.is_none() => prev_counter = Some(Counter::decode(d)?),
+                3 if ratchet_key.is_none() => ratchet_key = Some(PublicKey::decode(d)?),
+                4 if cipher_text.is_none() => cipher_text = Some(d.bytes()?),
                 _ => d.skip()?,
             }
         }
         Ok(CipherMessage {
-            session_tag: to_field!(session_tag, "CipherMessage::session_tag"),
-            counter: to_field!(counter, "CipherMessage::counter"),
-            prev_counter: to_field!(prev_counter, "CipherMessage::prev_counter"),
-            ratchet_key: Cow::Owned(to_field!(ratchet_key, "CipherMessage::ratchet_key")),
-            cipher_text: to_field!(cipher_text, "CipherMessage::cipher_text"),
+            session_tag: session_tag.ok_or_else(|| DecodeError::MissingField("CipherMessage::session_tag"))?,
+            counter: counter.ok_or_else(|| DecodeError::MissingField("CipherMessage::counter"))?,
+            prev_counter: prev_counter.ok_or_else(|| DecodeError::MissingField("CipherMessage::prev_counter"))?,
+            ratchet_key: Cow::Owned(ratchet_key.ok_or_else(|| DecodeError::MissingField("CipherMessage::ratchet_key"))?),
+            cipher_text: cipher_text.ok_or_else(|| DecodeError::MissingField("CipherMessage::cipher_text"))?,
         })
     }
 }
@@ -348,8 +332,8 @@ impl<'r> Envelope<'r> {
         let mut message_enc = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!("Envelope::version", version, d.u8()?),
-                1 => uniq!("Envelope::mac", mac, Mac::decode(d)?),
+                0 if version.is_none() => version = Some(d.u8()?),
+                1 if mac.is_none() => mac = Some(Mac::decode(d)?),
                 2 if message.is_some() => {
                     return Err(DecodeError::DuplicateField("Envelope::message"))
                 }
@@ -365,10 +349,10 @@ impl<'r> Envelope<'r> {
             }
         }
         Ok(Envelope {
-            version: to_field!(version, "Envelope::version"),
-            message: to_field!(message, "Envelope::message"),
-            message_enc: to_field!(message_enc, "Envelope::message_enc"),
-            mac: to_field!(mac, "Envelope::mac"),
+            version: version.ok_or_else(|| DecodeError::MissingField("Envelope::version"))?,
+            message: message.ok_or_else(|| DecodeError::MissingField("Envelope::message"))?,
+            message_enc: message_enc.ok_or_else(|| DecodeError::MissingField("Envelope::message_enc"))?,
+            mac: mac.ok_or_else(|| DecodeError::MissingField("Envelope::mac"))?,
         })
     }
 }

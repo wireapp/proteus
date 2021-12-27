@@ -19,7 +19,7 @@ pub mod internal;
 pub mod keys;
 pub mod message;
 pub mod session;
-// pub mod error;
+pub mod error;
 
 // It's here for compatibility purposes, since it's not needed at all anymore
 pub fn init() -> bool {
