@@ -135,7 +135,7 @@ impl ChainKey {
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SendChain {
     chain_key: ChainKey,
     ratchet_key: KeyPair,
@@ -535,7 +535,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         m: &CipherMessage,
     ) -> Result<Vec<u8>, Error<E>> {
         let mut s = match self.session_states.get_mut(&m.session_tag) {
-            Some(s) => s.val.clone(),
+            Some(s) => s.val,
             None => return Err(Error::InvalidMessage),
         };
         let plain = s.decrypt(env, m)?;
@@ -731,7 +731,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
 
 // Session State ////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SessionState {
     recv_chains: VecDeque<RecvChain>,
     send_chain: SendChain,

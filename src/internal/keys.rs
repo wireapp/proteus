@@ -66,7 +66,7 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct IdentityKeyPair {
     pub version: u8,
     pub secret_key: SecretKey,
@@ -234,7 +234,7 @@ impl PreKeyBundle {
 
     pub fn signed(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
         let ratchet_key = key.key_pair.public_key.clone();
-        let signature = ident.secret_key.sign(&ratchet_key.pub_edward.0);
+        let signature = ident.secret_key.sign(&ratchet_key.pub_edward.to_bytes());
         PreKeyBundle {
             version: 1,
             prekey_id: key.key_id,
@@ -250,7 +250,7 @@ impl PreKeyBundle {
                 if self
                     .identity_key
                     .public_key
-                    .verify(sig, &self.public_key.pub_edward.0)
+                    .verify(sig, &self.public_key.pub_edward.to_bytes())
                 {
                     PreKeyAuth::Valid
                 } else {
@@ -362,21 +362,27 @@ impl Default for KeyPair {
 
 impl KeyPair {
     pub fn new() -> KeyPair {
-        let (p, s) = sign::gen_keypair();
+        use rand::{RngCore as _, CryptoRng as _, SeedableRng as _};
+        let mut rng = chacha20::ChaCha12Rng::from_entropy();
 
-        let es = from_ed25519_sk(&s).expect("invalid ed25519 secret key");
-        let ep = from_ed25519_pk(&p).expect("invalid ed25519 public key");
+        let keypair = ed25519_dalek::Keypair::generate(&mut rng);
+        // let (p, s) = sign::gen_keypair();
 
-        KeyPair {
-            secret_key: SecretKey {
-                sec_edward: s,
-                sec_curve: ecdh::Scalar(es),
-            },
-            public_key: PublicKey {
-                pub_edward: p,
-                pub_curve: ecdh::GroupElement(ep),
-            },
-        }
+        // let es = from_ed25519_sk(&s).expect("invalid ed25519 secret key");
+        // let ep = from_ed25519_pk(&p).expect("invalid ed25519 public key");
+
+        // KeyPair {
+        //     secret_key: SecretKey {
+        //         sec_edward: s,
+        //         sec_curve: ecdh::Scalar(es),
+        //     },
+        //     public_key: PublicKey {
+        //         pub_edward: p,
+        //         pub_curve: ecdh::GroupElement(ep),
+        //     },
+        // }
+
+        KeyPair::default()
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -413,7 +419,16 @@ pub struct Zero {}
 #[derive(Debug)]
 pub struct SecretKey {
     sec_edward: ed25519_dalek::SecretKey,
-    sec_curve: ecdh::Scalar,
+    sec_curve: curve25519_dalek::scalar::Scalar,
+}
+
+impl Clone for SecretKey {
+    fn clone(&self) -> Self {
+        Self {
+            sec_edward: ed25519_dalek::SecretKey::from_bytes(self.sec_edward.as_bytes()).unwrap(),
+            sec_curve: self.sec_curve.clone()
+        }
+    }
 }
 
 impl SecretKey {
@@ -424,14 +439,13 @@ impl SecretKey {
     }
 
     pub fn shared_secret(&self, p: &PublicKey) -> Result<[u8; 32], Zero> {
-        ecdh::scalarmult(&self.sec_curve, &p.pub_curve)
-            .map(|ge| ge.0)
-            .map_err(|()| Zero {})
+        let mult = self.sec_curve * &p.pub_curve;
+        Ok(mult.to_bytes())
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.sec_edward.0))?;
+        e.u8(0).and(e.bytes(&self.sec_edward.to_bytes()))?;
         Ok(())
     }
 
@@ -448,8 +462,9 @@ impl SecretKey {
         }
         let sec_edward = sec_edward.ok_or(DecodeError::MissingField("SecretKey::sec_edward"))?;
         let sec_curve = from_ed25519_sk(&sec_edward)
-            .map(ecdh::Scalar)
+            .and_then(curve25519_dalek::scalar::Scalar::from_bytes_mod_order)
             .map_err(|()| DecodeError::InvalidField("SecretKey::sec_edward"))?;
+
         Ok(SecretKey {
             sec_edward,
             sec_curve,
@@ -499,11 +514,7 @@ impl PublicKey {
         let mut pub_edward = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!(
-                    "PublicKey::pub_edward",
-                    pub_edward,
-                    Bytes32::decode(d).map(|v| sign::PublicKey(v.array))?
-                ),
+                0 if pub_edward.is_none() => pub_edward = Some(Bytes32::decode(d).map(|v| sign::PublicKey(v.array))?),
                 _ => d.skip()?,
             }
         }
@@ -532,7 +543,7 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Signature {
-    sig: sign::Signature,
+    sig: ed25519_dalek::Signature,
 }
 
 impl Signature {
@@ -547,45 +558,43 @@ impl Signature {
         let mut sig = None;
         for _ in 0..n {
             match d.u8()? {
-                0 => uniq!(
-                    "Signature::sig",
-                    sig,
-                    sign::Signature::from_bytes(&Bytes64::decode(d)?.array)?
-                ),
+                0 if sig.is_none() => sig = Some(ed25519_dalek::Signature::from_bytes(&*Bytes64::decode(d)?.array)?),
                 _ => d.skip()?,
             }
         }
         Ok(Signature {
-            sig: to_field!(sig, "Signature::sig"),
+            sig: sig.ok_or_else(|| DecodeError::MissingField("Signature::sig"))?,
         })
     }
 }
 
 // Internal /////////////////////////////////////////////////////////////////
 
-#[allow(clippy::result_unit_err)]
-pub fn from_ed25519_pk(k: &sign::PublicKey) -> Result<[u8; ecdh::GROUPELEMENTBYTES], ()> {
-    let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
-    unsafe {
-        if ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
-            Ok(ep)
-        } else {
-            Err(())
-        }
-    }
-}
+// FIXME: This is so fucking cursed, what the actual fuck
 
-#[allow(clippy::result_unit_err)]
-pub fn from_ed25519_sk(k: &sign::SecretKey) -> Result<[u8; ecdh::SCALARBYTES], ()> {
-    let mut es = [0u8; ecdh::SCALARBYTES];
-    unsafe {
-        if ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
-            Ok(es)
-        } else {
-            Err(())
-        }
-    }
-}
+// #[allow(clippy::result_unit_err)]
+// pub fn from_ed25519_pk(k: &sign::PublicKey) -> Result<[u8; ecdh::GROUPELEMENTBYTES], ()> {
+//     let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
+//     unsafe {
+//         if ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
+//             Ok(ep)
+//         } else {
+//             Err(())
+//         }
+//     }
+// }
+
+// #[allow(clippy::result_unit_err)]
+// pub fn from_ed25519_sk(k: &sign::SecretKey) -> Result<[u8; ecdh::SCALARBYTES], ()> {
+//     let mut es = [0u8; ecdh::SCALARBYTES];
+//     unsafe {
+//         if ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
+//             Ok(es)
+//         } else {
+//             Err(())
+//         }
+//     }
+// }
 
 // Tests ////////////////////////////////////////////////////////////////////
 
