@@ -695,4 +695,38 @@ mod tests {
         }
         assert_eq!(Err(Zero {}), k.secret_key.shared_secret(&k.public_key))
     }
+
+    #[allow(dead_code)]
+    fn black_box<T>(dummy: T) -> T {
+        unsafe {
+            std::ptr::read_volatile(&dummy)
+        }
+    }
+
+    // #[test]
+    #[allow(dead_code)]
+    fn check_if_pk_eq_is_constant_time() {
+        let mut baseline_time = std::time::Duration::ZERO;
+        for i in 0..u32::MAX {
+            let pk = super::KeyPair::new().public_key;
+            let pk2 = pk.clone();
+            let start = std::time::Instant::now();
+            black_box(pk == pk2);
+            let new_time = start.elapsed();
+            // Skip first run for warmup
+            if baseline_time == std::time::Duration::ZERO {
+                if i > 0 {
+                    baseline_time = new_time;
+                }
+                continue;
+            }
+
+            assert!(
+                new_time == baseline_time,
+                "PublicKey::eq wasn't time constant [baseline = {:?}] [current = {:?}] on iteration {} of {}",
+                baseline_time, new_time,
+                i, u32::MAX
+            );
+        }
+    }
 }
