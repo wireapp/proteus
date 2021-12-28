@@ -126,8 +126,10 @@ impl IdentityKeyPair {
         }
         Ok(IdentityKeyPair {
             version: version.ok_or(DecodeError::MissingField("IdentityKeyPair::version"))?,
-            secret_key: secret_key.ok_or(DecodeError::MissingField("IdentityKeyPair::secret_key"))?,
-            public_key: public_key.ok_or(DecodeError::MissingField("IdentityKeyPair::public_key"))?,
+            secret_key: secret_key
+                .ok_or(DecodeError::MissingField("IdentityKeyPair::secret_key"))?,
+            public_key: public_key
+                .ok_or(DecodeError::MissingField("IdentityKeyPair::public_key"))?,
         })
     }
 }
@@ -309,7 +311,8 @@ impl PreKeyBundle {
             version: version.ok_or(DecodeError::MissingField("PreKeyBundle::version"))?,
             prekey_id: prekey_id.ok_or(DecodeError::MissingField("PreKeyBundle::prekey_id"))?,
             public_key: public_key.ok_or(DecodeError::MissingField("PreKeyBundle::public_key"))?,
-            identity_key: identity_key.ok_or(DecodeError::MissingField("PreKeyBundle::identity_key"))?,
+            identity_key: identity_key
+                .ok_or(DecodeError::MissingField("PreKeyBundle::identity_key"))?,
             signature: signature.unwrap_or(None),
         })
     }
@@ -444,12 +447,13 @@ impl SecretKey {
 
         use ed25519::signature::Signer as _;
         Signature {
-            sig: key_pair.sign(m)
+            sig: key_pair.sign(m),
         }
     }
 
     pub fn shared_secret(&self, p: &PublicKey) -> Result<[u8; 32], Zero> {
-        let scalar_curve = curve25519_dalek::scalar::Scalar::from_bytes_mod_order(p.pub_curve.to_bytes());
+        let scalar_curve =
+            curve25519_dalek::scalar::Scalar::from_bytes_mod_order(p.pub_curve.to_bytes());
         let mult = self.sec_curve * scalar_curve;
         Ok(mult.to_bytes())
     }
@@ -465,14 +469,17 @@ impl SecretKey {
         let mut sec_edward = None;
         for _ in 0..n {
             match d.u8()? {
-                0 if sec_edward.is_none() => sec_edward = Some(
-                    ed25519_dalek::SecretKey::from_bytes(&*Bytes64::decode(d)?.array)?
-                ),
+                0 if sec_edward.is_none() => {
+                    sec_edward = Some(ed25519_dalek::SecretKey::from_bytes(
+                        &*Bytes64::decode(d)?.array,
+                    )?)
+                }
                 _ => d.skip()?,
             }
         }
         let sec_edward = sec_edward.ok_or(DecodeError::MissingField("SecretKey::sec_edward"))?;
-        let sec_curve = curve25519_dalek::scalar::Scalar::from_bytes_mod_order(sec_edward.to_bytes());
+        let sec_curve =
+            curve25519_dalek::scalar::Scalar::from_bytes_mod_order(sec_edward.to_bytes());
 
         Ok(SecretKey {
             sec_edward,
@@ -492,7 +499,11 @@ pub struct PublicKey {
 impl PartialEq for PublicKey {
     fn eq(&self, other: &Self) -> bool {
         use subtle::ConstantTimeEq as _;
-        let ct = self.pub_edward.as_bytes().ct_eq(other.pub_edward.as_bytes()) & self.pub_curve.to_bytes().ct_eq(&other.pub_curve.to_bytes());
+        let ct = self
+            .pub_edward
+            .as_bytes()
+            .ct_eq(other.pub_edward.as_bytes())
+            & self.pub_curve.to_bytes().ct_eq(&other.pub_curve.to_bytes());
         ct.unwrap_u8() == 1
     }
 }
@@ -532,7 +543,7 @@ impl PublicKey {
                 0 if pub_edward.is_none() => {
                     let bytes = Bytes32::decode(d)?;
                     pub_edward = Some(ed25519_dalek::PublicKey::from_bytes(&*bytes.array)?);
-                },
+                }
                 _ => d.skip()?,
             }
         }
@@ -574,7 +585,11 @@ impl Signature {
         let mut sig = None;
         for _ in 0..n {
             match d.u8()? {
-                0 if sig.is_none() => sig = Some(ed25519_dalek::Signature::from_bytes(&*Bytes64::decode(d)?.array)?),
+                0 if sig.is_none() => {
+                    sig = Some(ed25519_dalek::Signature::from_bytes(
+                        &*Bytes64::decode(d)?.array,
+                    )?)
+                }
                 _ => d.skip()?,
             }
         }
@@ -662,8 +677,14 @@ mod tests {
             |mut e| k.secret_key.encode(&mut e),
             |mut d| SecretKey::decode(&mut d),
         );
-        assert_eq!(&k.secret_key.sec_edward.to_bytes()[..], &r.sec_edward.to_bytes()[..]);
-        assert_eq!(&k.secret_key.sec_curve.to_bytes()[..], &r.sec_curve.to_bytes()[..])
+        assert_eq!(
+            &k.secret_key.sec_edward.to_bytes()[..],
+            &r.sec_edward.to_bytes()[..]
+        );
+        assert_eq!(
+            &k.secret_key.sec_curve.to_bytes()[..],
+            &r.sec_curve.to_bytes()[..]
+        )
     }
 
     #[test]

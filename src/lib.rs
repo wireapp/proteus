@@ -15,11 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+pub mod error;
 pub mod internal;
 pub mod keys;
 pub mod message;
 pub mod session;
-pub mod error;
 
 // It's here for compatibility purposes, since it's not needed at all anymore
 pub fn init() -> bool {

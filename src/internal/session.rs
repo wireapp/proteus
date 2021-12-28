@@ -23,13 +23,15 @@ use std::fmt;
 use std::io::{Cursor, Read, Write};
 use std::usize;
 
-use cbor::skip::Skip;
-use cbor::{self, Config, Decoder, Encoder};
 use crate::internal::derived::{CipherKey, DerivedSecrets, MacKey};
 use crate::internal::keys::{self, KeyPair, PublicKey};
 use crate::internal::keys::{IdentityKey, IdentityKeyPair, PreKey, PreKeyBundle, PreKeyId};
-use crate::internal::message::{CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag};
+use crate::internal::message::{
+    CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag,
+};
 use crate::internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
+use cbor::skip::Skip;
+use cbor::{self, Config, Decoder, Encoder};
 
 // Root key /////////////////////////////////////////////////////////////////
 
@@ -291,14 +293,16 @@ impl RecvChain {
             match d.u8()? {
                 0 if chain_key.is_none() => chain_key = Some(ChainKey::decode(d)?),
                 1 if ratchet_key.is_none() => ratchet_key = Some(PublicKey::decode(d)?),
-                2 if message_keys.is_none() => message_keys = Some({
-                    let lv = d.array()?;
-                    let mut vm = VecDeque::with_capacity(lv);
-                    for _ in 0..lv {
-                        vm.push_back(MessageKeys::decode(d)?)
-                    }
-                    vm
-                }),
+                2 if message_keys.is_none() => {
+                    message_keys = Some({
+                        let lv = d.array()?;
+                        let mut vm = VecDeque::with_capacity(lv);
+                        for _ in 0..lv {
+                            vm.push_back(MessageKeys::decode(d)?)
+                        }
+                        vm
+                    })
+                }
                 _ => d.skip()?,
             }
         }
@@ -684,36 +688,40 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                     }
                 }
                 3 if remote_identity.is_none() => remote_identity = Some(IdentityKey::decode(d)?),
-                4 if pending_prekey.is_none() => pending_prekey = Some({
-                    if let Some(n) = cbor::opt(d.object())? {
-                        let mut id = None;
-                        let mut pk = None;
-                        for _ in 0..n {
-                            match d.u8()? {
-                                0 if id.is_none() => id = Some(PreKeyId::decode(d)?),
-                                1 if pk.is_none() => pk = Some(PublicKey::decode(d)?),
-                                _ => d.skip()?,
+                4 if pending_prekey.is_none() => {
+                    pending_prekey = Some({
+                        if let Some(n) = cbor::opt(d.object())? {
+                            let mut id = None;
+                            let mut pk = None;
+                            for _ in 0..n {
+                                match d.u8()? {
+                                    0 if id.is_none() => id = Some(PreKeyId::decode(d)?),
+                                    1 if pk.is_none() => pk = Some(PublicKey::decode(d)?),
+                                    _ => d.skip()?,
+                                }
                             }
+                            Some((
+                                id.ok_or(DecodeError::MissingField("Session::pending_prekey_id"))?,
+                                pk.ok_or(DecodeError::MissingField("Session::pending_prekey"))?,
+                            ))
+                        } else {
+                            None
                         }
-                        Some((
-                            id.ok_or(DecodeError::MissingField("Session::pending_prekey_id"))?,
-                            pk.ok_or(DecodeError::MissingField("Session::pending_prekey"))?,
-                        ))
-                    } else {
-                        None
-                    }
-                }),
-                5 if session_states.is_none() => session_states = Some({
-                    let ls = d.object()?;
-                    let mut rb = BTreeMap::new();
-                    for _ in 0..ls {
-                        let t = SessionTag::decode(d)?;
-                        let s = SessionState::decode(d)?;
-                        rb.insert(t, Indexed::new(counter, s));
-                        counter += 1;
-                    }
-                    rb
-                }),
+                    })
+                }
+                5 if session_states.is_none() => {
+                    session_states = Some({
+                        let ls = d.object()?;
+                        let mut rb = BTreeMap::new();
+                        for _ in 0..ls {
+                            let t = SessionTag::decode(d)?;
+                            let s = SessionState::decode(d)?;
+                            rb.insert(t, Indexed::new(counter, s));
+                            counter += 1;
+                        }
+                        rb
+                    })
+                }
                 _ => d.skip()?,
             }
         }
@@ -722,9 +730,11 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             session_tag: session_tag.ok_or(DecodeError::MissingField("Session::session_tag"))?,
             counter,
             local_identity: ident,
-            remote_identity: remote_identity.ok_or(DecodeError::MissingField("Session::remote_identity"))?,
+            remote_identity: remote_identity
+                .ok_or(DecodeError::MissingField("Session::remote_identity"))?,
             pending_prekey: pending_prekey.flatten(),
-            session_states: session_states.ok_or(DecodeError::MissingField("Session::session_states"))?,
+            session_states: session_states
+                .ok_or(DecodeError::MissingField("Session::session_states"))?,
         })
     }
 }
@@ -846,13 +856,13 @@ impl SessionState {
         };
 
         let message = match *pending {
-            None => Message::Plain(cmessage),
-            Some(ref pp) => Message::Keyed(PreKeyMessage {
+            None => Message::Plain(Box::new(cmessage)),
+            Some(ref pp) => Message::Keyed(Box::new(PreKeyMessage {
                 prekey_id: pp.0,
                 base_key: Cow::Borrowed(&pp.1),
                 identity_key: Cow::Borrowed(ident),
                 message: cmessage,
-            }),
+            })),
         };
 
         let env = Envelope::new(&msgkeys.mac_key, message);
@@ -924,14 +934,16 @@ impl SessionState {
         let mut prev_counter = None;
         for _ in 0..n {
             match d.u8()? {
-                0 if recv_chains.is_none() => recv_chains = Some({
-                    let lr = d.array()?;
-                    let mut rr = VecDeque::with_capacity(lr);
-                    for _ in 0..lr {
-                        rr.push_back(RecvChain::decode(d)?)
-                    }
-                    rr
-                }),
+                0 if recv_chains.is_none() => {
+                    recv_chains = Some({
+                        let lr = d.array()?;
+                        let mut rr = VecDeque::with_capacity(lr);
+                        for _ in 0..lr {
+                            rr.push_back(RecvChain::decode(d)?)
+                        }
+                        rr
+                    })
+                }
                 1 if send_chain.is_none() => send_chain = Some(SendChain::decode(d)?),
                 2 if root_key.is_none() => root_key = Some(RootKey::decode(d)?),
                 3 if prev_counter.is_none() => prev_counter = Some(Counter::decode(d)?),
@@ -939,10 +951,12 @@ impl SessionState {
             }
         }
         Ok(SessionState {
-            recv_chains: recv_chains.ok_or(DecodeError::MissingField("SessionState::recv_chains"))?,
+            recv_chains: recv_chains
+                .ok_or(DecodeError::MissingField("SessionState::recv_chains"))?,
             send_chain: send_chain.ok_or(DecodeError::MissingField("SessionState::send_chain"))?,
             root_key: root_key.ok_or(DecodeError::MissingField("SessionState::root_key"))?,
-            prev_counter: prev_counter.ok_or(DecodeError::MissingField("SessionState::prev_counter"))?,
+            prev_counter: prev_counter
+                .ok_or(DecodeError::MissingField("SessionState::prev_counter"))?,
         })
     }
 }

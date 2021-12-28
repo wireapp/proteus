@@ -15,10 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor::skip::Skip;
-use cbor::{Decoder, Encoder};
 use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
 use crate::internal::util::Bytes32;
+use cbor::skip::Skip;
+use cbor::{Decoder, Encoder};
 use hmac::Mac as _;
 use std::io::{Read, Write};
 use std::ops::Deref;
@@ -74,7 +74,7 @@ impl CipherKey {
     }
 
     pub fn encrypt(&self, text: &[u8], nonce: &[u8]) -> Vec<u8> {
-        use chacha20::cipher::{StreamCipher as _, NewCipher as _};
+        use chacha20::cipher::{NewCipher as _, StreamCipher as _};
         let nonce = chacha20::Nonce::from_slice(nonce);
         let mut cipher = chacha20::ChaCha20::new(&self.key, nonce);
         let mut data = Vec::from(text);
@@ -83,11 +83,7 @@ impl CipherKey {
     }
 
     pub fn decrypt(&self, data: &[u8], nonce: &[u8]) -> Vec<u8> {
-        use chacha20::cipher::{
-            StreamCipher as _,
-            StreamCipherSeek as _,
-            NewCipher as _
-        };
+        use chacha20::cipher::{NewCipher as _, StreamCipher as _, StreamCipherSeek as _};
         let nonce = chacha20::Nonce::from_slice(nonce);
         let mut cipher = chacha20::ChaCha20::new(&self.key, nonce);
         let mut text = Vec::from(data);
@@ -107,11 +103,11 @@ impl CipherKey {
         let mut key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 if key.is_none() => key = Some(
-                    Bytes32::decode(d).map(|v|
-                        chacha20::Key::clone_from_slice(&*v.array)
-                    )?
-                ),
+                0 if key.is_none() => {
+                    key = Some(
+                        Bytes32::decode(d).map(|v| chacha20::Key::clone_from_slice(&*v.array))?,
+                    )
+                }
                 _ => d.skip()?,
             }
         }
@@ -138,7 +134,9 @@ pub struct MacKey {
 
 impl MacKey {
     pub fn new(b: [u8; 32]) -> MacKey {
-        MacKey { key: zeroize::Zeroizing::new(b) }
+        MacKey {
+            key: zeroize::Zeroizing::new(b),
+        }
     }
 
     pub fn sign(&self, msg: &[u8]) -> Mac {
@@ -197,7 +195,10 @@ impl Mac {
         let mut sig_bytes = [0u8; 32];
         sig_bytes.copy_from_slice(&signature.clone().into_bytes().as_slice()[..32]);
 
-        Self { sig: signature, sig_bytes }
+        Self {
+            sig: signature,
+            sig_bytes,
+        }
     }
 
     pub fn into_bytes(self) -> [u8; 32] {
@@ -217,12 +218,12 @@ impl Mac {
         let mut sig = None;
         for _ in 0..n {
             match d.u8()? {
-                0 if sig.is_none() => sig = Some(
-                    Bytes32::decode(d)
-                        .map(|v| hmac::digest::CtOutput::new(
-                            (*v.array).into()
-                        ))?
-                ),
+                0 if sig.is_none() => {
+                    sig = Some(
+                        Bytes32::decode(d)
+                            .map(|v| hmac::digest::CtOutput::new((*v.array).into()))?,
+                    )
+                }
                 _ => d.skip()?,
             }
         }
@@ -231,10 +232,7 @@ impl Mac {
         let mut sig_bytes = [0u8; 32];
         sig_bytes.copy_from_slice(&sig.clone().into_bytes().as_slice()[..32]);
 
-        Ok(Self {
-            sig_bytes,
-            sig,
-        })
+        Ok(Self { sig_bytes, sig })
     }
 }
 

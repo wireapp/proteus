@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor::{self, Decoder};
 use crate::internal::types::{DecodeError, DecodeResult};
+use cbor::{self, Decoder};
 use std::io::Read;
 
 #[cfg(test)]
@@ -48,7 +48,9 @@ impl Bytes32 {
         if 32 != n {
             return Err(DecodeError::InvalidArrayLen(n));
         }
-        Ok(Bytes32 { array: zeroize::Zeroizing::new(a) })
+        Ok(Bytes32 {
+            array: zeroize::Zeroizing::new(a),
+        })
     }
 }
 
@@ -65,7 +67,9 @@ impl Bytes64 {
         if 64 != n {
             return Err(DecodeError::InvalidArrayLen(n));
         }
-        Ok(Bytes64 { array: zeroize::Zeroizing::new(a) })
+        Ok(Bytes64 {
+            array: zeroize::Zeroizing::new(a),
+        })
     }
 }
 

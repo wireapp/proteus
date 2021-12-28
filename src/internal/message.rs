@@ -105,15 +105,15 @@ impl fmt::Debug for SessionTag {
 // Message //////////////////////////////////////////////////////////////////
 
 pub enum Message<'r> {
-    Plain(CipherMessage<'r>),
-    Keyed(PreKeyMessage<'r>),
+    Plain(Box<CipherMessage<'r>>),
+    Keyed(Box<PreKeyMessage<'r>>),
 }
 
 impl<'r> Message<'r> {
     fn into_owned<'s>(self) -> Message<'s> {
         match self {
-            Message::Plain(m) => Message::Plain(m.into_owned()),
-            Message::Keyed(m) => Message::Keyed(m.into_owned()),
+            Message::Plain(m) => Message::Plain(Box::new(m.into_owned())),
+            Message::Keyed(m) => Message::Keyed(Box::new(m.into_owned())),
         }
     }
 
@@ -132,8 +132,8 @@ impl<'r> Message<'r> {
 
     fn decode<'s, R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Message<'s>> {
         match d.u8()? {
-            1 => CipherMessage::decode(d).map(Message::Plain),
-            2 => PreKeyMessage::decode(d).map(Message::Keyed),
+            1 => CipherMessage::decode(d).map(|m| Message::Plain(Box::new(m))),
+            2 => PreKeyMessage::decode(d).map(|m| Message::Keyed(Box::new(m))),
             t => Err(DecodeError::InvalidType(t, "unknown message type")),
         }
     }
@@ -187,8 +187,12 @@ impl<'r> PreKeyMessage<'r> {
         }
         Ok(PreKeyMessage {
             prekey_id: prekey_id.ok_or(DecodeError::MissingField("PreKeyMessage::prekey_id"))?,
-            base_key: Cow::Owned(base_key.ok_or(DecodeError::MissingField("PreKeyMessage::base_key"))?),
-            identity_key: Cow::Owned(identity_key.ok_or(DecodeError::MissingField("PreKeyMessage::identity_key"))?),
+            base_key: Cow::Owned(
+                base_key.ok_or(DecodeError::MissingField("PreKeyMessage::base_key"))?,
+            ),
+            identity_key: Cow::Owned(
+                identity_key.ok_or(DecodeError::MissingField("PreKeyMessage::identity_key"))?,
+            ),
             message: message.ok_or(DecodeError::MissingField("PreKeyMessage::message"))?,
         })
     }
@@ -248,11 +252,16 @@ impl<'r> CipherMessage<'r> {
             }
         }
         Ok(CipherMessage {
-            session_tag: session_tag.ok_or(DecodeError::MissingField("CipherMessage::session_tag"))?,
+            session_tag: session_tag
+                .ok_or(DecodeError::MissingField("CipherMessage::session_tag"))?,
             counter: counter.ok_or(DecodeError::MissingField("CipherMessage::counter"))?,
-            prev_counter: prev_counter.ok_or(DecodeError::MissingField("CipherMessage::prev_counter"))?,
-            ratchet_key: Cow::Owned(ratchet_key.ok_or(DecodeError::MissingField("CipherMessage::ratchet_key"))?),
-            cipher_text: cipher_text.ok_or(DecodeError::MissingField("CipherMessage::cipher_text"))?,
+            prev_counter: prev_counter
+                .ok_or(DecodeError::MissingField("CipherMessage::prev_counter"))?,
+            ratchet_key: Cow::Owned(
+                ratchet_key.ok_or(DecodeError::MissingField("CipherMessage::ratchet_key"))?,
+            ),
+            cipher_text: cipher_text
+                .ok_or(DecodeError::MissingField("CipherMessage::cipher_text"))?,
         })
     }
 }
@@ -375,7 +384,7 @@ mod tests {
         let rk = KeyPair::new().public_key;
 
         let tg = SessionTag::new();
-        let m1 = Message::Keyed(PreKeyMessage {
+        let m1 = Message::Keyed(Box::new(PreKeyMessage {
             prekey_id: PreKeyId::new(42),
             base_key: Cow::Borrowed(&bk),
             identity_key: Cow::Borrowed(&ik),
@@ -386,15 +395,15 @@ mod tests {
                 ratchet_key: Cow::Borrowed(&rk),
                 cipher_text: vec![1, 2, 3, 4],
             },
-        });
+        }));
 
-        let m2 = Message::Plain(CipherMessage {
+        let m2 = Message::Plain(Box::new(CipherMessage {
             session_tag: tg,
             counter: Counter(42),
             prev_counter: Counter(3),
             ratchet_key: Cow::Borrowed(&rk),
             cipher_text: vec![1, 2, 3, 4, 5],
-        });
+        }));
 
         let env1 = Envelope::new(&mk, m1).unwrap();
         let env2 = Envelope::new(&mk, m2).unwrap();
