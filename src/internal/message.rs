@@ -186,10 +186,10 @@ impl<'r> PreKeyMessage<'r> {
             }
         }
         Ok(PreKeyMessage {
-            prekey_id: prekey_id.ok_or_else(|| DecodeError::MissingField("PreKeyMessage::prekey_id"))?,
-            base_key: Cow::Owned(base_key.ok_or_else(|| DecodeError::MissingField("PreKeyMessage::base_key"))?),
-            identity_key: Cow::Owned(identity_key.ok_or_else(|| DecodeError::MissingField("PreKeyMessage::identity_key"))?),
-            message: message.ok_or_else(|| DecodeError::MissingField("PreKeyMessage::message"))?,
+            prekey_id: prekey_id.ok_or(DecodeError::MissingField("PreKeyMessage::prekey_id"))?,
+            base_key: Cow::Owned(base_key.ok_or(DecodeError::MissingField("PreKeyMessage::base_key"))?),
+            identity_key: Cow::Owned(identity_key.ok_or(DecodeError::MissingField("PreKeyMessage::identity_key"))?),
+            message: message.ok_or(DecodeError::MissingField("PreKeyMessage::message"))?,
         })
     }
 }
@@ -248,11 +248,11 @@ impl<'r> CipherMessage<'r> {
             }
         }
         Ok(CipherMessage {
-            session_tag: session_tag.ok_or_else(|| DecodeError::MissingField("CipherMessage::session_tag"))?,
-            counter: counter.ok_or_else(|| DecodeError::MissingField("CipherMessage::counter"))?,
-            prev_counter: prev_counter.ok_or_else(|| DecodeError::MissingField("CipherMessage::prev_counter"))?,
-            ratchet_key: Cow::Owned(ratchet_key.ok_or_else(|| DecodeError::MissingField("CipherMessage::ratchet_key"))?),
-            cipher_text: cipher_text.ok_or_else(|| DecodeError::MissingField("CipherMessage::cipher_text"))?,
+            session_tag: session_tag.ok_or(DecodeError::MissingField("CipherMessage::session_tag"))?,
+            counter: counter.ok_or(DecodeError::MissingField("CipherMessage::counter"))?,
+            prev_counter: prev_counter.ok_or(DecodeError::MissingField("CipherMessage::prev_counter"))?,
+            ratchet_key: Cow::Owned(ratchet_key.ok_or(DecodeError::MissingField("CipherMessage::ratchet_key"))?),
+            cipher_text: cipher_text.ok_or(DecodeError::MissingField("CipherMessage::cipher_text"))?,
         })
     }
 }
@@ -349,10 +349,10 @@ impl<'r> Envelope<'r> {
             }
         }
         Ok(Envelope {
-            version: version.ok_or_else(|| DecodeError::MissingField("Envelope::version"))?,
-            message: message.ok_or_else(|| DecodeError::MissingField("Envelope::message"))?,
-            message_enc: message_enc.ok_or_else(|| DecodeError::MissingField("Envelope::message_enc"))?,
-            mac: mac.ok_or_else(|| DecodeError::MissingField("Envelope::mac"))?,
+            version: version.ok_or(DecodeError::MissingField("Envelope::version"))?,
+            message: message.ok_or(DecodeError::MissingField("Envelope::message"))?,
+            message_enc: message_enc.ok_or(DecodeError::MissingField("Envelope::message_enc"))?,
+            mac: mac.ok_or(DecodeError::MissingField("Envelope::mac"))?,
         })
     }
 }

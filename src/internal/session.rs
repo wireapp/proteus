@@ -72,7 +72,7 @@ impl RootKey {
             }
         }
         Ok(RootKey {
-            key: key.ok_or_else(|| DecodeError::MissingField("RootKey::key"))?,
+            key: key.ok_or(DecodeError::MissingField("RootKey::key"))?,
         })
     }
 }
@@ -127,15 +127,15 @@ impl ChainKey {
             }
         }
         Ok(ChainKey {
-            key: key.ok_or_else(|| DecodeError::MissingField("ChainKey::key"))?,
-            idx: idx.ok_or_else(|| DecodeError::MissingField("ChainKey::idx"))?,
+            key: key.ok_or(DecodeError::MissingField("ChainKey::key"))?,
+            idx: idx.ok_or(DecodeError::MissingField("ChainKey::idx"))?,
         })
     }
 }
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SendChain {
     chain_key: ChainKey,
     ratchet_key: KeyPair,
@@ -169,8 +169,8 @@ impl SendChain {
             }
         }
         Ok(SendChain {
-            chain_key: chain_key.ok_or_else(|| DecodeError::MissingField("SendChain::chain_key"))?,
-            ratchet_key: ratchet_key.ok_or_else(|| DecodeError::MissingField("SendChain::ratchet_key"))?,
+            chain_key: chain_key.ok_or(DecodeError::MissingField("SendChain::chain_key"))?,
+            ratchet_key: ratchet_key.ok_or(DecodeError::MissingField("SendChain::ratchet_key"))?,
         })
     }
 }
@@ -303,8 +303,8 @@ impl RecvChain {
             }
         }
         Ok(RecvChain {
-            chain_key: chain_key.ok_or_else(|| DecodeError::MissingField("RecvChain::chain_key"))?,
-            ratchet_key: ratchet_key.ok_or_else(|| DecodeError::MissingField("RecvChain::ratchet_key"))?,
+            chain_key: chain_key.ok_or(DecodeError::MissingField("RecvChain::chain_key"))?,
+            ratchet_key: ratchet_key.ok_or(DecodeError::MissingField("RecvChain::ratchet_key"))?,
             message_keys: message_keys.unwrap_or_else(VecDeque::new),
         })
     }
@@ -354,9 +354,9 @@ impl MessageKeys {
             }
         }
         Ok(MessageKeys {
-            cipher_key: cipher_key.ok_or_else(|| DecodeError::MissingField("MessageKeys::cipher_key"))?,
-            mac_key: mac_key.ok_or_else(|| DecodeError::MissingField("MessageKeys::mac_key"))?,
-            counter: counter.ok_or_else(|| DecodeError::MissingField("MessageKeys::counter"))?,
+            cipher_key: cipher_key.ok_or(DecodeError::MissingField("MessageKeys::cipher_key"))?,
+            mac_key: mac_key.ok_or(DecodeError::MissingField("MessageKeys::mac_key"))?,
+            counter: counter.ok_or(DecodeError::MissingField("MessageKeys::counter"))?,
         })
     }
 }
@@ -535,7 +535,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         m: &CipherMessage,
     ) -> Result<Vec<u8>, Error<E>> {
         let mut s = match self.session_states.get_mut(&m.session_tag) {
-            Some(s) => s.val,
+            Some(s) => s.val.clone(),
             None => return Err(Error::InvalidMessage),
         };
         let plain = s.decrypt(env, m)?;
@@ -696,8 +696,8 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                             }
                         }
                         Some((
-                            id.ok_or_else(|| DecodeError::MissingField("Session::pending_prekey_id"))?,
-                            pk.ok_or_else(|| DecodeError::MissingField("Session::pending_prekey"))?,
+                            id.ok_or(DecodeError::MissingField("Session::pending_prekey_id"))?,
+                            pk.ok_or(DecodeError::MissingField("Session::pending_prekey"))?,
                         ))
                     } else {
                         None
@@ -718,20 +718,20 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             }
         }
         Ok(Session {
-            version: version.ok_or_else(|| DecodeError::MissingField("Session::version"))?,
-            session_tag: session_tag.ok_or_else(|| DecodeError::MissingField("Session::session_tag"))?,
+            version: version.ok_or(DecodeError::MissingField("Session::version"))?,
+            session_tag: session_tag.ok_or(DecodeError::MissingField("Session::session_tag"))?,
             counter,
             local_identity: ident,
-            remote_identity: remote_identity.ok_or_else(|| DecodeError::MissingField("Session::remote_identity"))?,
+            remote_identity: remote_identity.ok_or(DecodeError::MissingField("Session::remote_identity"))?,
             pending_prekey: pending_prekey.flatten(),
-            session_states: session_states.ok_or_else(|| DecodeError::MissingField("Session::session_states"))?,
+            session_states: session_states.ok_or(DecodeError::MissingField("Session::session_states"))?,
         })
     }
 }
 
 // Session State ////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SessionState {
     recv_chains: VecDeque<RecvChain>,
     send_chain: SendChain,
@@ -939,10 +939,10 @@ impl SessionState {
             }
         }
         Ok(SessionState {
-            recv_chains: recv_chains.ok_or_else(|| DecodeError::MissingField("SessionState::recv_chains"))?,
-            send_chain: send_chain.ok_or_else(|| DecodeError::MissingField("SessionState::send_chain"))?,
-            root_key: root_key.ok_or_else(|| DecodeError::MissingField("SessionState::root_key"))?,
-            prev_counter: prev_counter.ok_or_else(|| DecodeError::MissingField("SessionState::prev_counter"))?,
+            recv_chains: recv_chains.ok_or(DecodeError::MissingField("SessionState::recv_chains"))?,
+            send_chain: send_chain.ok_or(DecodeError::MissingField("SessionState::send_chain"))?,
+            root_key: root_key.ok_or(DecodeError::MissingField("SessionState::root_key"))?,
+            prev_counter: prev_counter.ok_or(DecodeError::MissingField("SessionState::prev_counter"))?,
         })
     }
 }

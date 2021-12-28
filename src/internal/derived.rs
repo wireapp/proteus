@@ -116,7 +116,7 @@ impl CipherKey {
             }
         }
         Ok(CipherKey {
-            key: key.ok_or_else(|| DecodeError::MissingField("CipherKey::key"))?,
+            key: key.ok_or(DecodeError::MissingField("CipherKey::key"))?,
         })
     }
 }
@@ -145,9 +145,7 @@ impl MacKey {
         let mut mac = HmacSha256::new_from_slice(&*self.key).unwrap();
         mac.update(msg);
 
-        Mac {
-            sig: mac.finalize(),
-        }
+        Mac::new(mac.finalize())
     }
 
     pub fn verify(&self, sig: &Mac, msg: &[u8]) -> bool {
@@ -174,7 +172,7 @@ impl MacKey {
         Ok(MacKey {
             key: key
                 .map(|bytes| bytes.array)
-                .ok_or_else(|| DecodeError::MissingField("MacKey::key"))?,
+                .ok_or(DecodeError::MissingField("MacKey::key"))?,
         })
     }
 }
@@ -191,22 +189,30 @@ impl Drop for MacKey {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Mac {
     sig: hmac::digest::CtOutput<HmacSha256>,
+    sig_bytes: [u8; 32],
 }
 
 impl Mac {
+    pub fn new(signature: hmac::digest::CtOutput<HmacSha256>) -> Self {
+        let mut sig_bytes = [0u8; 32];
+        sig_bytes.copy_from_slice(&signature.clone().into_bytes().as_slice()[..32]);
+
+        Self { sig: signature, sig_bytes }
+    }
+
     pub fn into_bytes(self) -> [u8; 32] {
         let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(&self.sig.into_bytes().as_slice()[..32]);
+        bytes.copy_from_slice(&self.sig_bytes);
         bytes
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.sig.into_bytes()))?;
+        e.u8(0).and(e.bytes(&self.sig_bytes))?;
         Ok(())
     }
 
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Mac> {
+    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Self> {
         let n = d.object()?;
         let mut sig = None;
         for _ in 0..n {
@@ -220,8 +226,14 @@ impl Mac {
                 _ => d.skip()?,
             }
         }
-        Ok(Mac {
-            sig: sig.ok_or_else(|| DecodeError::MissingField("Mac::sig"))?,
+
+        let sig = sig.ok_or(DecodeError::MissingField("Mac::sig"))?;
+        let mut sig_bytes = [0u8; 32];
+        sig_bytes.copy_from_slice(&sig.clone().into_bytes().as_slice()[..32]);
+
+        Ok(Self {
+            sig_bytes,
+            sig,
         })
     }
 }
@@ -230,7 +242,7 @@ impl Deref for Mac {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &self.sig.into_bytes()
+        &self.sig_bytes
     }
 }
 
