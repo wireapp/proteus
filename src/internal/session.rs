@@ -873,10 +873,10 @@ impl SessionState {
     fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, Error<E>> {
         let rchain: &mut RecvChain = match self
             .recv_chains
-            .iter()
-            .position(|c| c.ratchet_key == *m.ratchet_key)
+            .iter_mut()
+            .find(|c| c.ratchet_key == *m.ratchet_key)
         {
-            Some(i) => &mut self.recv_chains[i],
+            Some(chain) => chain,
             None => {
                 self.ratchet((*m.ratchet_key).clone())?;
                 &mut self.recv_chains[0]

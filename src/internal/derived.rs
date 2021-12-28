@@ -75,8 +75,8 @@ impl CipherKey {
 
     pub fn encrypt(&self, text: &[u8], nonce: &[u8]) -> Vec<u8> {
         use chacha20::cipher::{NewCipher as _, StreamCipher as _};
-        let nonce = chacha20::Nonce::from_slice(nonce);
-        let mut cipher = chacha20::ChaCha20::new(&self.key, nonce);
+        let nonce = chacha20::LegacyNonce::from_slice(nonce);
+        let mut cipher = chacha20::ChaCha20Legacy::new(&self.key, nonce);
         let mut data = Vec::from(text);
         cipher.apply_keystream(&mut data);
         data
@@ -84,8 +84,8 @@ impl CipherKey {
 
     pub fn decrypt(&self, data: &[u8], nonce: &[u8]) -> Vec<u8> {
         use chacha20::cipher::{NewCipher as _, StreamCipher as _, StreamCipherSeek as _};
-        let nonce = chacha20::Nonce::from_slice(nonce);
-        let mut cipher = chacha20::ChaCha20::new(&self.key, nonce);
+        let nonce = chacha20::LegacyNonce::from_slice(nonce);
+        let mut cipher = chacha20::ChaCha20Legacy::new(&self.key, nonce);
         let mut text = Vec::from(data);
         cipher.seek(0);
         cipher.apply_keystream(&mut text);
@@ -248,7 +248,7 @@ impl Deref for Mac {
 
 #[test]
 fn derive_secrets() {
-    let nc = chacha20::Nonce::from_slice(&[0; 8]);
+    let nc = chacha20::LegacyNonce::from_slice(&[0; 8]);
     let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar");
     let ct = ds.cipher_key.encrypt(b"plaintext", &nc);
     assert_eq!(ct.len(), b"plaintext".len());
