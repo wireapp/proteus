@@ -313,7 +313,7 @@ impl PreKeyBundle {
             public_key: public_key.ok_or(DecodeError::MissingField("PreKeyBundle::public_key"))?,
             identity_key: identity_key
                 .ok_or(DecodeError::MissingField("PreKeyBundle::identity_key"))?,
-            signature: signature.unwrap_or(None),
+            signature: signature.flatten(),
         })
     }
 }

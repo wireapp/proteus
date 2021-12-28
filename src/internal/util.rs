@@ -27,6 +27,7 @@ use crate::internal::types::EncodeResult;
 
 // Optional Values //////////////////////////////////////////////////////////
 
+#[inline]
 pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {
     match r {
         Ok(x) => Ok(Some(x)),
