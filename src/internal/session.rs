@@ -1615,7 +1615,7 @@ mod tests {
         // the prekey will be gone and a retry cause an error (and thus a lost message).
         match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob) {
             Err(Error::PreKeyNotFound(_)) => {} // expected
-            Err(e) => panic!(format!("{:?}", e)),
+            Err(e) => panic!("{:?}", e),
             Ok(_) => panic!("Unexpected success on retrying init_from_message"),
         }
     }
@@ -1951,7 +1951,7 @@ mod tests {
                 let r: &[u8] = b.as_ref();
                 assert_eq!(expected, r)
             }
-            Err(e) => assert!(false, format!("{:?}", e)),
+            Err(e) => assert!(false, "{:?}", e),
         }
     }
 
@@ -1972,7 +1972,7 @@ mod tests {
                 s
             }
             Err(e) => {
-                assert!(false, format!("{:?}", e));
+                assert!(false, "{:?}", e);
                 unreachable!()
             }
         }
