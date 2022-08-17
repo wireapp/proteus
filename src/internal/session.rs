@@ -20,7 +20,6 @@ use std::borrow::{Borrow, Cow};
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
-use std::io::{Cursor, Read, Write};
 use std::usize;
 
 use crate::internal::derived::{CipherKey, DerivedSecrets, MacKey};
@@ -29,13 +28,11 @@ use crate::internal::keys::{IdentityKey, IdentityKeyPair, PreKey, PreKeyBundle, 
 use crate::internal::message::{
     CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag,
 };
-use crate::internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
-use cbor::skip::Skip;
-use cbor::{self, Config, Decoder, Encoder};
+use crate::internal::types::{DecodeResult, EncodeResult, InternalError};
 
 // Root key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RootKey {
     key: CipherKey,
 }
@@ -57,31 +54,11 @@ impl RootKey {
             ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()),
         ))
     }
-
-    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(1)?;
-        e.u8(0)?;
-        self.key.encode(e)
-    }
-
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RootKey> {
-        let n = d.object()?;
-        let mut key = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if key.is_none() => key = Some(CipherKey::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(RootKey {
-            key: key.ok_or(DecodeError::MissingField("RootKey::key"))?,
-        })
-    }
 }
 
 // Chain key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ChainKey {
     key: MacKey,
     idx: Counter,
@@ -108,36 +85,11 @@ impl ChainKey {
             counter: self.idx,
         }
     }
-
-    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(2)?;
-        e.u8(0)?;
-        self.key.encode(e)?;
-        e.u8(1)?;
-        self.idx.encode(e)
-    }
-
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<ChainKey> {
-        let n = d.object()?;
-        let mut key = None;
-        let mut idx = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if key.is_none() => key = Some(MacKey::decode(d)?),
-                1 if idx.is_none() => idx = Some(Counter::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(ChainKey {
-            key: key.ok_or(DecodeError::MissingField("ChainKey::key"))?,
-            idx: idx.ok_or(DecodeError::MissingField("ChainKey::idx"))?,
-        })
-    }
 }
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SendChain {
     chain_key: ChainKey,
     ratchet_key: KeyPair,
@@ -150,38 +102,13 @@ impl SendChain {
             ratchet_key: rk,
         }
     }
-
-    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(2)?;
-        e.u8(0)?;
-        self.chain_key.encode(e)?;
-        e.u8(1)?;
-        self.ratchet_key.encode(e)
-    }
-
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SendChain> {
-        let n = d.object()?;
-        let mut chain_key = None;
-        let mut ratchet_key = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if chain_key.is_none() => chain_key = Some(ChainKey::decode(d)?),
-                1 if ratchet_key.is_none() => ratchet_key = Some(KeyPair::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(SendChain {
-            chain_key: chain_key.ok_or(DecodeError::MissingField("SendChain::chain_key"))?,
-            ratchet_key: ratchet_key.ok_or(DecodeError::MissingField("SendChain::ratchet_key"))?,
-        })
-    }
 }
 
 // Receive Chain ////////////////////////////////////////////////////////////
 
 const MAX_COUNTER_GAP: usize = 1000;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RecvChain {
     chain_key: ChainKey,
     ratchet_key: PublicKey,
@@ -267,56 +194,10 @@ impl RecvChain {
 
         assert!(self.message_keys.len() <= MAX_COUNTER_GAP);
     }
-
-    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(3)?;
-        e.u8(0)?;
-        self.chain_key.encode(e)?;
-        e.u8(1)?;
-        self.ratchet_key.encode(e)?;
-        e.u8(2)?;
-        {
-            e.array(self.message_keys.len())?;
-            for m in &self.message_keys {
-                m.encode(e)?
-            }
-        }
-        Ok(())
-    }
-
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<RecvChain> {
-        let n = d.object()?;
-        let mut chain_key = None;
-        let mut ratchet_key = None;
-        let mut message_keys = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if chain_key.is_none() => chain_key = Some(ChainKey::decode(d)?),
-                1 if ratchet_key.is_none() => ratchet_key = Some(PublicKey::decode(d)?),
-                2 if message_keys.is_none() => {
-                    message_keys = Some({
-                        let lv = d.array()?;
-                        let mut vm = VecDeque::with_capacity(lv);
-                        for _ in 0..lv {
-                            vm.push_back(MessageKeys::decode(d)?)
-                        }
-                        vm
-                    })
-                }
-                _ => d.skip()?,
-            }
-        }
-        Ok(RecvChain {
-            chain_key: chain_key.ok_or(DecodeError::MissingField("RecvChain::chain_key"))?,
-            ratchet_key: ratchet_key.ok_or(DecodeError::MissingField("RecvChain::ratchet_key"))?,
-            message_keys: message_keys.unwrap_or_else(VecDeque::new),
-        })
-    }
 }
 
 // Message Keys /////////////////////////////////////////////////////////////
-
-#[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct MessageKeys {
     cipher_key: CipherKey,
     mac_key: MacKey,
@@ -332,36 +213,6 @@ impl MessageKeys {
     fn decrypt(&self, cipher_text: &[u8]) -> Vec<u8> {
         self.cipher_key
             .decrypt(cipher_text, &*self.counter.as_nonce())
-    }
-
-    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(3)?;
-        e.u8(0)?;
-        self.cipher_key.encode(e)?;
-        e.u8(1)?;
-        self.mac_key.encode(e)?;
-        e.u8(2)?;
-        self.counter.encode(e)
-    }
-
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MessageKeys> {
-        let n = d.object()?;
-        let mut cipher_key = None;
-        let mut mac_key = None;
-        let mut counter = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if cipher_key.is_none() => cipher_key = Some(CipherKey::decode(d)?),
-                1 if mac_key.is_none() => mac_key = Some(MacKey::decode(d)?),
-                2 if counter.is_none() => counter = Some(Counter::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(MessageKeys {
-            cipher_key: cipher_key.ok_or(DecodeError::MissingField("MessageKeys::cipher_key"))?,
-            mac_key: mac_key.ok_or(DecodeError::MissingField("MessageKeys::mac_key"))?,
-            counter: counter.ok_or(DecodeError::MissingField("MessageKeys::counter"))?,
-        })
     }
 }
 
@@ -382,7 +233,8 @@ pub trait PreKeyStore {
 const MAX_RECV_CHAINS: usize = 5;
 const MAX_SESSION_STATES: usize = 100;
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+
 pub struct Indexed<A> {
     pub idx: usize,
     pub val: A,
@@ -404,12 +256,13 @@ impl<A> Indexed<A> {
 // `Session::encrypt` can not succeed. The only places where we change
 // it after initialisation is in `Session::insert_session_state` which
 // sets it to the value of the state which is inserted.
-#[derive(Debug)]
-pub struct Session<I> {
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+
+pub struct Session {
     version: u8,
     session_tag: SessionTag,
     counter: usize,
-    local_identity: I,
+    local_identity: IdentityKeyPair,
     remote_identity: IdentityKey,
     pending_prekey: Option<(PreKeyId, PublicKey)>,
     session_states: BTreeMap<SessionTag, Indexed<SessionState>>,
@@ -428,11 +281,14 @@ struct BobParams<'r> {
     alice_base: &'r PublicKey,
 }
 
-impl<I: Borrow<IdentityKeyPair>> Session<I> {
-    pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> Result<Session<I>, Error<E>> {
+impl Session {
+    pub fn init_from_prekey<E>(
+        ours: &IdentityKeyPair,
+        pk: PreKeyBundle,
+    ) -> Result<Session, Error<E>> {
         let alice_base = KeyPair::new();
         let state = SessionState::init_as_alice(&AliceParams {
-            alice_ident: alice.borrow(),
+            alice_ident: ours.borrow(),
             alice_base: &alice_base,
             bob: &pk,
         })?;
@@ -442,7 +298,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             version: 1,
             session_tag,
             counter: 0,
-            local_identity: alice,
+            local_identity: ours.clone(),
             remote_identity: pk.identity_key,
             pending_prekey: Some((pk.prekey_id, alice_base.public_key)),
             session_states: BTreeMap::new(),
@@ -453,11 +309,11 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn init_from_message<S: PreKeyStore>(
-        ours: I,
-        store: &mut S,
+    pub fn init_from_message<'a, S: PreKeyStore>(
+        ours: &IdentityKeyPair,
+        store: &'a mut S,
         env: &Envelope,
-    ) -> Result<(Session<I>, Vec<u8>), Error<S::Error>> {
+    ) -> Result<(Session, Vec<u8>), Error<S::Error>> {
         let pkmsg = match *env.message() {
             Message::Plain(_) => return Err(Error::InvalidMessage),
             Message::Keyed(ref m) => m,
@@ -467,7 +323,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             version: 1,
             session_tag: pkmsg.message.session_tag,
             counter: 0,
-            local_identity: ours,
+            local_identity: ours.clone(),
             remote_identity: (*pkmsg.identity_key).clone(),
             pending_prekey: None,
             session_states: BTreeMap::new(),
@@ -626,122 +482,19 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut e = Encoder::new(Cursor::new(Vec::new()));
-        self.encode(&mut e)?;
-        Ok(e.into_writer().into_inner())
+        let mut dest = Vec::new();
+        ciborium::ser::into_writer(self, &mut dest[..])?;
+        Ok(dest)
     }
 
-    pub fn deserialise(ident: I, b: &[u8]) -> DecodeResult<Session<I>> {
-        Session::decode(ident, &mut Decoder::new(Config::default(), Cursor::new(b)))
-    }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(6)?;
-        e.u8(0)?;
-        e.u8(self.version)?;
-        e.u8(1)?;
-        self.session_tag.encode(e)?;
-        e.u8(2)?;
-        self.local_identity.borrow().public_key.encode(e)?;
-        e.u8(3)?;
-        self.remote_identity.encode(e)?;
-        e.u8(4)?;
-        {
-            match self.pending_prekey {
-                None => e.null()?,
-                Some((id, ref pk)) => {
-                    e.object(2)?;
-                    e.u8(0)?;
-                    id.encode(e)?;
-                    e.u8(1)?;
-                    pk.encode(e)?
-                }
-            }
-        }
-        e.u8(5)?;
-        {
-            e.object(self.session_states.len())?;
-            for (t, s) in &self.session_states {
-                t.encode(e)?;
-                s.val.encode(e)?
-            }
-        }
-        Ok(())
-    }
-
-    pub fn decode<R: Read + Skip>(ident: I, d: &mut Decoder<R>) -> DecodeResult<Session<I>> {
-        let n = d.object()?;
-        let mut version = None;
-        let mut session_tag = None;
-        let mut counter = 0;
-        let mut remote_identity = None;
-        let mut pending_prekey = None;
-        let mut session_states = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if version.is_none() => version = Some(d.u8()?),
-                1 if session_tag.is_none() => session_tag = Some(SessionTag::decode(d)?),
-                2 => {
-                    let li = IdentityKey::decode(d)?;
-                    if ident.borrow().public_key != li {
-                        return Err(DecodeError::LocalIdentityChanged(li));
-                    }
-                }
-                3 if remote_identity.is_none() => remote_identity = Some(IdentityKey::decode(d)?),
-                4 if pending_prekey.is_none() => {
-                    pending_prekey = Some({
-                        if let Some(n) = cbor::opt(d.object())? {
-                            let mut id = None;
-                            let mut pk = None;
-                            for _ in 0..n {
-                                match d.u8()? {
-                                    0 if id.is_none() => id = Some(PreKeyId::decode(d)?),
-                                    1 if pk.is_none() => pk = Some(PublicKey::decode(d)?),
-                                    _ => d.skip()?,
-                                }
-                            }
-                            Some((
-                                id.ok_or(DecodeError::MissingField("Session::pending_prekey_id"))?,
-                                pk.ok_or(DecodeError::MissingField("Session::pending_prekey"))?,
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                }
-                5 if session_states.is_none() => {
-                    session_states = Some({
-                        let ls = d.object()?;
-                        let mut rb = BTreeMap::new();
-                        for _ in 0..ls {
-                            let t = SessionTag::decode(d)?;
-                            let s = SessionState::decode(d)?;
-                            rb.insert(t, Indexed::new(counter, s));
-                            counter += 1;
-                        }
-                        rb
-                    })
-                }
-                _ => d.skip()?,
-            }
-        }
-        Ok(Session {
-            version: version.ok_or(DecodeError::MissingField("Session::version"))?,
-            session_tag: session_tag.ok_or(DecodeError::MissingField("Session::session_tag"))?,
-            counter,
-            local_identity: ident,
-            remote_identity: remote_identity
-                .ok_or(DecodeError::MissingField("Session::remote_identity"))?,
-            pending_prekey: pending_prekey.flatten(),
-            session_states: session_states
-                .ok_or(DecodeError::MissingField("Session::session_states"))?,
-        })
+    pub fn deserialise(b: &[u8]) -> DecodeResult<Session> {
+        Ok(ciborium::de::from_reader(&b[..])?)
     }
 }
 
 // Session State ////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionState {
     recv_chains: VecDeque<RecvChain>,
     send_chain: SendChain,
@@ -906,59 +659,6 @@ impl SessionState {
             }
         }
     }
-
-    fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(4)?;
-        e.u8(0)?;
-        {
-            e.array(self.recv_chains.len())?;
-            for r in &self.recv_chains {
-                r.encode(e)?
-            }
-        }
-        e.u8(1)?;
-        self.send_chain.encode(e)?;
-        e.u8(2)?;
-        self.root_key.encode(e)?;
-        e.u8(3)?;
-        self.prev_counter.encode(e)?;
-        // Note that key '4' was used for skipped message keys.
-        Ok(())
-    }
-
-    fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SessionState> {
-        let n = d.object()?;
-        let mut recv_chains = None;
-        let mut send_chain = None;
-        let mut root_key = None;
-        let mut prev_counter = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if recv_chains.is_none() => {
-                    recv_chains = Some({
-                        let lr = d.array()?;
-                        let mut rr = VecDeque::with_capacity(lr);
-                        for _ in 0..lr {
-                            rr.push_back(RecvChain::decode(d)?)
-                        }
-                        rr
-                    })
-                }
-                1 if send_chain.is_none() => send_chain = Some(SendChain::decode(d)?),
-                2 if root_key.is_none() => root_key = Some(RootKey::decode(d)?),
-                3 if prev_counter.is_none() => prev_counter = Some(Counter::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(SessionState {
-            recv_chains: recv_chains
-                .ok_or(DecodeError::MissingField("SessionState::recv_chains"))?,
-            send_chain: send_chain.ok_or(DecodeError::MissingField("SessionState::send_chain"))?,
-            root_key: root_key.ok_or(DecodeError::MissingField("SessionState::root_key"))?,
-            prev_counter: prev_counter
-                .ok_or(DecodeError::MissingField("SessionState::prev_counter"))?,
-        })
-    }
 }
 
 // Decrypt Error ////////////////////////////////////////////////////////////
@@ -1039,11 +739,11 @@ mod tests {
     use crate::internal::keys::gen_prekeys;
     use crate::internal::keys::{IdentityKeyPair, PreKey, PreKeyAuth, PreKeyBundle, PreKeyId};
     use crate::internal::message::{Counter, Envelope, Message, SessionTag};
-    use std::borrow::Borrow;
     use std::collections::BTreeMap;
     use std::fmt;
     use std::usize;
     use std::vec::Vec;
+    use wasm_bindgen_test::*;
 
     #[derive(Debug)]
     struct TestStore {
@@ -1083,6 +783,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn pathological_case() {
         let total_size = 32;
 
@@ -1127,6 +828,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn encrypt_decrypt() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1142,7 +844,7 @@ mod tests {
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
-        alice = Session::deserialise(&alice_ident, &alice.serialise().unwrap())
+        alice = Session::deserialise(&alice.serialise().unwrap())
             .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(
             1,
@@ -1171,7 +873,7 @@ mod tests {
 
         let mut bob =
             assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
-        bob = Session::deserialise(&bob_ident, &bob.serialise().unwrap())
+        bob = Session::deserialise(&bob.serialise().unwrap())
             .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, bob.session_states.len());
         assert_eq!(
@@ -1272,6 +974,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn can_decrypt_in_wrong_order_but_can_not_decrypt_twice() {
         let alice_ident = IdentityKeyPair::new();
@@ -1373,6 +1076,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn multiple_prekey_msgs() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1399,6 +1103,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn simultaneous_prekey_msgs() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1445,6 +1150,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn simultaneous_msgs_repeated() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1518,6 +1224,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_session() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1532,13 +1239,14 @@ mod tests {
         let alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
         let bytes = alice.serialise().unwrap();
 
-        match Session::deserialise(&alice_ident, &bytes) {
+        match Session::deserialise(&bytes) {
             Err(ref e) => panic!("Failed to decode session: {}", e),
             Ok(s @ Session { .. }) => assert_eq!(bytes, s.serialise().unwrap()),
         };
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn mass_communication() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1595,8 +1303,9 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
-    fn retry_of_init_from_message_for_the_same_message_should_return_PreKeyNotFound() {
+    fn retry_of_init_from_message_for_the_same_message_should_return_prekey_not_found() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1622,6 +1331,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn skipped_message_keys() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1727,6 +1437,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn fail_on_unknown_and_invalid_prekeys_and_verify_valid_prekeys() {
         let bob_ident = IdentityKeyPair::new();
@@ -1759,6 +1470,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn session_states_limit() {
         let alice = IdentityKeyPair::new();
         let bob = IdentityKeyPair::new();
@@ -1813,6 +1525,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn fail_on_decryption_of_a_too_old_message() {
         let alice = IdentityKeyPair::new();
@@ -1887,6 +1600,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn replaced_prekeys() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1918,6 +1632,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn max_counter_gap() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1961,7 +1676,7 @@ mod tests {
         s: &mut S,
         m: &Envelope,
         t: &[u8],
-    ) -> Session<&'r IdentityKeyPair>
+    ) -> Session
     where
         S: PreKeyStore,
         S::Error: fmt::Debug,
@@ -1979,7 +1694,7 @@ mod tests {
         }
     }
 
-    fn assert_prev_count<I: Borrow<IdentityKeyPair>>(s: &Session<I>, expected: u32) {
+    fn assert_prev_count(s: &Session, expected: u32) {
         assert_eq!(
             expected,
             s.session_states

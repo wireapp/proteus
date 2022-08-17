@@ -16,7 +16,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::internal::keys::IdentityKey;
-use cbor;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InternalError {
@@ -33,7 +32,7 @@ pub enum EncodeError {
     #[error("Internal error: {0}")]
     Internal(#[from] InternalError),
     #[error("CBOR encoder error: {0}")]
-    Encoder(#[from] cbor::EncodeError),
+    Encoder(#[from] ciborium::ser::Error<std::io::Error>),
 }
 
 // DecodeError //////////////////////////////////////////////////////////////
@@ -43,7 +42,7 @@ pub type DecodeResult<A> = Result<A, DecodeError>;
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
     #[error("CBOR decoder error: {0}")]
-    Decoder(#[from] cbor::DecodeError),
+    Decoder(#[from] ciborium::de::Error<std::io::Error>),
     #[error("ed25519 Signature error: {0}")]
     Signature(#[from] ed25519::Error),
     #[error("CBOR array length mismatch: {0}")]

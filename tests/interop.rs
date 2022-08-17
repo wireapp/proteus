@@ -37,8 +37,7 @@ macro_rules! impl_harness_for_crate {
 
         pub struct $client {
             pub identity: $target::keys::IdentityKeyPair,
-            pub store: TestStore<$target::keys::PreKey>,
-            pub sessions: Vec<$target::session::Session<$target::keys::IdentityKeyPair>>,
+            pub store: TestStore<$target::keys::PreKey>
         }
 
         impl $client {
@@ -46,7 +45,6 @@ macro_rules! impl_harness_for_crate {
                 let mut client = Self {
                     identity: $target::keys::IdentityKeyPair::new(),
                     store: TestStore::default(),
-                    sessions: vec![],
                 };
 
                 client.gen_prekeys(10);
@@ -105,7 +103,7 @@ macro_rules! impl_interop_test {
                     .unwrap();
 
             let mut alice_bob = $client1_crate::session::Session::init_from_prekey::<()>(
-                alice.identity,
+                &alice.identity,
                 bob_bundle_for_alice,
             )
             .unwrap();
@@ -116,7 +114,7 @@ macro_rules! impl_interop_test {
             .unwrap();
 
             let (mut bob_alice, hello_bob) = $client2_crate::session::Session::init_from_message(
-                bob.identity,
+                &bob.identity,
                 &mut bob.store,
                 &hello_bob_from_alice,
             )

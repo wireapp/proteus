@@ -15,65 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::internal::types::{DecodeError, DecodeResult};
-use cbor::{self, Decoder};
-use std::io::Read;
-
-#[cfg(test)]
-use std::io::Cursor;
-
-#[cfg(test)]
-use crate::internal::types::EncodeResult;
-
-// Optional Values //////////////////////////////////////////////////////////
-
-#[inline]
-pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {
-    match r {
-        Ok(x) => Ok(Some(x)),
-        Err(DecodeError::Decoder(e)) => cbor::opt(Err(e)).map_err(From::from),
-        Err(e) => Err(e),
-    }
-}
-
-// Bytes32 //////////////////////////////////////////////////////////////////
-
-pub struct Bytes32 {
-    pub array: zeroize::Zeroizing<[u8; 32]>,
-}
-
-impl Bytes32 {
-    pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Bytes32> {
-        let mut a = [0u8; 32];
-        let n = d.read_bytes(&mut a)?;
-        if 32 != n {
-            return Err(DecodeError::InvalidArrayLen(n));
-        }
-        Ok(Bytes32 {
-            array: zeroize::Zeroizing::new(a),
-        })
-    }
-}
-
-// Bytes64 //////////////////////////////////////////////////////////////////
-
-pub struct Bytes64 {
-    pub array: zeroize::Zeroizing<[u8; 64]>,
-}
-
-impl Bytes64 {
-    pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<Bytes64> {
-        let mut a = [0u8; 64];
-        let n = d.read_bytes(&mut a)?;
-        if 64 != n {
-            return Err(DecodeError::InvalidArrayLen(n));
-        }
-        Ok(Bytes64 {
-            array: zeroize::Zeroizing::new(a),
-        })
-    }
-}
-
 // Hex formatting ///////////////////////////////////////////////////////////
 
 struct HexSlice<'a>(&'a [u8]);
@@ -97,21 +38,16 @@ pub fn fmt_hex(xs: &[u8]) -> String {
 }
 
 // Test support /////////////////////////////////////////////////////////////
+#[cfg(test)]
+use std::io::Cursor;
 
 #[cfg(test)]
 pub fn roundtrip<F, G, A>(enc: F, dec: G) -> A
 where
-    F: Fn(cbor::Encoder<&mut Cursor<Vec<u8>>>) -> EncodeResult<()>,
-    G: Fn(cbor::Decoder<&mut Cursor<Vec<u8>>>) -> DecodeResult<A>,
+    F: Fn(&mut Cursor<Vec<u8>>) -> crate::internal::types::EncodeResult<()>,
+    G: Fn(&mut Cursor<Vec<u8>>) -> crate::internal::types::DecodeResult<A>,
 {
     let mut rw = Cursor::new(Vec::new());
-    match enc(cbor::Encoder::new(&mut rw)) {
-        Ok(_) => (),
-        Err(e) => panic!("encoder failure: {:?}", e),
-    }
-    rw.set_position(0);
-    match dec(cbor::Decoder::new(cbor::Config::default(), &mut rw)) {
-        Ok(x) => x,
-        Err(e) => panic!("decoder failure: {:?}", e),
-    }
+    enc(&mut rw).unwrap();
+    dec(&mut rw).unwrap()
 }

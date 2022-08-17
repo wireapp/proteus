@@ -15,21 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor::skip::Skip;
-use cbor::{Config, Decoder, Encoder};
-//use crate::internal::ffi;
-use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
-use crate::internal::util::{fmt_hex, opt, Bytes32, Bytes64};
-// use sodiumoxide::crypto::scalarmult as ecdh;
-// use sodiumoxide::crypto::sign;
-use std::fmt::{self, Debug, Error, Formatter};
-use std::io::{Cursor, Read, Write};
+use crate::internal::types::{DecodeResult, EncodeResult};
+use crate::internal::util::fmt_hex;
+use std::fmt::{self, Debug, Formatter};
 use std::u16;
 use std::vec::Vec;
 
 // Identity Key /////////////////////////////////////////////////////////////
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct IdentityKey {
     pub public_key: PublicKey,
 }
@@ -42,31 +36,11 @@ impl IdentityKey {
     pub fn fingerprint(&self) -> String {
         self.public_key.fingerprint()
     }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(1)?;
-        e.u8(0)?;
-        self.public_key.encode(e)
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<IdentityKey> {
-        let n = d.object()?;
-        let mut public_key = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if public_key.is_none() => public_key = Some(PublicKey::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(IdentityKey {
-            public_key: public_key.ok_or(DecodeError::MissingField("IdentityKey::public_key"))?,
-        })
-    }
 }
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct IdentityKeyPair {
     pub version: u8,
     pub secret_key: SecretKey,
@@ -92,51 +66,19 @@ impl IdentityKeyPair {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut e = Encoder::new(Cursor::new(Vec::new()));
-        self.encode(&mut e)?;
-        Ok(e.into_writer().into_inner())
+        let mut dest = Vec::new();
+        ciborium::ser::into_writer(self, &mut dest[..])?;
+        Ok(dest)
     }
 
     pub fn deserialise(b: &[u8]) -> DecodeResult<IdentityKeyPair> {
-        IdentityKeyPair::decode(&mut Decoder::new(Config::default(), Cursor::new(b)))
-    }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(3)?;
-        e.u8(0)?;
-        e.u8(self.version)?;
-        e.u8(1)?;
-        self.secret_key.encode(e)?;
-        e.u8(2)?;
-        self.public_key.encode(e)
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<IdentityKeyPair> {
-        let n = d.object()?;
-        let mut version = None;
-        let mut secret_key = None;
-        let mut public_key = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if version.is_none() => version = Some(d.u8()?),
-                1 if secret_key.is_none() => secret_key = Some(SecretKey::decode(d)?),
-                2 if public_key.is_none() => public_key = Some(IdentityKey::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(IdentityKeyPair {
-            version: version.ok_or(DecodeError::MissingField("IdentityKeyPair::version"))?,
-            secret_key: secret_key
-                .ok_or(DecodeError::MissingField("IdentityKeyPair::secret_key"))?,
-            public_key: public_key
-                .ok_or(DecodeError::MissingField("IdentityKeyPair::public_key"))?,
-        })
+        Ok(ciborium::de::from_reader(&b[..])?)
     }
 }
 
 // Prekey ///////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PreKey {
     pub version: u8,
     pub key_id: PreKeyId,
@@ -157,43 +99,13 @@ impl PreKey {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut e = Encoder::new(Cursor::new(Vec::new()));
-        self.encode(&mut e)?;
-        Ok(e.into_writer().into_inner())
+        let mut dest = Vec::new();
+        ciborium::ser::into_writer(self, &mut dest[..])?;
+        Ok(dest)
     }
 
     pub fn deserialise(b: &[u8]) -> DecodeResult<PreKey> {
-        PreKey::decode(&mut Decoder::new(Config::default(), Cursor::new(b)))
-    }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(3)?;
-        e.u8(0)?;
-        e.u8(self.version)?;
-        e.u8(1)?;
-        self.key_id.encode(e)?;
-        e.u8(2)?;
-        self.key_pair.encode(e)
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKey> {
-        let n = d.object()?;
-        let mut version = None;
-        let mut key_id = None;
-        let mut key_pair = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if version.is_none() => version = Some(d.u8()?),
-                1 if key_id.is_none() => key_id = Some(PreKeyId::decode(d)?),
-                2 if key_pair.is_none() => key_pair = Some(KeyPair::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(PreKey {
-            version: version.ok_or(DecodeError::MissingField("PreKey::version"))?,
-            key_id: key_id.ok_or(DecodeError::MissingField("PreKey::key_id"))?,
-            key_pair: key_pair.ok_or(DecodeError::MissingField("PreKey::key_pair"))?,
-        })
+        Ok(ciborium::de::from_reader(&b[..])?)
     }
 }
 
@@ -207,14 +119,14 @@ pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
 
 // Prekey bundle ////////////////////////////////////////////////////////////
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum PreKeyAuth {
     Invalid,
     Valid,
     Unknown,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PreKeyBundle {
     pub version: u8,
     pub prekey_id: PreKeyId,
@@ -264,63 +176,19 @@ impl PreKeyBundle {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut e = Encoder::new(Cursor::new(Vec::new()));
-        self.encode(&mut e)?;
-        Ok(e.into_writer().into_inner())
+        let mut dest = Vec::new();
+        ciborium::ser::into_writer(self, &mut dest[..])?;
+        Ok(dest)
     }
 
     pub fn deserialise(b: &[u8]) -> DecodeResult<PreKeyBundle> {
-        PreKeyBundle::decode(&mut Decoder::new(Config::default(), Cursor::new(b)))
-    }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(5)?;
-        e.u8(0)?;
-        e.u8(self.version)?;
-        e.u8(1)?;
-        self.prekey_id.encode(e)?;
-        e.u8(2)?;
-        self.public_key.encode(e)?;
-        e.u8(3)?;
-        self.identity_key.encode(e)?;
-        e.u8(4)?;
-        match self.signature {
-            Some(ref sig) => sig.encode(e),
-            None => e.null().map_err(From::from),
-        }
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PreKeyBundle> {
-        let n = d.object()?;
-        let mut version = None;
-        let mut prekey_id = None;
-        let mut public_key = None;
-        let mut identity_key = None;
-        let mut signature = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if version.is_none() => version = Some(d.u8()?),
-                1 if prekey_id.is_none() => prekey_id = Some(PreKeyId::decode(d)?),
-                2 if public_key.is_none() => public_key = Some(PublicKey::decode(d)?),
-                3 if identity_key.is_none() => identity_key = Some(IdentityKey::decode(d)?),
-                4 if signature.is_none() => signature = Some(opt(Signature::decode(d))?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(PreKeyBundle {
-            version: version.ok_or(DecodeError::MissingField("PreKeyBundle::version"))?,
-            prekey_id: prekey_id.ok_or(DecodeError::MissingField("PreKeyBundle::prekey_id"))?,
-            public_key: public_key.ok_or(DecodeError::MissingField("PreKeyBundle::public_key"))?,
-            identity_key: identity_key
-                .ok_or(DecodeError::MissingField("PreKeyBundle::identity_key"))?,
-            signature: signature.flatten(),
-        })
+        Ok(ciborium::de::from_reader(&b[..])?)
     }
 }
 
 // Prekey ID ////////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PreKeyId(u16);
 
 pub const MAX_PREKEY_ID: PreKeyId = PreKeyId(u16::MAX);
@@ -333,14 +201,6 @@ impl PreKeyId {
     pub fn value(self) -> u16 {
         self.0
     }
-
-    pub fn encode<W: Write>(self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.u16(self.0).map_err(From::from)
-    }
-
-    pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<PreKeyId> {
-        d.u16().map(PreKeyId).map_err(From::from)
-    }
 }
 
 impl fmt::Display for PreKeyId {
@@ -351,7 +211,7 @@ impl fmt::Display for PreKeyId {
 
 // Keypair //////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct KeyPair {
     pub secret_key: SecretKey,
     pub public_key: PublicKey,
@@ -379,31 +239,6 @@ impl KeyPair {
             public_key: PublicKey(pk),
         }
     }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(2)?;
-        e.u8(0)?;
-        self.secret_key.encode(e)?;
-        e.u8(1)?;
-        self.public_key.encode(e)
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<KeyPair> {
-        let n = d.object()?;
-        let mut secret_key = None;
-        let mut public_key = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if secret_key.is_none() => secret_key = Some(SecretKey::decode(d)?),
-                1 if public_key.is_none() => public_key = Some(PublicKey::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(KeyPair {
-            secret_key: secret_key.ok_or(DecodeError::MissingField("KeyPair::secret_key"))?,
-            public_key: public_key.ok_or(DecodeError::MissingField("KeyPair::public_key"))?,
-        })
-    }
 }
 
 // SecretKey ////////////////////////////////////////////////////////////////
@@ -411,6 +246,7 @@ impl KeyPair {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero {}
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SecretKey(ed25519_dalek::ExpandedSecretKey);
 
 impl std::fmt::Debug for SecretKey {
@@ -457,35 +293,11 @@ impl SecretKey {
         let shared = alice_secret.diffie_hellman(&bob_public);
         Ok(shared.to_bytes())
     }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(1)?;
-        e.u8(0).and(e.bytes(&self.0.to_bytes()))?;
-        Ok(())
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SecretKey> {
-        let n = d.object()?;
-        let mut secret_key = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if secret_key.is_none() => {
-                    secret_key = Some(ed25519_dalek::ExpandedSecretKey::from_bytes(
-                        &*Bytes64::decode(d)?.array,
-                    )?)
-                }
-                _ => d.skip()?,
-            }
-        }
-        let secret_key = secret_key.ok_or(DecodeError::MissingField("SecretKey::secret_key"))?;
-
-        Ok(SecretKey(secret_key))
-    }
 }
 
 // PublicKey ////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PublicKey(ed25519_dalek::PublicKey);
 
 impl PartialEq for PublicKey {
@@ -514,33 +326,12 @@ impl PublicKey {
         fmt_hex(self.0.as_bytes())
     }
 
-    pub(crate) fn from_bytes<B: AsRef<[u8]>>(buf: B) -> DecodeResult<Self> {
+    #[cfg(test)]
+    pub fn from_bytes<B: AsRef<[u8]>>(buf: B) -> DecodeResult<Self> {
         let edward = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(&buf.as_ref()[..32]);
         let pk = ed25519_dalek::PublicKey::from_bytes(edward.as_bytes())?;
 
         Ok(PublicKey(pk))
-    }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(1)?;
-        e.u8(0).and(e.bytes(self.0.as_bytes()))?;
-        Ok(())
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<PublicKey> {
-        let n = d.object()?;
-        let mut pub_edward = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if pub_edward.is_none() => {
-                    let bytes = Bytes32::decode(d)?;
-                    pub_edward = Some(bytes.array);
-                }
-                _ => d.skip()?,
-            }
-        }
-        let pub_edward = pub_edward.ok_or(DecodeError::MissingField("PublicKey::pub_edward"))?;
-        Self::from_bytes(*pub_edward)
     }
 }
 
@@ -556,35 +347,9 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 
 // Signature ////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Signature {
     sig: ed25519_dalek::Signature,
-}
-
-impl Signature {
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(1)?;
-        e.u8(0).and(e.bytes(&self.sig.to_bytes()))?;
-        Ok(())
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Signature> {
-        let n = d.object()?;
-        let mut sig = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if sig.is_none() => {
-                    sig = Some(ed25519_dalek::Signature::from_bytes(
-                        &*Bytes64::decode(d)?.array,
-                    )?)
-                }
-                _ => d.skip()?,
-            }
-        }
-        Ok(Signature {
-            sig: sig.ok_or(DecodeError::MissingField("Signature::sig"))?,
-        })
-    }
 }
 
 // Tests ////////////////////////////////////////////////////////////////////
@@ -593,8 +358,10 @@ impl Signature {
 mod tests {
     use super::*;
     use crate::internal::util::roundtrip;
+    use wasm_bindgen_test::*;
 
     #[test]
+    #[wasm_bindgen_test]
     fn prekey_generation() {
         let k = gen_prekeys(PreKeyId::new(0xFFFC), 5)
             .iter()
@@ -604,6 +371,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn dh_agreement() {
         let a = KeyPair::new();
         let b = KeyPair::new();
@@ -613,6 +381,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn sign_and_verify() {
         let a = KeyPair::new();
         let s = a.secret_key.sign(b"foobarbaz");
@@ -621,46 +390,50 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_pubkey() {
         let k = KeyPair::new();
         let r = roundtrip(
-            |mut e| k.public_key.encode(&mut e),
-            |mut d| PublicKey::decode(&mut d),
+            |mut e| Ok(ciborium::ser::into_writer(&k.public_key, &mut e)?),
+            |mut d| Ok(ciborium::de::from_reader::<PublicKey, _>(&mut d)?),
         );
         assert_eq!(k.public_key, r)
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_seckey() {
         let k = KeyPair::new();
         let r = roundtrip(
-            |mut e| k.secret_key.encode(&mut e),
-            |mut d| SecretKey::decode(&mut d),
+            |mut e| Ok(ciborium::ser::into_writer(&k.secret_key, &mut e)?),
+            |mut d| Ok(ciborium::de::from_reader::<SecretKey, _>(&mut d)?),
         );
         assert_eq!(&k.secret_key.0.to_bytes()[..], &r.0.to_bytes()[..]);
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_prekey_bundle() {
         let i = IdentityKeyPair::new();
         let k = PreKey::new(PreKeyId::new(1));
         let b = PreKeyBundle::new(i.public_key, &k);
         let r = roundtrip(
-            |mut e| b.encode(&mut e),
-            |mut d| PreKeyBundle::decode(&mut d),
+            |mut e| Ok(ciborium::ser::into_writer(&b, &mut e)?),
+            |mut d| Ok(ciborium::de::from_reader::<PreKeyBundle, _>(&mut d)?),
         );
         assert_eq!(None, b.signature);
         assert_eq!(b, r);
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_signed_prekey_bundle() {
         let i = IdentityKeyPair::new();
         let k = PreKey::new(PreKeyId::new(1));
         let b = PreKeyBundle::signed(&i, &k);
         let r = roundtrip(
-            |mut e| b.encode(&mut e),
-            |mut d| PreKeyBundle::decode(&mut d),
+            |mut e| Ok(ciborium::ser::into_writer(&b, &mut e)?),
+            |mut d| Ok(ciborium::de::from_reader::<PreKeyBundle, _>(&mut d)?),
         );
         assert_eq!(b, r);
         assert_eq!(PreKeyAuth::Valid, b.verify());
@@ -668,6 +441,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn degenerated_key() {
         let k = KeyPair::new();
         let bytes: Vec<u8> = k.public_key.0.to_bytes().into_iter().map(|_| 0).collect();

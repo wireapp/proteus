@@ -15,12 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
-use crate::internal::util::Bytes32;
-use cbor::skip::Skip;
-use cbor::{Decoder, Encoder};
 use hmac::Mac as _;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::ops::Deref;
 use std::vec::Vec;
 
@@ -28,8 +24,7 @@ type HmacSha256 = hmac::SimpleHmac<sha2::Sha256>;
 type HkdfSha256 = hkdf::Hkdf<sha2::Sha256>;
 
 // Derived Secrets //////////////////////////////////////////////////////////
-
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct DerivedSecrets {
     pub cipher_key: CipherKey,
     pub mac_key: MacKey,
@@ -60,8 +55,7 @@ impl DerivedSecrets {
 }
 
 // Cipher Key ///////////////////////////////////////////////////////////////
-
-#[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct CipherKey {
     key: chacha20::Key,
 }
@@ -91,30 +85,6 @@ impl CipherKey {
         cipher.apply_keystream(&mut text);
         text
     }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(1)?;
-        e.u8(0).and(e.bytes(self.key.as_slice()))?;
-        Ok(())
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<CipherKey> {
-        let n = d.object()?;
-        let mut key = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if key.is_none() => {
-                    key = Some(
-                        Bytes32::decode(d).map(|v| chacha20::Key::clone_from_slice(&*v.array))?,
-                    )
-                }
-                _ => d.skip()?,
-            }
-        }
-        Ok(CipherKey {
-            key: key.ok_or(DecodeError::MissingField("CipherKey::key"))?,
-        })
-    }
 }
 
 impl Deref for CipherKey {
@@ -126,8 +96,7 @@ impl Deref for CipherKey {
 }
 
 // MAC Key //////////////////////////////////////////////////////////////////
-
-#[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct MacKey {
     key: zeroize::Zeroizing<[u8; 32]>,
 }
@@ -151,28 +120,6 @@ impl MacKey {
         mac.update(msg);
         mac.verify_slice(sig).map(|_| true).unwrap_or(false)
     }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(1)?;
-        e.u8(0).and(e.bytes(&*self.key))?;
-        Ok(())
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<MacKey> {
-        let n = d.object()?;
-        let mut key = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if key.is_none() => key = Some(Bytes32::decode(d)?),
-                _ => d.skip()?,
-            }
-        }
-        Ok(MacKey {
-            key: key
-                .map(|bytes| bytes.array)
-                .ok_or(DecodeError::MissingField("MacKey::key"))?,
-        })
-    }
 }
 
 impl Drop for MacKey {
@@ -183,10 +130,8 @@ impl Drop for MacKey {
 }
 
 // MAC //////////////////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Mac {
-    sig: hmac::digest::CtOutput<HmacSha256>,
     sig_bytes: [u8; 32],
 }
 
@@ -195,44 +140,13 @@ impl Mac {
         let mut sig_bytes = [0u8; 32];
         sig_bytes.copy_from_slice(&signature.clone().into_bytes().as_slice()[..32]);
 
-        Self {
-            sig: signature,
-            sig_bytes,
-        }
+        Self { sig_bytes }
     }
 
     pub fn into_bytes(self) -> [u8; 32] {
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(&self.sig_bytes);
         bytes
-    }
-
-    pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.object(1)?;
-        e.u8(0).and(e.bytes(&self.sig_bytes))?;
-        Ok(())
-    }
-
-    pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<Self> {
-        let n = d.object()?;
-        let mut sig = None;
-        for _ in 0..n {
-            match d.u8()? {
-                0 if sig.is_none() => {
-                    sig = Some(
-                        Bytes32::decode(d)
-                            .map(|v| hmac::digest::CtOutput::new((*v.array).into()))?,
-                    )
-                }
-                _ => d.skip()?,
-            }
-        }
-
-        let sig = sig.ok_or(DecodeError::MissingField("Mac::sig"))?;
-        let mut sig_bytes = [0u8; 32];
-        sig_bytes.copy_from_slice(&sig.clone().into_bytes().as_slice()[..32]);
-
-        Ok(Self { sig_bytes, sig })
     }
 }
 
@@ -247,6 +161,7 @@ impl Deref for Mac {
 // Tests ////////////////////////////////////////////////////////////////////
 
 #[test]
+#[wasm_bindgen_test::wasm_bindgen_test]
 fn derive_secrets() {
     let nc = chacha20::LegacyNonce::from_slice(&[0; 8]);
     let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar");
