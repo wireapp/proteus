@@ -74,7 +74,7 @@ impl CipherKey {
     }
 
     pub fn encrypt(&self, text: &[u8], nonce: &[u8]) -> Vec<u8> {
-        use chacha20::cipher::{NewCipher as _, StreamCipher as _};
+        use chacha20::cipher::{KeyIvInit as _, StreamCipher as _};
         let nonce = chacha20::LegacyNonce::from_slice(nonce);
         let mut cipher = chacha20::ChaCha20Legacy::new(&self.key, nonce);
         let mut data = Vec::from(text);
@@ -83,7 +83,7 @@ impl CipherKey {
     }
 
     pub fn decrypt(&self, data: &[u8], nonce: &[u8]) -> Vec<u8> {
-        use chacha20::cipher::{NewCipher as _, StreamCipher as _, StreamCipherSeek as _};
+        use chacha20::cipher::{KeyIvInit as _, StreamCipher as _, StreamCipherSeek as _};
         let nonce = chacha20::LegacyNonce::from_slice(nonce);
         let mut cipher = chacha20::ChaCha20Legacy::new(&self.key, nonce);
         let mut text = Vec::from(data);

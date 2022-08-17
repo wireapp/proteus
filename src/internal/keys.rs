@@ -236,7 +236,7 @@ impl PreKeyBundle {
 
     pub fn signed(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
         let ratchet_key = key.key_pair.public_key.clone();
-        let signature = ident.secret_key.sign(&ratchet_key.pub_edward.to_bytes());
+        let signature = ident.secret_key.sign(&ratchet_key.0.to_bytes());
         PreKeyBundle {
             version: 1,
             prekey_id: key.key_id,
@@ -252,7 +252,7 @@ impl PreKeyBundle {
                 if self
                     .identity_key
                     .public_key
-                    .verify(sig, &self.public_key.pub_edward.to_bytes())
+                    .verify(sig, &self.public_key.0.to_bytes())
                 {
                     PreKeyAuth::Valid
                 } else {
@@ -366,29 +366,17 @@ impl Default for KeyPair {
 impl KeyPair {
     pub fn new() -> KeyPair {
         use rand::{RngCore as _, SeedableRng as _};
-        let mut rng = chacha20::ChaCha20Rng::from_entropy();
+        let mut rng = rand_chacha::ChaCha20Rng::from_entropy();
 
-        let mut sk = [0u8; 64];
-        rng.fill_bytes(&mut sk);
-        let sk = ed25519_dalek::ExpandedSecretKey::from_bytes(&sk).unwrap();
-        let pk = ed25519_dalek::PublicKey::from(&sk);
-
-        // let (p, s) = sign::gen_keypair();
-
-        // let es = crypto_sign_ed25519_sk_to_curve25519(&s).expect("invalid ed25519 secret key");
-        // let ep = crypto_sign_ed25519_pk_to_curve25519(&p).expect("invalid ed25519 public key");
-        let sk_curve = curve25519_dalek::scalar::Scalar::from_bytes_mod_order_wide(&sk.to_bytes());
-        let pk_curve = x25519_dalek::StaticSecret::from(pk.to_bytes());
+        let mut sk_raw = [0u8; 32];
+        rng.fill_bytes(&mut sk_raw);
+        let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
+        let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
+        let pk = ed25519_dalek::PublicKey::from(&sk_weird);
 
         KeyPair {
-            secret_key: SecretKey {
-                sec_edward: sk,
-                sec_curve: sk_curve,
-            },
-            public_key: PublicKey {
-                pub_edward: pk,
-                pub_curve: pk_curve,
-            },
+            secret_key: SecretKey(sk_weird),
+            public_key: PublicKey(pk),
         }
     }
 
@@ -423,99 +411,87 @@ impl KeyPair {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero {}
 
-pub struct SecretKey {
-    sec_edward: ed25519_dalek::ExpandedSecretKey,
-    sec_curve: curve25519_dalek::scalar::Scalar,
-}
+pub struct SecretKey(ed25519_dalek::ExpandedSecretKey);
 
 impl std::fmt::Debug for SecretKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("SecretKey")
-            .field("sec_edward", &["[REDACTED]"])
-            .field("sec_curve", &self.sec_curve)
+            .field("secret_key", &["[REDACTED]"])
             .finish()
     }
 }
 
 impl Clone for SecretKey {
     fn clone(&self) -> Self {
-        Self {
-            sec_edward: ed25519_dalek::ExpandedSecretKey::from_bytes(&self.sec_edward.to_bytes()).unwrap(),
-            sec_curve: self.sec_curve,
-        }
+        Self(ed25519_dalek::ExpandedSecretKey::from_bytes(&self.0.to_bytes()).unwrap())
     }
 }
 
 impl SecretKey {
     pub fn sign(&self, m: &[u8]) -> Signature {
-        let pk = ed25519_dalek::PublicKey::from(&self.sec_edward);
-        Signature { sig: self.sec_edward.sign(m, &pk) }
+        let pk = ed25519_dalek::PublicKey::from(&self.0);
+        Signature {
+            sig: self.0.sign(m, &pk),
+        }
     }
 
-    pub fn shared_secret(&self, p: &PublicKey) -> Result<[u8; 32], Zero> {
-        let pk_bytes = p.pub_edward.to_bytes();
-        let mut key = zeroize::Zeroizing::new([0u8; 32]);
+    pub fn shared_secret(&self, bob_public: &PublicKey) -> Result<[u8; 32], Zero> {
+        let bob_pk = bob_public.0.to_bytes();
+        let zero_slice = [0u8; 32];
 
         use subtle::ConstantTimeEq as _;
-        if pk_bytes.ct_eq(&*key).unwrap_u8() == 1 {
+        if bob_pk.ct_eq(&zero_slice).unwrap_u8() == 1 {
             return Err(Zero {});
         }
 
-        key.copy_from_slice(&self.sec_edward.to_bytes()[..32]);
-        let alice_secret = x25519_dalek::StaticSecret::from(*key);
-        let bob_public = x25519_dalek::PublicKey::from(pk_bytes);
+        let bob_pk_montgomery = curve25519_dalek::edwards::CompressedEdwardsY(bob_pk)
+            .decompress()
+            .unwrap()
+            .to_montgomery();
+
+        let mut alice_sk = zeroize::Zeroizing::new(zero_slice);
+        alice_sk.copy_from_slice(&self.0.to_bytes()[..32]);
+
+        let alice_secret = x25519_dalek::StaticSecret::from(*alice_sk);
+        let bob_public = x25519_dalek::PublicKey::from(bob_pk_montgomery.to_bytes());
         let shared = alice_secret.diffie_hellman(&bob_public);
         Ok(shared.to_bytes())
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.sec_edward.to_bytes()))?;
+        e.u8(0).and(e.bytes(&self.0.to_bytes()))?;
         Ok(())
     }
 
     pub fn decode<R: Read + Skip>(d: &mut Decoder<R>) -> DecodeResult<SecretKey> {
         let n = d.object()?;
-        let mut sec_edward = None;
+        let mut secret_key = None;
         for _ in 0..n {
             match d.u8()? {
-                0 if sec_edward.is_none() => {
-
-                    sec_edward = Some(ed25519_dalek::ExpandedSecretKey::from_bytes(
+                0 if secret_key.is_none() => {
+                    secret_key = Some(ed25519_dalek::ExpandedSecretKey::from_bytes(
                         &*Bytes64::decode(d)?.array,
                     )?)
                 }
                 _ => d.skip()?,
             }
         }
-        let sec_edward = sec_edward.ok_or(DecodeError::MissingField("SecretKey::sec_edward"))?;
-        let sec_curve =
-            curve25519_dalek::scalar::Scalar::from_bytes_mod_order_wide(&sec_edward.to_bytes());
-                //.ok_or(DecodeError::InvalidField("SecretKey::sec_curve"))?;
+        let secret_key = secret_key.ok_or(DecodeError::MissingField("SecretKey::secret_key"))?;
 
-        Ok(SecretKey {
-            sec_edward,
-            sec_curve,
-        })
+        Ok(SecretKey(secret_key))
     }
 }
 
 // PublicKey ////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
-pub struct PublicKey {
-    pub_edward: ed25519_dalek::PublicKey,
-    pub_curve: x25519_dalek::StaticSecret,
-}
+#[derive(Clone, Debug)]
+pub struct PublicKey(ed25519_dalek::PublicKey);
 
 impl PartialEq for PublicKey {
     fn eq(&self, other: &Self) -> bool {
         use subtle::ConstantTimeEq as _;
-        let ct = self
-            .pub_edward
-            .as_bytes()
-            .ct_eq(other.pub_edward.as_bytes())
-            & self.pub_curve.to_bytes().ct_eq(&other.pub_curve.to_bytes());
+        let ct = self.0.as_bytes().ct_eq(other.0.as_bytes());
 
         ct.unwrap_u8() == 1
     }
@@ -523,19 +499,9 @@ impl PartialEq for PublicKey {
 
 impl Eq for PublicKey {}
 
-impl Debug for PublicKey {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        f.debug_struct("PublicKey")
-            .field("pub_edward", &self.pub_edward)
-            .field("pub_curve", &"[REDACTED]")
-            .finish()
-    }
-}
-
 impl PublicKey {
     pub fn verify(&self, s: &Signature, m: &[u8]) -> bool {
-        use ed25519_dalek::Verifier as _;
-        let res = self.pub_edward.verify(m, &s.sig);
+        let res = self.0.verify_strict(m, &s.sig);
 
         if let Err(e) = &res {
             println!("{}", e);
@@ -545,21 +511,19 @@ impl PublicKey {
     }
 
     pub fn fingerprint(&self) -> String {
-        fmt_hex(self.pub_edward.as_bytes())
+        fmt_hex(self.0.as_bytes())
     }
 
     pub(crate) fn from_bytes<B: AsRef<[u8]>>(buf: B) -> DecodeResult<Self> {
-        let pub_edward = ed25519_dalek::PublicKey::from_bytes(buf.as_ref())?;
-        let pub_curve = x25519_dalek::StaticSecret::from(pub_edward.to_bytes());
-        Ok(PublicKey {
-            pub_edward,
-            pub_curve,
-        })
+        let edward = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(&buf.as_ref()[..32]);
+        let pk = ed25519_dalek::PublicKey::from_bytes(edward.as_bytes())?;
+
+        Ok(PublicKey(pk))
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(self.pub_edward.as_bytes()))?;
+        e.u8(0).and(e.bytes(self.0.as_bytes()))?;
         Ok(())
     }
 
@@ -577,7 +541,6 @@ impl PublicKey {
         }
         let pub_edward = pub_edward.ok_or(DecodeError::MissingField("PublicKey::pub_edward"))?;
         Self::from_bytes(*pub_edward)
-
     }
 }
 
@@ -586,7 +549,7 @@ impl PublicKey {
 pub fn rand_bytes(size: usize) -> Vec<u8> {
     let mut buf = Vec::with_capacity(size);
     use rand::{RngCore as _, SeedableRng as _};
-    let mut rng = chacha20::ChaCha12Rng::from_entropy();
+    let mut rng = rand_chacha::ChaCha12Rng::from_entropy();
     rng.fill_bytes(&mut buf);
     buf
 }
@@ -624,34 +587,6 @@ impl Signature {
     }
 }
 
-// Internal /////////////////////////////////////////////////////////////////
-
-// FIXME: This is so fucking cursed, what the actual fuck
-
-// #[allow(clippy::result_unit_err)]
-// pub fn from_ed25519_pk(k: &sign::PublicKey) -> Result<[u8; ecdh::GROUPELEMENTBYTES], ()> {
-//     let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
-//     unsafe {
-//         if ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
-//             Ok(ep)
-//         } else {
-//             Err(())
-//         }
-//     }
-// }
-
-// #[allow(clippy::result_unit_err)]
-// pub fn from_ed25519_sk(k: &sign::SecretKey) -> Result<[u8; ecdh::SCALARBYTES], ()> {
-//     let mut es = [0u8; ecdh::SCALARBYTES];
-//     unsafe {
-//         if ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
-//             Ok(es)
-//         } else {
-//             Err(())
-//         }
-//     }
-// }
-
 // Tests ////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
@@ -674,7 +609,7 @@ mod tests {
         let b = KeyPair::new();
         let sa = a.secret_key.shared_secret(&b.public_key).unwrap();
         let sb = b.secret_key.shared_secret(&a.public_key).unwrap();
-        assert_eq!(&sa, &sb)
+        assert_eq!(sa, sb)
     }
 
     #[test]
@@ -702,15 +637,7 @@ mod tests {
             |mut e| k.secret_key.encode(&mut e),
             |mut d| SecretKey::decode(&mut d),
         );
-        //assert_eq!(k, r);
-        assert_eq!(
-            &k.secret_key.sec_edward.to_bytes()[..],
-            &r.sec_edward.to_bytes()[..]
-        );
-        assert_eq!(
-            &k.secret_key.sec_curve.to_bytes()[..],
-            &r.sec_curve.to_bytes()[..]
-        )
+        assert_eq!(&k.secret_key.0.to_bytes()[..], &r.0.to_bytes()[..]);
     }
 
     #[test]
@@ -743,7 +670,7 @@ mod tests {
     #[test]
     fn degenerated_key() {
         let k = KeyPair::new();
-        let bytes: Vec<u8> = k.public_key.pub_curve.to_bytes().into_iter().map(|_| 0).collect();
+        let bytes: Vec<u8> = k.public_key.0.to_bytes().into_iter().map(|_| 0).collect();
         let pk = PublicKey::from_bytes(bytes).unwrap();
         assert_eq!(Err(Zero {}), k.secret_key.shared_secret(&pk))
     }
