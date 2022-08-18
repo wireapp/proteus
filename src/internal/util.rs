@@ -39,15 +39,22 @@ pub fn fmt_hex(xs: &[u8]) -> String {
 
 // Test support /////////////////////////////////////////////////////////////
 #[cfg(test)]
-use std::io::Cursor;
-
-#[cfg(test)]
-pub fn roundtrip<F, G, A>(enc: F, dec: G) -> A
+pub fn roundtrip<T>(value: &T) -> T
 where
-    F: Fn(&mut Cursor<Vec<u8>>) -> crate::internal::types::EncodeResult<()>,
-    G: Fn(&mut Cursor<Vec<u8>>) -> crate::internal::types::DecodeResult<A>,
+    T: serde::Serialize + serde::de::DeserializeOwned,
 {
-    let mut rw = Cursor::new(Vec::new());
-    enc(&mut rw).unwrap();
-    dec(&mut rw).unwrap()
+    let cbor = cbor_serialize(value).unwrap();
+    cbor_deserialize(&cbor).unwrap()
+}
+
+pub fn cbor_serialize<T: serde::Serialize>(
+    value: &T,
+) -> crate::internal::types::EncodeResult<Vec<u8>> {
+    Ok(minicbor_ser::to_vec(value)?)
+}
+
+pub fn cbor_deserialize<T: serde::de::DeserializeOwned>(
+    buf: &[u8],
+) -> crate::internal::types::DecodeResult<T> {
+    Ok(minicbor_ser::from_slice(buf)?)
 }

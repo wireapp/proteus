@@ -15,11 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std;
 use std::borrow::{Borrow, Cow};
 use std::cmp::{Ord, Ordering};
 use std::collections::{BTreeMap, VecDeque};
-use std::fmt;
 use std::usize;
 
 use crate::internal::derived::{CipherKey, DerivedSecrets, MacKey};
@@ -29,6 +27,8 @@ use crate::internal::message::{
     CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag,
 };
 use crate::internal::types::{DecodeResult, EncodeResult, InternalError};
+
+use super::util::{cbor_deserialize, cbor_serialize};
 
 // Root key /////////////////////////////////////////////////////////////////
 
@@ -48,7 +48,7 @@ impl RootKey {
         theirs: &PublicKey,
     ) -> Result<(RootKey, ChainKey), Error<E>> {
         let secret = ours.secret_key.shared_secret(theirs)?;
-        let dsecs = DerivedSecrets::kdf(&secret, Some(&self.key), b"dh_ratchet");
+        let dsecs = DerivedSecrets::kdf(&secret, Some(&self.key), b"dh_ratchet")?;
         Ok((
             RootKey::from_cipher_key(dsecs.cipher_key),
             ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()),
@@ -76,14 +76,14 @@ impl ChainKey {
         }
     }
 
-    pub fn message_keys(&self) -> MessageKeys {
+    pub fn message_keys(&self) -> Result<MessageKeys, InternalError> {
         let base = self.key.sign(b"0");
-        let dsecs = DerivedSecrets::kdf_without_salt(&base, b"hash_ratchet");
-        MessageKeys {
+        let dsecs = DerivedSecrets::kdf_without_salt(&base, b"hash_ratchet")?;
+        Ok(MessageKeys {
             cipher_key: dsecs.cipher_key,
             mac_key: dsecs.mac_key,
             counter: self.idx,
-        }
+        })
     }
 }
 
@@ -170,11 +170,11 @@ impl RecvChain {
         let mut chk = self.chain_key.clone();
 
         for _ in 0..num {
-            buf.push_back(chk.message_keys());
+            buf.push_back(chk.message_keys()?);
             chk = chk.next()
         }
 
-        let mk = chk.message_keys();
+        let mk = chk.message_keys()?;
         Ok((chk, mk, buf))
     }
 
@@ -482,13 +482,11 @@ impl Session {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut dest = Vec::new();
-        ciborium::ser::into_writer(self, &mut dest[..])?;
-        Ok(dest)
+        cbor_serialize(self)
     }
 
-    pub fn deserialise(b: &[u8]) -> DecodeResult<Session> {
-        Ok(ciborium::de::from_reader(&b[..])?)
+    pub fn deserialise(b: &[u8]) -> DecodeResult<Self> {
+        cbor_deserialize(b)
     }
 }
 
@@ -516,7 +514,7 @@ impl SessionState {
             buf
         };
 
-        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake");
+        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake")?;
 
         // receiving chain
         let rootkey = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -551,7 +549,7 @@ impl SessionState {
             buf
         };
 
-        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake");
+        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake")?;
 
         // sending chain
         let rootkey = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -597,8 +595,8 @@ impl SessionState {
         pending: &'r Option<(PreKeyId, PublicKey)>,
         tag: SessionTag,
         plain: &[u8],
-    ) -> EncodeResult<Envelope> {
-        let msgkeys = self.send_chain.chain_key.message_keys();
+    ) -> EncodeResult<Envelope<'r>> {
+        let msgkeys = self.send_chain.chain_key.message_keys()?;
 
         let cmessage = CipherMessage {
             session_tag: tag,
@@ -649,7 +647,7 @@ impl SessionState {
                 Ok(plain)
             }
             Ordering::Equal => {
-                let mks = rchain.chain_key.message_keys();
+                let mks = rchain.chain_key.message_keys()?;
                 let plain = mks.decrypt(&m.cipher_text);
                 if !env.verify(&mks.mac_key) {
                     return Err(Error::InvalidSignature);
@@ -663,66 +661,28 @@ impl SessionState {
 
 // Decrypt Error ////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error<E> {
+    #[error("RemoteIdentityChanged")]
     RemoteIdentityChanged,
+    #[error("InvalidSignature")]
     InvalidSignature,
+    #[error("InvalidMessage")]
     InvalidMessage,
+    #[error("DuplicateMessage")]
     DuplicateMessage,
+    #[error("TooDistantFuture")]
     TooDistantFuture,
+    #[error("OutdatedMessage")]
     OutdatedMessage,
+    #[error("PreKeyStoreNotFound: {0}")]
     PreKeyNotFound(PreKeyId),
+    #[error("PreKeyStoreError: {0}")]
     PreKeyStoreError(E),
+    #[error("DegeneratedKey")]
     DegeneratedKey,
-}
-
-impl<E> Error<E> {
-    fn as_str(&self) -> &str {
-        match *self {
-            Error::RemoteIdentityChanged => "RemoteIdentityChanged",
-            Error::InvalidSignature => "InvalidSignature",
-            Error::InvalidMessage => "InvalidMessage",
-            Error::DuplicateMessage => "DuplicateMessage",
-            Error::TooDistantFuture => "TooDistantFuture",
-            Error::OutdatedMessage => "OutdatedMessage",
-            Error::PreKeyNotFound(_) => "PreKeyNotFound",
-            Error::PreKeyStoreError(_) => "PreKeyStoreError",
-            Error::DegeneratedKey => "DegeneratedKey",
-        }
-    }
-}
-
-impl<E: fmt::Debug> fmt::Debug for Error<E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            Error::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {:?}", e),
-            Error::PreKeyNotFound(i) => write!(f, "PreKeyNotFound: {:?}", i),
-            _ => f.write_str(self.as_str()),
-        }
-    }
-}
-
-impl<E: fmt::Display> fmt::Display for Error<E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            Error::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {}", e),
-            Error::PreKeyNotFound(i) => write!(f, "PreKeyNotFound: {}", i),
-            _ => f.write_str(self.as_str()),
-        }
-    }
-}
-
-impl<E: std::error::Error> std::error::Error for Error<E> {
-    fn description(&self) -> &str {
-        self.as_str()
-    }
-
-    fn cause(&self) -> Option<&dyn std::error::Error> {
-        match *self {
-            Error::PreKeyStoreError(ref e) => Some(e),
-            _ => None,
-        }
-    }
+    #[error(transparent)]
+    InternalError(#[from] InternalError),
 }
 
 impl<E> From<keys::Zero> for Error<E> {
@@ -1287,8 +1247,9 @@ mod tests {
         }
 
         for msg in &buffer {
-            let env = Envelope::deserialise(msg).unwrap();
-            assert!(alice.decrypt(&mut alice_store, &env).is_err(),);
+            if let Ok(env) = Envelope::deserialise(msg) {
+                assert!(alice.decrypt(&mut alice_store, &env).is_err(),);
+            }
         }
 
         let msg = bob

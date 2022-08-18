@@ -21,6 +21,29 @@ use crate::internal::keys::IdentityKey;
 pub enum InternalError {
     #[error("No session found for session tag.")]
     NoSessionForTag,
+    #[error("Length of the KDF is invalid: invalid number of blocks, too large output")]
+    InvalidKdfLength,
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+}
+
+impl PartialEq for InternalError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (InternalError::NoSessionForTag, InternalError::NoSessionForTag) => true,
+            (InternalError::InvalidKdfLength, InternalError::InvalidKdfLength) => true,
+            (InternalError::IoError(e1), InternalError::IoError(e2)) if e1.kind() == e2.kind() => {
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl From<hkdf::InvalidLength> for InternalError {
+    fn from(_: hkdf::InvalidLength) -> Self {
+        Self::InvalidKdfLength
+    }
 }
 
 // EncodeError //////////////////////////////////////////////////////////////
@@ -32,7 +55,7 @@ pub enum EncodeError {
     #[error("Internal error: {0}")]
     Internal(#[from] InternalError),
     #[error("CBOR encoder error: {0}")]
-    Encoder(#[from] ciborium::ser::Error<std::io::Error>),
+    Encoder(#[from] minicbor_ser::error::Error),
 }
 
 // DecodeError //////////////////////////////////////////////////////////////
@@ -42,7 +65,7 @@ pub type DecodeResult<A> = Result<A, DecodeError>;
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
     #[error("CBOR decoder error: {0}")]
-    Decoder(#[from] ciborium::de::Error<std::io::Error>),
+    Decoder(#[from] minicbor_ser::error::Error),
     #[error("ed25519 Signature error: {0}")]
     Signature(#[from] ed25519::Error),
     #[error("CBOR array length mismatch: {0}")]

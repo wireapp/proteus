@@ -10,7 +10,6 @@ edition      = "2021"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-ciborium = "0.2"
 thiserror = "1.0"
 
 # CSPRNG
@@ -25,15 +24,18 @@ sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
 chacha20 = "0.9"
+elliptic-curve = "0.11"
 ed25519 = "1.3"
 ed25519-dalek = { version = "1.0", features = ["serde"] }
-elliptic-curve = "0.11"
 curve25519-dalek = "3.2"
 x25519-dalek = { version = "1.1.1", package = "x25519-dalek-ng", features = ["serde"] }
 subtle = "2.4"
+# serde_cbor = "0.11"
+minicbor-ser = "0.1"
 
 [dev-dependencies]
 criterion = "0.3"
+pretty_assertions = "1.2"
 proteus-legacy = { git = "https://github.com/wireapp/proteus", branch = "otak/sodiumoxide-0.2.7", package = "proteus" }
 wasm-bindgen-test = "0.3"
 

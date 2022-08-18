@@ -1,3 +1,4 @@
+use pretty_assertions::assert_eq;
 use wasm_bindgen_test::*;
 
 #[derive(Debug)]
@@ -37,7 +38,7 @@ macro_rules! impl_harness_for_crate {
 
         pub struct $client {
             pub identity: $target::keys::IdentityKeyPair,
-            pub store: TestStore<$target::keys::PreKey>
+            pub store: TestStore<$target::keys::PreKey>,
         }
 
         impl $client {
@@ -87,6 +88,24 @@ macro_rules! impl_harness_for_crate {
 
 impl_harness_for_crate!(TestStore, Client, proteus);
 impl_harness_for_crate!(TestStore, LegacyClient, proteus_legacy);
+
+#[test]
+#[wasm_bindgen_test]
+fn serialize_interop() {
+    // let alice_legacy = LegacyClient::new();
+    // TODO: Add test utils to proteus-legacy so that we can inspect stuff
+    // alice_legacy.identity.secret_key
+    // let alice = Client::new();
+    // let b = alice.identity.secret_key.0.to_bytes();
+    // let alice_legacy = LegacyClient::new();
+    // let alice_bundle = alice.get_prekey_bundle(1).unwrap();
+    // let alice_legacy_bundle = alice_legacy.get_prekey_bundle(1).unwrap();
+
+    // assert_eq!(
+    //     alice_bundle.serialise().unwrap(),
+    //     alice_legacy_bundle.serialise().unwrap()
+    // );
+}
 
 const MSG: &[u8] = b"Hello world!";
 

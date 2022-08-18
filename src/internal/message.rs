@@ -21,12 +21,9 @@ use crate::internal::{
     types::{DecodeResult, EncodeResult},
     util::fmt_hex,
 };
-use std::{
-    borrow::Cow,
-    fmt,
-    io::Cursor,
-    vec::Vec,
-};
+use std::{borrow::Cow, fmt};
+
+use super::util::{cbor_deserialize, cbor_serialize};
 
 // Counter ////////////////////////////////////////////////////////////////////
 #[derive(
@@ -152,14 +149,13 @@ pub struct Envelope<'r> {
 
 impl<'r> Envelope<'r> {
     pub fn new(k: &MacKey, m: Message<'r>) -> EncodeResult<Envelope<'r>> {
-        let mut c = Cursor::new(Vec::new());
-        ciborium::ser::into_writer(&m, &mut c)?;
+        let c = cbor_serialize(&m)?;
 
         Ok(Envelope {
             version: 1,
-            mac: k.sign(c.get_ref()),
+            mac: k.sign(&c),
             message: m,
-            message_enc: c.into_inner(),
+            message_enc: c,
         })
     }
 
@@ -189,13 +185,11 @@ impl<'r> Envelope<'r> {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut dest = Vec::new();
-        ciborium::ser::into_writer(self, &mut dest[..])?;
-        Ok(dest)
+        cbor_serialize(self)
     }
 
     pub fn deserialise<'s>(b: &[u8]) -> DecodeResult<Envelope<'s>> {
-        Ok(ciborium::de::from_reader(&b[..])?)
+        cbor_deserialize(b)
     }
 }
 

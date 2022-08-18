@@ -1,7 +1,4 @@
-extern crate criterion;
 use criterion::{criterion_group, criterion_main, Criterion};
-
-extern crate proteus;
 use proteus::internal::keys::*;
 
 fn bench_keygen(c: &mut Criterion) {

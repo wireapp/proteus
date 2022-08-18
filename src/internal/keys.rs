@@ -21,6 +21,8 @@ use std::fmt::{self, Debug, Formatter};
 use std::u16;
 use std::vec::Vec;
 
+use super::util::{cbor_deserialize, cbor_serialize};
+
 // Identity Key /////////////////////////////////////////////////////////////
 
 #[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
@@ -55,7 +57,10 @@ impl Default for IdentityKeyPair {
 
 impl IdentityKeyPair {
     pub fn new() -> IdentityKeyPair {
-        let k = KeyPair::new();
+        Self::from_keypair(KeyPair::new())
+    }
+
+    fn from_keypair(k: KeyPair) -> Self {
         IdentityKeyPair {
             version: 1,
             secret_key: k.secret_key,
@@ -66,13 +71,16 @@ impl IdentityKeyPair {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut dest = Vec::new();
-        ciborium::ser::into_writer(self, &mut dest[..])?;
-        Ok(dest)
+        cbor_serialize(self)
     }
 
-    pub fn deserialise(b: &[u8]) -> DecodeResult<IdentityKeyPair> {
-        Ok(ciborium::de::from_reader(&b[..])?)
+    pub fn deserialise<'s>(b: &[u8]) -> DecodeResult<Self> {
+        cbor_deserialize(b)
+    }
+
+    #[cfg(test)]
+    pub fn from_secret_key(raw: [u8; 32]) {
+        Self::from_keypair(KeyPair::from_secret_key_raw(raw));
     }
 }
 
@@ -99,13 +107,11 @@ impl PreKey {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut dest = Vec::new();
-        ciborium::ser::into_writer(self, &mut dest[..])?;
-        Ok(dest)
+        cbor_serialize(self)
     }
 
-    pub fn deserialise(b: &[u8]) -> DecodeResult<PreKey> {
-        Ok(ciborium::de::from_reader(&b[..])?)
+    pub fn deserialise(b: &[u8]) -> DecodeResult<Self> {
+        cbor_deserialize(b)
     }
 }
 
@@ -176,13 +182,11 @@ impl PreKeyBundle {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        let mut dest = Vec::new();
-        ciborium::ser::into_writer(self, &mut dest[..])?;
-        Ok(dest)
+        cbor_serialize(self)
     }
 
-    pub fn deserialise(b: &[u8]) -> DecodeResult<PreKeyBundle> {
-        Ok(ciborium::de::from_reader(&b[..])?)
+    pub fn deserialise(b: &[u8]) -> DecodeResult<Self> {
+        cbor_deserialize(b)
     }
 }
 
@@ -239,6 +243,18 @@ impl KeyPair {
             public_key: PublicKey(pk),
         }
     }
+
+    #[cfg(test)]
+    pub fn from_secret_key_raw(sk_raw: [u8; 32]) -> Self {
+        let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
+        let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
+        let pk = ed25519_dalek::PublicKey::from(&sk_weird);
+
+        KeyPair {
+            secret_key: SecretKey(sk_weird),
+            public_key: PublicKey(pk),
+        }
+    }
 }
 
 // SecretKey ////////////////////////////////////////////////////////////////
@@ -264,6 +280,13 @@ impl Clone for SecretKey {
 }
 
 impl SecretKey {
+    #[cfg(test)]
+    pub fn to_bytes(&self) -> [u8; 32] {
+        let mut ret = [0; 32];
+        ret.copy_from_slice(&self.0.to_bytes()[..32]);
+        ret
+    }
+
     pub fn sign(&self, m: &[u8]) -> Signature {
         let pk = ed25519_dalek::PublicKey::from(&self.0);
         Signature {
@@ -393,21 +416,15 @@ mod tests {
     #[wasm_bindgen_test]
     fn enc_dec_pubkey() {
         let k = KeyPair::new();
-        let r = roundtrip(
-            |mut e| Ok(ciborium::ser::into_writer(&k.public_key, &mut e)?),
-            |mut d| Ok(ciborium::de::from_reader::<PublicKey, _>(&mut d)?),
-        );
-        assert_eq!(k.public_key, r)
+        let r = roundtrip(&k.public_key);
+        assert_eq!(k.public_key, r);
     }
 
     #[test]
     #[wasm_bindgen_test]
     fn enc_dec_seckey() {
         let k = KeyPair::new();
-        let r = roundtrip(
-            |mut e| Ok(ciborium::ser::into_writer(&k.secret_key, &mut e)?),
-            |mut d| Ok(ciborium::de::from_reader::<SecretKey, _>(&mut d)?),
-        );
+        let r = roundtrip(&k.secret_key);
         assert_eq!(&k.secret_key.0.to_bytes()[..], &r.0.to_bytes()[..]);
     }
 
@@ -417,10 +434,8 @@ mod tests {
         let i = IdentityKeyPair::new();
         let k = PreKey::new(PreKeyId::new(1));
         let b = PreKeyBundle::new(i.public_key, &k);
-        let r = roundtrip(
-            |mut e| Ok(ciborium::ser::into_writer(&b, &mut e)?),
-            |mut d| Ok(ciborium::de::from_reader::<PreKeyBundle, _>(&mut d)?),
-        );
+        let r = roundtrip(&b);
+
         assert_eq!(None, b.signature);
         assert_eq!(b, r);
     }
@@ -431,10 +446,7 @@ mod tests {
         let i = IdentityKeyPair::new();
         let k = PreKey::new(PreKeyId::new(1));
         let b = PreKeyBundle::signed(&i, &k);
-        let r = roundtrip(
-            |mut e| Ok(ciborium::ser::into_writer(&b, &mut e)?),
-            |mut d| Ok(ciborium::de::from_reader::<PreKeyBundle, _>(&mut d)?),
-        );
+        let r = roundtrip(&b);
         assert_eq!(b, r);
         assert_eq!(PreKeyAuth::Valid, b.verify());
         assert_eq!(PreKeyAuth::Valid, r.verify());
