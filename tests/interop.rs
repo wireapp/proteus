@@ -53,6 +53,17 @@ macro_rules! impl_harness_for_crate {
                 client
             }
 
+            pub fn from_raw_sk(sk: [u8; 32]) -> Self {
+                let mut client = Self {
+                    identity: $target::keys::IdentityKeyPair::from_raw_sk(sk),
+                    store: TestStore::default(),
+                };
+
+                client.gen_prekeys(10);
+
+                client
+            }
+
             pub fn gen_prekeys(&mut self, count: u16) {
                 let id = self
                     .store
@@ -92,10 +103,12 @@ impl_harness_for_crate!(TestStore, LegacyClient, proteus_legacy);
 #[test]
 #[wasm_bindgen_test]
 fn serialize_interop() {
-    // let alice_legacy = LegacyClient::new();
+    let alice = Client::new();
+    let raw_sk = alice.identity.secret_key.to_bytes();
+    let alice_legacy = LegacyClient::new();
     // TODO: Add test utils to proteus-legacy so that we can inspect stuff
     // alice_legacy.identity.secret_key
-    // let alice = Client::new();
+
     // let b = alice.identity.secret_key.0.to_bytes();
     // let alice_legacy = LegacyClient::new();
     // let alice_bundle = alice.get_prekey_bundle(1).unwrap();
