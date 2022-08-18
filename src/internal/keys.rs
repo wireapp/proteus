@@ -92,6 +92,20 @@ impl IdentityKeyPair {
         }
     }
 
+    #[cfg(test)]
+    pub fn from_raw_secret_key(sk_raw: [u8; 32]) -> IdentityKeyPair {
+        let secret_key = SecretKey::from_raw(sk_raw);
+        let public_key = secret_key.sec_edward.public_key();
+
+        IdentityKeyPair {
+            version: 1,
+            secret_key,
+            public_key: IdentityKey {
+                public_key: public_key.into(),
+            },
+        }
+    }
+
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
         let mut e = Encoder::new(Cursor::new(Vec::new()));
         self.encode(&mut e)?;
@@ -438,6 +452,16 @@ pub struct SecretKey {
 }
 
 impl SecretKey {
+    #[cfg(test)]
+    pub fn from_raw(raw: [u8; 32]) -> Self {
+        let sec_edward = sign::SecretKey::from_slice(&raw).unwrap();
+        let es = from_ed25519_sk(&sec_edward).expect("invalid ed25519 secret key");
+        Self {
+            sec_edward,
+            sec_curve: ecdh::Scalar(es),
+        }
+    }
+
     pub fn sign(&self, m: &[u8]) -> Signature {
         Signature {
             sig: sign::sign_detached(m, &self.sec_edward),
@@ -499,6 +523,16 @@ impl Eq for PublicKey {}
 impl Debug for PublicKey {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         write!(f, "{:?}", &self.pub_edward.0)
+    }
+}
+
+impl From<sign::PublicKey> for PublicKey {
+    fn from(pk: sign::PublicKey) -> Self {
+        let ep = from_ed25519_pk(&pk).expect("invalid ed25519 public key");
+        Self {
+            pub_edward: pk,
+            pub_curve: ecdh::GroupElement(ep),
+        }
     }
 }
 
