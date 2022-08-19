@@ -114,6 +114,7 @@ impl MacKey {
     }
 
     pub fn sign(&self, msg: &[u8]) -> Mac {
+        // SAFETY: self.key is 32 bytes so this call always succeeds
         let mut mac = HmacSha256::new_from_slice(&*self.key).unwrap();
         mac.update(msg);
 
@@ -121,6 +122,7 @@ impl MacKey {
     }
 
     pub fn verify(&self, sig: &Mac, msg: &[u8]) -> bool {
+        // SAFETY: self.key is 32 bytes so this call always succeeds
         let mut mac = HmacSha256::new_from_slice(&*self.key).unwrap();
         mac.update(msg);
         mac.verify_slice(sig).map(|_| true).unwrap_or(false)

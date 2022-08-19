@@ -78,9 +78,9 @@ impl IdentityKeyPair {
         cbor_deserialize(b)
     }
 
-    #[cfg(test)]
-    pub fn from_secret_key(raw: [u8; 32]) {
-        Self::from_keypair(KeyPair::from_secret_key_raw(raw));
+    #[cfg(feature = "hazmat")]
+    pub fn from_raw_secret_key(raw: [u8; 32]) -> Self {
+        Self::from_keypair(KeyPair::from_secret_key_raw(raw))
     }
 }
 
@@ -234,6 +234,7 @@ impl KeyPair {
 
         let mut sk_raw = [0u8; 32];
         rng.fill_bytes(&mut sk_raw);
+        // SAFETY: SecretKey::from_bytes returns an error only when the input isn't 32 bytes. We provide exactly 32 so this error can't happen.
         let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
         let pk = ed25519_dalek::PublicKey::from(&sk_weird);
@@ -244,7 +245,7 @@ impl KeyPair {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "hazmat")]
     pub fn from_secret_key_raw(sk_raw: [u8; 32]) -> Self {
         let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
@@ -275,16 +276,22 @@ impl std::fmt::Debug for SecretKey {
 
 impl Clone for SecretKey {
     fn clone(&self) -> Self {
+        // SAFETY: This is safe as the .to_bytes() call produces exactly 64 bytes - from_bytes fails if the input isn't 64 bytes exactly.
         Self(ed25519_dalek::ExpandedSecretKey::from_bytes(&self.0.to_bytes()).unwrap())
     }
 }
 
 impl SecretKey {
-    #[cfg(test)]
+    #[cfg(feature = "hazmat")]
     pub fn to_bytes(&self) -> [u8; 32] {
         let mut ret = [0; 32];
         ret.copy_from_slice(&self.0.to_bytes()[..32]);
         ret
+    }
+
+    #[cfg(feature = "hazmat")]
+    pub fn to_bytes_extended(&self) -> [u8; 64] {
+        self.0.to_bytes()
     }
 
     pub fn sign(&self, m: &[u8]) -> Signature {
@@ -305,6 +312,7 @@ impl SecretKey {
 
         let bob_pk_montgomery = curve25519_dalek::edwards::CompressedEdwardsY(bob_pk)
             .decompress()
+            // SAFETY: This conversion will always succeed
             .unwrap()
             .to_montgomery();
 

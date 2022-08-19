@@ -145,6 +145,7 @@ impl RecvChain {
             .position(|mk| mk.counter == mesg.counter)
         {
             Some(i) => {
+                // SAFETY: As `.position()` was called beforehand, we have a guarantee that this index exists
                 let mk = self.message_keys.remove(i).unwrap();
                 if env.verify(&mk.mac_key) {
                     Ok(mk.decrypt(&mesg.cipher_text))

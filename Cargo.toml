@@ -8,6 +8,10 @@ repository   = "git@github.com:wireapp/proteus.git"
 license      = "GPL-3.0"
 edition      = "2021"
 
+[features]
+default = []
+hazmat = []
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
@@ -36,7 +40,8 @@ minicbor-ser = "0.1"
 [dev-dependencies]
 criterion = "0.3"
 pretty_assertions = "1.2"
-proteus-legacy = { git = "https://github.com/wireapp/proteus", branch = "otak/sodiumoxide-0.2.7", package = "proteus" }
+proteus-legacy = { git = "https://github.com/wireapp/proteus", branch = "otak/sodiumoxide-0.2.7", package = "proteus", features = ["hazmat"] }
+proteus = { path = ".", features = ["hazmat"] }
 wasm-bindgen-test = "0.3"
 
 [[bench]]
