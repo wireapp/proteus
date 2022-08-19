@@ -8,6 +8,10 @@ homepage     = "https://github.com/wireapp/proteus"
 repository   = "git@github.com:wireapp/proteus.git"
 license      = "GPL-3.0"
 
+[features]
+default = []
+hazmat = []
+
 [dependencies]
 cbor-codec    = "=0.7.1"
 hkdf          = { git = "https://github.com/wireapp/hkdf", tag = "v0.3.2"}

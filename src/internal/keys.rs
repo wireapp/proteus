@@ -92,7 +92,7 @@ impl IdentityKeyPair {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "hazmat")]
     pub fn from_raw_secret_key(sk_raw: [u8; 32]) -> IdentityKeyPair {
         let secret_key = SecretKey::from_raw(sk_raw);
         let public_key = secret_key.sec_edward.public_key();
@@ -452,7 +452,7 @@ pub struct SecretKey {
 }
 
 impl SecretKey {
-    #[cfg(test)]
+    #[cfg(feature = "hazmat")]
     pub fn from_raw(raw: [u8; 32]) -> Self {
         let sec_edward = sign::SecretKey::from_slice(&raw).unwrap();
         let es = from_ed25519_sk(&sec_edward).expect("invalid ed25519 secret key");
