@@ -17,7 +17,6 @@
 
 use cbor::skip::Skip;
 use cbor::{Config, Decoder, Encoder};
-use internal::ffi;
 use internal::types::{DecodeError, DecodeResult, EncodeResult};
 use internal::util::{fmt_hex, opt, Bytes32, Bytes64};
 use sodiumoxide::crypto::scalarmult as ecdh;
@@ -95,14 +94,20 @@ impl IdentityKeyPair {
     #[cfg(feature = "hazmat")]
     pub fn from_raw_secret_key(sk_raw: [u8; 64]) -> IdentityKeyPair {
         let secret_key = SecretKey::from_raw(sk_raw);
-        let public_key = secret_key.sec_edward.public_key();
+        let pub_edward = secret_key.sec_edward.public_key();
+        let pub_curve = sign::to_curve25519_pk(&pub_edward)
+            .map(|curve| ecdh::GroupElement(curve.0))
+            .expect("invalid ed25519 public key");
+
+        let public_key = PublicKey {
+            pub_edward,
+            pub_curve,
+        };
 
         IdentityKeyPair {
             version: 1,
             secret_key,
-            public_key: IdentityKey {
-                public_key: public_key.into(),
-            },
+            public_key: IdentityKey { public_key },
         }
     }
 
@@ -397,19 +402,23 @@ impl Default for KeyPair {
 
 impl KeyPair {
     pub fn new() -> KeyPair {
-        let (p, s) = sign::gen_keypair();
+        let (pub_edward, sec_edward) = sign::gen_keypair();
 
-        let es = from_ed25519_sk(&s).expect("invalid ed25519 secret key");
-        let ep = from_ed25519_pk(&p).expect("invalid ed25519 public key");
+        let sec_curve = sign::to_curve25519_sk(&sec_edward)
+            .map(|curve| ecdh::Scalar(curve.0))
+            .expect("invalid ed25519 secret key");
+        let pub_curve = sign::to_curve25519_pk(&pub_edward)
+            .map(|curve| ecdh::GroupElement(curve.0))
+            .expect("invalid ed25519 public key");
 
         KeyPair {
             secret_key: SecretKey {
-                sec_edward: s,
-                sec_curve: ecdh::Scalar(es),
+                sec_edward,
+                sec_curve,
             },
             public_key: PublicKey {
-                pub_edward: p,
-                pub_curve: ecdh::GroupElement(ep),
+                pub_edward,
+                pub_curve,
             },
         }
     }
@@ -455,11 +464,19 @@ impl SecretKey {
     #[cfg(feature = "hazmat")]
     pub fn from_raw(raw: [u8; 64]) -> Self {
         let sec_edward = sign::SecretKey::from_slice(&raw).unwrap();
-        let es = from_ed25519_sk(&sec_edward).expect("invalid ed25519 secret key");
+        let sec_curve = sign::to_curve25519_sk(&sec_edward)
+            .map(|curve| ecdh::Scalar(curve.0))
+            .expect("invalid ed25519 secret key");
+
         Self {
             sec_edward,
-            sec_curve: ecdh::Scalar(es),
+            sec_curve,
         }
+    }
+
+    #[cfg(feature = "hazmat")]
+    pub fn to_bytes(&self) -> [u8; 64] {
+        self.sec_edward.0
     }
 
     pub fn sign(&self, m: &[u8]) -> Signature {
@@ -494,8 +511,8 @@ impl SecretKey {
             }
         }
         let sec_edward = sec_edward.ok_or(DecodeError::MissingField("SecretKey::sec_edward"))?;
-        let sec_curve = from_ed25519_sk(&sec_edward)
-            .map(ecdh::Scalar)
+        let sec_curve = sign::to_curve25519_sk(&sec_edward)
+            .map(|curve| ecdh::Scalar(curve.0))
             .map_err(|()| DecodeError::InvalidField("SecretKey::sec_edward"))?;
         Ok(SecretKey {
             sec_edward,
@@ -523,16 +540,6 @@ impl Eq for PublicKey {}
 impl Debug for PublicKey {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         write!(f, "{:?}", &self.pub_edward.0)
-    }
-}
-
-impl From<sign::PublicKey> for PublicKey {
-    fn from(pk: sign::PublicKey) -> Self {
-        let ep = from_ed25519_pk(&pk).expect("invalid ed25519 public key");
-        Self {
-            pub_edward: pk,
-            pub_curve: ecdh::GroupElement(ep),
-        }
     }
 }
 
@@ -565,8 +572,8 @@ impl PublicKey {
             }
         }
         let pub_edward = pub_edward.ok_or(DecodeError::MissingField("PublicKey::pub_edward"))?;
-        let pub_curve = from_ed25519_pk(&pub_edward)
-            .map(ecdh::GroupElement)
+        let pub_curve = sign::to_curve25519_pk(&pub_edward)
+            .map(|curve| ecdh::GroupElement(curve.0))
             .map_err(|()| DecodeError::InvalidField("PublicKey::pub_edward"))?;
         Ok(PublicKey {
             pub_edward,
@@ -611,32 +618,6 @@ impl Signature {
         Ok(Signature {
             sig: to_field!(sig, "Signature::sig"),
         })
-    }
-}
-
-// Internal /////////////////////////////////////////////////////////////////
-
-#[allow(clippy::result_unit_err)]
-pub fn from_ed25519_pk(k: &sign::PublicKey) -> Result<[u8; ecdh::GROUPELEMENTBYTES], ()> {
-    let mut ep = [0u8; ecdh::GROUPELEMENTBYTES];
-    unsafe {
-        if ffi::crypto_sign_ed25519_pk_to_curve25519(ep.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
-            Ok(ep)
-        } else {
-            Err(())
-        }
-    }
-}
-
-#[allow(clippy::result_unit_err)]
-pub fn from_ed25519_sk(k: &sign::SecretKey) -> Result<[u8; ecdh::SCALARBYTES], ()> {
-    let mut es = [0u8; ecdh::SCALARBYTES];
-    unsafe {
-        if ffi::crypto_sign_ed25519_sk_to_curve25519(es.as_mut_ptr(), (&k.0).as_ptr()) == 0 {
-            Ok(es)
-        } else {
-            Err(())
-        }
     }
 }
 
