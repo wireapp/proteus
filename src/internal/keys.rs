@@ -25,8 +25,9 @@ use super::util::{cbor_deserialize, cbor_serialize};
 
 // Identity Key /////////////////////////////////////////////////////////////
 
-#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, minicbor::Encode, minicbor::Decode)]
 pub struct IdentityKey {
+    #[n(0)]
     pub public_key: PublicKey,
 }
 
@@ -42,10 +43,13 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, minicbor::Encode, minicbor::Decode)]
 pub struct IdentityKeyPair {
+    #[n(0)]
     pub version: u8,
+    #[n(1)]
     pub secret_key: SecretKey,
+    #[n(2)]
     pub public_key: IdentityKey,
 }
 
@@ -79,17 +83,25 @@ impl IdentityKeyPair {
     }
 
     #[cfg(feature = "hazmat")]
-    pub fn from_raw_secret_key(raw: [u8; 32]) -> Self {
+    pub fn from_raw_secret_key(raw: [u8; 64]) -> Self {
         Self::from_keypair(KeyPair::from_secret_key_raw(raw))
+    }
+
+    #[cfg(feature = "hazmat")]
+    pub fn from_raw_secret_key_std(raw: [u8; 32]) -> Self {
+        Self::from_keypair(KeyPair::from_secret_key_raw_std(raw))
     }
 }
 
 // Prekey ///////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
 pub struct PreKey {
+    #[n(0)]
     pub version: u8,
+    #[n(1)]
     pub key_id: PreKeyId,
+    #[n(2)]
     pub key_pair: KeyPair,
 }
 
@@ -125,19 +137,28 @@ pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
 
 // Prekey bundle ////////////////////////////////////////////////////////////
 
-#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, minicbor::Encode, minicbor::Decode)]
+#[cbor(index_only)]
 pub enum PreKeyAuth {
+    #[n(0)]
     Invalid,
+    #[n(1)]
     Valid,
+    #[n(2)]
     Unknown,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, minicbor::Encode, minicbor::Decode)]
 pub struct PreKeyBundle {
+    #[n(0)]
     pub version: u8,
+    #[n(1)]
     pub prekey_id: PreKeyId,
+    #[n(2)]
     pub public_key: PublicKey,
+    #[n(3)]
     pub identity_key: IdentityKey,
+    #[n(4)]
     pub signature: Option<Signature>,
 }
 
@@ -192,8 +213,9 @@ impl PreKeyBundle {
 
 // Prekey ID ////////////////////////////////////////////////////////////////
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
-pub struct PreKeyId(u16);
+#[derive(Copy, Clone, PartialEq, Eq, Debug, minicbor::Encode, minicbor::Decode)]
+#[cbor(transparent)]
+pub struct PreKeyId(#[n(0)] u16);
 
 pub const MAX_PREKEY_ID: PreKeyId = PreKeyId(u16::MAX);
 
@@ -215,9 +237,11 @@ impl fmt::Display for PreKeyId {
 
 // Keypair //////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
 pub struct KeyPair {
+    #[n(0)]
     pub secret_key: SecretKey,
+    #[n(1)]
     pub public_key: PublicKey,
 }
 
@@ -246,7 +270,7 @@ impl KeyPair {
     }
 
     #[cfg(feature = "hazmat")]
-    pub fn from_secret_key_raw(sk_raw: [u8; 32]) -> Self {
+    pub fn from_secret_key_raw_std(sk_raw: [u8; 32]) -> Self {
         let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
         let pk = ed25519_dalek::PublicKey::from(&sk_weird);
@@ -258,7 +282,7 @@ impl KeyPair {
     }
 
     #[cfg(feature = "hazmat")]
-    pub fn from_secret_key_raw_extended(sk_raw: [u8; 64]) -> Self {
+    pub fn from_secret_key_raw(sk_raw: [u8; 64]) -> Self {
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from_bytes(&sk_raw).unwrap();
         let pk = ed25519_dalek::PublicKey::from(&sk_weird);
 
@@ -274,8 +298,8 @@ impl KeyPair {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero {}
 
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct SecretKey(ed25519_dalek::ExpandedSecretKey);
+#[derive(minicbor::Encode, minicbor::Decode)]
+pub struct SecretKey(#[n(0)] ed25519_dalek::ExpandedSecretKey);
 
 impl std::fmt::Debug for SecretKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -339,8 +363,8 @@ impl SecretKey {
 
 // PublicKey ////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct PublicKey(ed25519_dalek::PublicKey);
+#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
+pub struct PublicKey(#[n(0)] ed25519_dalek::PublicKey);
 
 impl PartialEq for PublicKey {
     fn eq(&self, other: &Self) -> bool {
@@ -389,8 +413,9 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 
 // Signature ////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, minicbor::Encode, minicbor::Decode)]
 pub struct Signature {
+    #[n(0)]
     sig: ed25519_dalek::Signature,
 }
 

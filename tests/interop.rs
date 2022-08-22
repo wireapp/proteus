@@ -17,7 +17,7 @@ impl<T> Default for TestStore<T> {
 }
 
 macro_rules! impl_harness_for_crate {
-    ($store:ident, $client:ident, $target:ident, $key_len: expr) => {
+    ($store:ident, $client:ident, $target:ident) => {
         impl $target::session::PreKeyStore for $store<$target::keys::PreKey> {
             type Error = ();
 
@@ -55,7 +55,7 @@ macro_rules! impl_harness_for_crate {
                 client
             }
 
-            pub fn from_raw_sk(sk: [u8; $key_len]) -> Self {
+            pub fn from_raw_sk(sk: [u8; 64]) -> Self {
                 let client = Self {
                     identity: $target::keys::IdentityKeyPair::from_raw_secret_key(sk),
                     store: TestStore::default(),
@@ -97,8 +97,38 @@ macro_rules! impl_harness_for_crate {
     };
 }
 
-impl_harness_for_crate!(TestStore, Client, proteus, 32);
-impl_harness_for_crate!(TestStore, LegacyClient, proteus_legacy, 64);
+impl_harness_for_crate!(TestStore, Client, proteus);
+impl_harness_for_crate!(TestStore, LegacyClient, proteus_legacy);
+
+#[test]
+#[wasm_bindgen_test]
+fn serialize_interop() {
+    assert!(proteus::init());
+    assert!(proteus_legacy::init());
+    let alice_legacy = LegacyClient::new();
+    let mut alice = Client::from_raw_sk(alice_legacy.identity.secret_key.to_bytes());
+
+    let alice_legacy_prekeys = alice_legacy
+        .store
+        .prekeys
+        .iter()
+        .map(|pk| pk.serialise().unwrap());
+
+    for pk in alice_legacy_prekeys {
+        alice
+            .store
+            .prekeys
+            .push(proteus::keys::PreKey::deserialise(&pk).unwrap());
+    }
+
+    let alice_bundle = alice.get_prekey_bundle(1).unwrap();
+    let alice_legacy_bundle = alice_legacy.get_prekey_bundle(1).unwrap();
+
+    assert_eq!(
+        alice_bundle.serialise().unwrap(),
+        alice_legacy_bundle.serialise().unwrap()
+    );
+}
 
 const MSG: &[u8] = b"Hello world!";
 

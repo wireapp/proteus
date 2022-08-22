@@ -32,8 +32,9 @@ use super::util::{cbor_deserialize, cbor_serialize};
 
 // Root key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
 pub struct RootKey {
+    #[n(0)]
     key: CipherKey,
 }
 
@@ -58,9 +59,11 @@ impl RootKey {
 
 // Chain key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
 pub struct ChainKey {
+    #[n(0)]
     key: MacKey,
+    #[n(1)]
     idx: Counter,
 }
 
@@ -89,9 +92,11 @@ impl ChainKey {
 
 // Send Chain ///////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, minicbor::Encode, minicbor::Decode)]
 pub struct SendChain {
+    #[n(0)]
     chain_key: ChainKey,
+    #[n(1)]
     ratchet_key: KeyPair,
 }
 
@@ -108,10 +113,13 @@ impl SendChain {
 
 const MAX_COUNTER_GAP: usize = 1000;
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, minicbor::Encode, minicbor::Decode)]
 pub struct RecvChain {
+    #[n(0)]
     chain_key: ChainKey,
+    #[n(1)]
     ratchet_key: PublicKey,
+    #[n(2)]
     message_keys: VecDeque<MessageKeys>,
 }
 
@@ -198,10 +206,13 @@ impl RecvChain {
 }
 
 // Message Keys /////////////////////////////////////////////////////////////
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[derive(minicbor::Encode, minicbor::Decode, Clone, Debug)]
 pub struct MessageKeys {
+    #[n(0)]
     cipher_key: CipherKey,
+    #[n(1)]
     mac_key: MacKey,
+    #[n(2)]
     counter: Counter,
 }
 
@@ -234,7 +245,7 @@ pub trait PreKeyStore {
 const MAX_RECV_CHAINS: usize = 5;
 const MAX_SESSION_STATES: usize = 100;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug)]
 
 pub struct Indexed<A> {
     pub idx: usize,
@@ -247,6 +258,23 @@ impl<A> Indexed<A> {
     }
 }
 
+#[derive(Debug, minicbor::Encode, minicbor::Decode)]
+
+struct SerializedSession {
+    #[n(0)]
+    version: u8,
+    #[n(1)]
+    session_tag: SessionTag,
+    #[n(2)]
+    local_identity: IdentityKeyPair,
+    #[n(3)]
+    remote_identity: IdentityKey,
+    #[n(4)]
+    pending_prekey: Option<(PreKeyId, PublicKey)>,
+    #[n(5)]
+    session_states: BTreeMap<SessionTag, SessionState>,
+}
+
 // Note [session_tag]
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // The session tag denotes the session state which is used to encrypt
@@ -257,7 +285,7 @@ impl<A> Indexed<A> {
 // `Session::encrypt` can not succeed. The only places where we change
 // it after initialisation is in `Session::insert_session_state` which
 // sets it to the value of the state which is inserted.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug)]
 
 pub struct Session {
     version: u8,
@@ -266,7 +294,7 @@ pub struct Session {
     local_identity: IdentityKeyPair,
     remote_identity: IdentityKey,
     pending_prekey: Option<(PreKeyId, PublicKey)>,
-    session_states: BTreeMap<SessionTag, Indexed<SessionState>>,
+    session_states: BTreeMap<SessionTag, SessionState>,
 }
 
 struct AliceParams<'r> {
@@ -350,7 +378,7 @@ impl Session {
             .session_states
             .get_mut(&self.session_tag)
             .ok_or(InternalError::NoSessionForTag)?; // See note [session_tag]
-        state.val.encrypt(
+        state.encrypt(
             &self.local_identity.borrow().public_key,
             &self.pending_prekey,
             self.session_tag,
@@ -396,7 +424,7 @@ impl Session {
         m: &CipherMessage,
     ) -> Result<Vec<u8>, Error<E>> {
         let mut s = match self.session_states.get_mut(&m.session_tag) {
-            Some(s) => s.val.clone(),
+            Some(s) => s.clone(),
             None => return Err(Error::InvalidMessage),
         };
         let plain = s.decrypt(env, m)?;
@@ -446,7 +474,7 @@ impl Session {
     fn insert_session_state(&mut self, t: SessionTag, s: SessionState) {
         if self.session_states.contains_key(&t) {
             if let Some(x) = self.session_states.get_mut(&t) {
-                x.val = s;
+                *x = s;
             }
         } else {
             if self.counter == usize::MAX {
@@ -454,7 +482,7 @@ impl Session {
                 self.session_states.clear();
                 self.counter = 0;
             }
-            self.session_states.insert(t, Indexed::new(self.counter, s));
+            self.session_states.insert(t, s);
             self.counter += 1;
         }
 
@@ -467,9 +495,10 @@ impl Session {
         if self.session_states.len() >= MAX_SESSION_STATES {
             self.session_states
                 .iter()
-                .filter(|s| s.0 != &self.session_tag)
-                .min_by_key(|s| s.1.idx)
-                .map(|s| *s.0)
+                .enumerate()
+                .filter(|(_, s)| s.0 != &self.session_tag)
+                .min_by_key(|(i, s)| i)
+                .map(|(_, s)| *s.0)
                 .map(|k| self.session_states.remove(&k));
         }
     }
@@ -483,21 +512,43 @@ impl Session {
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {
-        cbor_serialize(self)
+        let ser = SerializedSession {
+            version: self.version,
+            session_tag: self.session_tag,
+            local_identity: self.local_identity,
+            remote_identity: self.remote_identity,
+            pending_prekey: self.pending_prekey,
+            session_states: self.session_states,
+        };
+        cbor_serialize(ser)
     }
 
     pub fn deserialise(b: &[u8]) -> DecodeResult<Self> {
-        cbor_deserialize(b)
+        let ser: SerializedSession = cbor_deserialize(b)?;
+
+        Ok(Self {
+            version: ser.version,
+            session_tag: ser.session_tag,
+            counter: ser.session_states.len(),
+            local_identity: ser.local_identity,
+            remote_identity: ser.remote_identity,
+            pending_prekey: ser.pending_prekey,
+            session_states: ser.session_states,
+        })
     }
 }
 
 // Session State ////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, minicbor::Encode, minicbor::Decode)]
 pub struct SessionState {
+    #[n(0)]
     recv_chains: VecDeque<RecvChain>,
+    #[n(1)]
     send_chain: SendChain,
+    #[n(2)]
     root_key: RootKey,
+    #[n(3)]
     prev_counter: Counter,
 }
 

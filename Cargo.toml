@@ -13,7 +13,7 @@ default = []
 hazmat = []
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
+# serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
 
 # CSPRNG
@@ -35,7 +35,7 @@ curve25519-dalek = "3.2"
 x25519-dalek = { version = "1.1.1", package = "x25519-dalek-ng", features = ["serde"] }
 subtle = "2.4"
 # serde_cbor = "0.11"
-minicbor-ser = "0.1"
+minicbor = { version = "0.18", features = ["std", "derive"] }
 
 [dev-dependencies]
 criterion = "0.3"

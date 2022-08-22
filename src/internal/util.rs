@@ -39,22 +39,22 @@ pub fn fmt_hex(xs: &[u8]) -> String {
 
 // Test support /////////////////////////////////////////////////////////////
 #[cfg(test)]
-pub fn roundtrip<T>(value: &T) -> T
+pub fn roundtrip<'a, T>(value: &T) -> T
 where
-    T: serde::Serialize + serde::de::DeserializeOwned,
+    T: minicbor::Encode<()> + minicbor::Decode<'a, ()>,
 {
     let cbor = cbor_serialize(value).unwrap();
     cbor_deserialize(&cbor).unwrap()
 }
 
-pub fn cbor_serialize<T: serde::Serialize>(
-    value: &T,
+pub fn cbor_serialize<T: minicbor::Encode<()>>(
+    value: T,
 ) -> crate::internal::types::EncodeResult<Vec<u8>> {
-    Ok(minicbor_ser::to_vec(value)?)
+    Ok(minicbor::to_vec(value).unwrap())
 }
 
-pub fn cbor_deserialize<T: serde::de::DeserializeOwned>(
+pub fn cbor_deserialize<'a, T: minicbor::Decode<'a, ()>>(
     buf: &[u8],
 ) -> crate::internal::types::DecodeResult<T> {
-    Ok(minicbor_ser::from_slice(buf)?)
+    Ok(minicbor::decode(buf)?)
 }

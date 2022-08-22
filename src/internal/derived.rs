@@ -26,7 +26,7 @@ type HmacSha256 = hmac::SimpleHmac<sha2::Sha256>;
 type HkdfSha256 = hkdf::Hkdf<sha2::Sha256>;
 
 // Derived Secrets //////////////////////////////////////////////////////////
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Clone)]
 pub struct DerivedSecrets {
     pub cipher_key: CipherKey,
     pub mac_key: MacKey,
@@ -60,8 +60,9 @@ impl DerivedSecrets {
 }
 
 // Cipher Key ///////////////////////////////////////////////////////////////
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[derive(minicbor::Encode, minicbor::Decode, Clone, Debug)]
 pub struct CipherKey {
+    #[cbor(n(0), with = "minicbor::bytes")]
     key: chacha20::Key,
 }
 
@@ -101,8 +102,9 @@ impl Deref for CipherKey {
 }
 
 // MAC Key //////////////////////////////////////////////////////////////////
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[derive(minicbor::Encode, minicbor::Decode, Clone, Debug)]
 pub struct MacKey {
+    #[cbor(n(0), with = "minicbor::bytes")]
     key: zeroize::Zeroizing<[u8; 32]>,
 }
 
@@ -137,8 +139,9 @@ impl Drop for MacKey {
 }
 
 // MAC //////////////////////////////////////////////////////////////////////
-#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, minicbor::Encode, minicbor::Decode)]
 pub struct Mac {
+    #[cbor(n(0), with = "minicbor::bytes")]
     sig_bytes: [u8; 32],
 }
 

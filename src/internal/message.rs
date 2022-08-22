@@ -27,9 +27,10 @@ use super::util::{cbor_deserialize, cbor_serialize};
 
 // Counter ////////////////////////////////////////////////////////////////////
 #[derive(
-    serde::Serialize, serde::Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug,
+    minicbor::Encode, minicbor::Decode, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug,
 )]
-pub struct Counter(u32);
+#[cbor(transparent)]
+pub struct Counter(#[cbor(n(0), with = "minicbor::bytes")] u32);
 
 impl Counter {
     pub fn zero() -> Counter {
@@ -56,9 +57,11 @@ impl Counter {
 
 // Session Tag //////////////////////////////////////////////////////////////
 #[derive(
-    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default,
+    minicbor::Encode, minicbor::Decode, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default,
 )]
+#[cbor(transparent)]
 pub struct SessionTag {
+    #[cbor(n(0), with = "minicbor::bytes")]
     tag: [u8; 16],
 }
 
@@ -79,10 +82,12 @@ impl fmt::Debug for SessionTag {
 }
 
 // Message //////////////////////////////////////////////////////////////////
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(minicbor::Encode, minicbor::Decode)]
 pub enum Message<'r> {
-    Plain(Box<CipherMessage<'r>>),
-    Keyed(Box<PreKeyMessage<'r>>),
+    #[n(0)]
+    Plain(#[n(1)] Box<CipherMessage<'r>>),
+    #[n(1)]
+    Keyed(#[n(2)] Box<PreKeyMessage<'r>>),
 }
 
 impl<'r> Message<'r> {
@@ -95,11 +100,15 @@ impl<'r> Message<'r> {
 }
 
 // Prekey Message ///////////////////////////////////////////////////////////
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(minicbor::Encode, minicbor::Decode)]
 pub struct PreKeyMessage<'r> {
+    #[n(0)]
     pub prekey_id: PreKeyId,
+    #[b(1)]
     pub base_key: Cow<'r, PublicKey>,
+    #[b(2)]
     pub identity_key: Cow<'r, IdentityKey>,
+    #[b(3)]
     pub message: CipherMessage<'r>,
 }
 
@@ -116,12 +125,17 @@ impl<'r> PreKeyMessage<'r> {
 
 // CipherMessage ////////////////////////////////////////////////////////////
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(minicbor::Encode, minicbor::Decode)]
 pub struct CipherMessage<'r> {
+    #[n(0)]
     pub session_tag: SessionTag,
+    #[n(1)]
     pub counter: Counter,
+    #[n(2)]
     pub prev_counter: Counter,
+    #[b(3)]
     pub ratchet_key: Cow<'r, PublicKey>,
+    #[cbor(b(4), with = "minicbor::bytes")]
     pub cipher_text: Vec<u8>,
 }
 
@@ -139,12 +153,14 @@ impl<'r> CipherMessage<'r> {
 
 // Message Envelope /////////////////////////////////////////////////////////
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(minicbor::Encode, minicbor::Decode)]
 pub struct Envelope<'r> {
+    #[n(0)]
     version: u8,
+    #[n(1)]
     mac: Mac,
+    #[n(2)]
     message: Message<'r>,
-    message_enc: Vec<u8>,
 }
 
 impl<'r> Envelope<'r> {
@@ -155,7 +171,6 @@ impl<'r> Envelope<'r> {
             version: 1,
             mac: k.sign(&c),
             message: m,
-            message_enc: c,
         })
     }
 
@@ -164,12 +179,14 @@ impl<'r> Envelope<'r> {
             version: self.version,
             mac: self.mac,
             message: self.message.into_owned(),
-            message_enc: self.message_enc,
         }
     }
 
     pub fn verify(&self, k: &MacKey) -> bool {
-        k.verify(&self.mac, &self.message_enc)
+        match cbor_serialize(&self.message) {
+            Ok(message_enc) => k.verify(&self.mac, &message_enc),
+            Err(_) => false,
+        }
     }
 
     pub fn version(&self) -> u16 {
