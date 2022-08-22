@@ -62,7 +62,7 @@ impl DerivedSecrets {
 // Cipher Key ///////////////////////////////////////////////////////////////
 #[derive(minicbor::Encode, minicbor::Decode, Clone, Debug)]
 pub struct CipherKey {
-    #[cbor(n(0), with = "minicbor::bytes")]
+    #[cbor(n(0), with = "generic_array")]
     key: chacha20::Key,
 }
 
@@ -93,6 +93,26 @@ impl CipherKey {
     }
 }
 
+mod generic_array {
+    pub fn encode<C, N: generic_array::ArrayLength<u8>, W: minicbor::encode::Write>(
+        v: &generic_array::GenericArray<u8, N>,
+        e: &mut minicbor::Encoder<W>,
+        ctx: &mut C,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        minicbor::bytes::encode(&v.as_slice(), e, ctx)
+    }
+
+    pub fn decode<'b, C, N: generic_array::ArrayLength<u8>>(
+        d: &mut minicbor::Decoder<'b>,
+        ctx: &mut C,
+    ) -> Result<generic_array::GenericArray<u8, N>, minicbor::decode::Error> {
+        let slice: &[u8] = minicbor::bytes::decode(d, ctx)?;
+        let ret: generic_array::GenericArray<u8, N> =
+            generic_array::GenericArray::<u8, N>::from_slice(slice).to_owned();
+        Ok(ret)
+    }
+}
+
 impl Deref for CipherKey {
     type Target = [u8];
 
@@ -102,9 +122,9 @@ impl Deref for CipherKey {
 }
 
 // MAC Key //////////////////////////////////////////////////////////////////
-#[derive(minicbor::Encode, minicbor::Decode, Clone, Debug)]
+#[derive(minicbor::Encode, minicbor::Decode, Clone, Debug, zeroize::ZeroizeOnDrop)]
 pub struct MacKey {
-    #[cbor(n(0), with = "minicbor::bytes")]
+    #[cbor(n(0), with = "as_ref")]
     key: zeroize::Zeroizing<[u8; 32]>,
 }
 
@@ -131,10 +151,23 @@ impl MacKey {
     }
 }
 
-impl Drop for MacKey {
-    fn drop(&mut self) {
-        use zeroize::Zeroize as _;
-        self.key.zeroize();
+// TODO: impl module for Zeroizing data types
+
+mod zeroizing {
+    pub fn encode<C, T: AsRef<[T; N]>, W: minicbor::encode::Write, const N: usize>(
+        v: T,
+        e: &mut minicbor::Encoder<W>,
+        ctx: &mut C,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        minicbor::bytes::encode(v.as_ref().as_slice(), e, ctx)
+    }
+
+    pub fn decode<'b, C, T: From<&'b [u8]>>(
+        d: &mut minicbor::Decoder<'b>,
+        ctx: &mut C,
+    ) -> Result<T, minicbor::decode::Error> {
+        let slice: &[u8] = minicbor::bytes::decode(d, ctx)?;
+        Ok(T::from(slice))
     }
 }
 
