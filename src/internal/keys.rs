@@ -256,6 +256,17 @@ impl KeyPair {
             public_key: PublicKey(pk),
         }
     }
+
+    #[cfg(feature = "hazmat")]
+    pub fn from_secret_key_raw_extended(sk_raw: [u8; 64]) -> Self {
+        let sk_weird = ed25519_dalek::ExpandedSecretKey::from_bytes(&sk_raw).unwrap();
+        let pk = ed25519_dalek::PublicKey::from(&sk_weird);
+
+        KeyPair {
+            secret_key: SecretKey(sk_weird),
+            public_key: PublicKey(pk),
+        }
+    }
 }
 
 // SecretKey ////////////////////////////////////////////////////////////////
