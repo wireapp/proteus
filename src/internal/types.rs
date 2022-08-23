@@ -22,6 +22,29 @@ use cbor;
 pub enum InternalError {
     #[error("No session found for session tag.")]
     NoSessionForTag,
+    #[error("Length of the KDF is invalid: invalid number of blocks, too large output")]
+    InvalidKdfLength,
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+}
+
+impl PartialEq for InternalError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (InternalError::NoSessionForTag, InternalError::NoSessionForTag) => true,
+            (InternalError::InvalidKdfLength, InternalError::InvalidKdfLength) => true,
+            (InternalError::IoError(e1), InternalError::IoError(e2)) if e1.kind() == e2.kind() => {
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl From<hkdf::InvalidLength> for InternalError {
+    fn from(_: hkdf::InvalidLength) -> Self {
+        Self::InvalidKdfLength
+    }
 }
 
 // EncodeError //////////////////////////////////////////////////////////////

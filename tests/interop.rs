@@ -1,4 +1,4 @@
-#![cfg(test)]
+#![cfg(all(test, not(target_family = "wasm")))]
 
 use pretty_assertions::assert_eq;
 use wasm_bindgen_test::*;
@@ -71,8 +71,6 @@ macro_rules! impl_harness_for_crate {
                     .first()
                     .map(|pk| pk.key_id)
                     .unwrap_or_else(|| $target::keys::PreKeyId::new(0));
-
-                dbg!(id);
 
                 let new_prekeys = $target::keys::gen_prekeys(id, count);
                 for pk in new_prekeys.into_iter() {

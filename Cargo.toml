@@ -33,13 +33,16 @@ curve25519-dalek = "3.2"
 x25519-dalek = { version = "1.1.1", package = "x25519-dalek-ng" }
 subtle = "2.4"
 cbor-codec = { path = "crates/cbor-codec" }
+eyre = "0.6.8"
 
 [dev-dependencies]
 criterion = "0.3"
 pretty_assertions = "1.2"
-proteus-legacy = { git = "https://github.com/wireapp/proteus", branch = "otak/sodiumoxide-0.2.7", package = "proteus", features = ["hazmat"] }
 proteus = { path = ".", features = ["hazmat"] }
 wasm-bindgen-test = "0.3"
+
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+proteus-legacy = { git = "https://github.com/wireapp/proteus", branch = "otak/sodiumoxide-0.2.7", package = "proteus", features = ["hazmat"] }
 
 [[bench]]
 name = "benchmarks"

@@ -15,23 +15,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std;
-use std::borrow::{Borrow, Cow};
-use std::cmp::{Ord, Ordering};
-use std::collections::{BTreeMap, VecDeque};
-use std::fmt;
-use std::io::{Cursor, Read, Write};
-use std::usize;
-
-use crate::internal::derived::{CipherKey, DerivedSecrets, MacKey};
-use crate::internal::keys::{self, KeyPair, PublicKey};
-use crate::internal::keys::{IdentityKey, IdentityKeyPair, PreKey, PreKeyBundle, PreKeyId};
-use crate::internal::message::{
-    CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag,
+use std::{
+    borrow::{Borrow, Cow},
+    cmp::{Ord, Ordering},
+    collections::{BTreeMap, VecDeque},
+    io::{Cursor, Read, Write},
 };
-use crate::internal::types::{DecodeError, DecodeResult, EncodeResult, InternalError};
-use cbor::skip::Skip;
-use cbor::{self, Config, Decoder, Encoder};
+
+use crate::internal::{
+    derived::{CipherKey, DerivedSecrets, MacKey},
+    keys::{
+        IdentityKey, IdentityKeyPair, KeyPair, PreKey, PreKeyBundle, PreKeyId, PublicKey,
+        MAX_PREKEY_ID,
+    },
+    message::{CipherMessage, Counter, Envelope, Message, PreKeyMessage, SessionTag},
+    types::{DecodeError, DecodeResult, EncodeResult, InternalError},
+};
+
+use cbor::{self, skip::Skip, Config, Decoder, Encoder};
 
 // Root key /////////////////////////////////////////////////////////////////
 
@@ -51,7 +52,7 @@ impl RootKey {
         theirs: &PublicKey,
     ) -> Result<(RootKey, ChainKey), Error<E>> {
         let secret = ours.secret_key.shared_secret(theirs)?;
-        let dsecs = DerivedSecrets::kdf(&secret, Some(&self.key), b"dh_ratchet");
+        let dsecs = DerivedSecrets::kdf(&secret, Some(&self.key), b"dh_ratchet")?;
         Ok((
             RootKey::from_cipher_key(dsecs.cipher_key),
             ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()),
@@ -99,14 +100,14 @@ impl ChainKey {
         }
     }
 
-    pub fn message_keys(&self) -> MessageKeys {
+    pub fn message_keys(&self) -> Result<MessageKeys, InternalError> {
         let base = self.key.sign(b"0");
-        let dsecs = DerivedSecrets::kdf_without_salt(&base, b"hash_ratchet");
-        MessageKeys {
+        let dsecs = DerivedSecrets::kdf_without_salt(&base, b"hash_ratchet")?;
+        Ok(MessageKeys {
             cipher_key: dsecs.cipher_key,
             mac_key: dsecs.mac_key,
             counter: self.idx,
-        }
+        })
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -243,11 +244,11 @@ impl RecvChain {
         let mut chk = self.chain_key.clone();
 
         for _ in 0..num {
-            buf.push_back(chk.message_keys());
+            buf.push_back(chk.message_keys()?);
             chk = chk.next()
         }
 
-        let mk = chk.message_keys();
+        let mk = chk.message_keys()?;
         Ok((chk, mk, buf))
     }
 
@@ -477,7 +478,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             Some(mut s) => {
                 let plain = s.decrypt(env, &pkmsg.message)?;
                 session.insert_session_state(pkmsg.message.session_tag, s);
-                if pkmsg.prekey_id != keys::MAX_PREKEY_ID {
+                if pkmsg.prekey_id != MAX_PREKEY_ID {
                     store
                         .remove(pkmsg.prekey_id)
                         .map_err(Error::PreKeyStoreError)?
@@ -517,7 +518,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                         match self.new_state(store, m)? {
                             Some(mut s) => {
                                 let plain = s.decrypt(env, &m.message)?;
-                                if m.prekey_id != keys::MAX_PREKEY_ID {
+                                if m.prekey_id != MAX_PREKEY_ID {
                                     store.remove(m.prekey_id).map_err(Error::PreKeyStoreError)?
                                 }
                                 self.insert_session_state(m.message.session_tag, s);
@@ -763,7 +764,7 @@ impl SessionState {
             buf
         };
 
-        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake");
+        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake")?;
 
         // receiving chain
         let rootkey = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -798,7 +799,7 @@ impl SessionState {
             buf
         };
 
-        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake");
+        let dsecs = DerivedSecrets::kdf_without_salt(&master_key, b"handshake")?;
 
         // sending chain
         let rootkey = RootKey::from_cipher_key(dsecs.cipher_key);
@@ -845,7 +846,7 @@ impl SessionState {
         tag: SessionTag,
         plain: &[u8],
     ) -> EncodeResult<Envelope> {
-        let msgkeys = self.send_chain.chain_key.message_keys();
+        let msgkeys = self.send_chain.chain_key.message_keys()?;
 
         let cmessage = CipherMessage {
             session_tag: tag,
@@ -878,7 +879,7 @@ impl SessionState {
         {
             Some(chain) => chain,
             None => {
-                self.ratchet((*m.ratchet_key).clone())?;
+                self.ratchet::<E>((*m.ratchet_key).clone())?;
                 &mut self.recv_chains[0]
             }
         };
@@ -886,7 +887,7 @@ impl SessionState {
         match m.counter.cmp(&rchain.chain_key.idx) {
             Ordering::Less => rchain.try_message_keys(env, m),
             Ordering::Greater => {
-                let (chk, mk, mks) = rchain.stage_message_keys(m)?;
+                let (chk, mk, mks) = rchain.stage_message_keys::<E>(m)?;
                 let plain = mk.decrypt(&m.cipher_text);
                 if !env.verify(&mk.mac_key) {
                     return Err(Error::InvalidSignature);
@@ -896,7 +897,7 @@ impl SessionState {
                 Ok(plain)
             }
             Ordering::Equal => {
-                let mks = rchain.chain_key.message_keys();
+                let mks = rchain.chain_key.message_keys()?;
                 let plain = mks.decrypt(&m.cipher_text);
                 if !env.verify(&mks.mac_key) {
                     return Err(Error::InvalidSignature);
@@ -962,71 +963,32 @@ impl SessionState {
 }
 
 // Decrypt Error ////////////////////////////////////////////////////////////
-
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error<E> {
+    #[error("RemoteIdentityChanged")]
     RemoteIdentityChanged,
+    #[error("InvalidSignature")]
     InvalidSignature,
+    #[error("InvalidMessage")]
     InvalidMessage,
+    #[error("DuplicateMessage")]
     DuplicateMessage,
+    #[error("TooDistantFuture")]
     TooDistantFuture,
+    #[error("OutdatedMessage")]
     OutdatedMessage,
+    #[error("PreKeyStoreNotFound: {0}")]
     PreKeyNotFound(PreKeyId),
+    #[error("PreKeyStoreError: {0}")]
     PreKeyStoreError(E),
+    #[error("DegeneratedKey")]
     DegeneratedKey,
+    #[error(transparent)]
+    InternalError(#[from] InternalError),
 }
 
-impl<E> Error<E> {
-    fn as_str(&self) -> &str {
-        match *self {
-            Error::RemoteIdentityChanged => "RemoteIdentityChanged",
-            Error::InvalidSignature => "InvalidSignature",
-            Error::InvalidMessage => "InvalidMessage",
-            Error::DuplicateMessage => "DuplicateMessage",
-            Error::TooDistantFuture => "TooDistantFuture",
-            Error::OutdatedMessage => "OutdatedMessage",
-            Error::PreKeyNotFound(_) => "PreKeyNotFound",
-            Error::PreKeyStoreError(_) => "PreKeyStoreError",
-            Error::DegeneratedKey => "DegeneratedKey",
-        }
-    }
-}
-
-impl<E: fmt::Debug> fmt::Debug for Error<E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            Error::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {:?}", e),
-            Error::PreKeyNotFound(i) => write!(f, "PreKeyNotFound: {:?}", i),
-            _ => f.write_str(self.as_str()),
-        }
-    }
-}
-
-impl<E: fmt::Display> fmt::Display for Error<E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            Error::PreKeyStoreError(ref e) => write!(f, "PreKeyStoreError: {}", e),
-            Error::PreKeyNotFound(i) => write!(f, "PreKeyNotFound: {}", i),
-            _ => f.write_str(self.as_str()),
-        }
-    }
-}
-
-impl<E: std::error::Error> std::error::Error for Error<E> {
-    fn description(&self) -> &str {
-        self.as_str()
-    }
-
-    fn cause(&self) -> Option<&dyn std::error::Error> {
-        match *self {
-            Error::PreKeyStoreError(ref e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl<E> From<keys::Zero> for Error<E> {
-    fn from(_: keys::Zero) -> Error<E> {
+impl<E> From<crate::internal::keys::Zero> for Error<E> {
+    fn from(_: crate::internal::keys::Zero) -> Error<E> {
         Error::DegeneratedKey
     }
 }
@@ -1044,6 +1006,7 @@ mod tests {
     use std::fmt;
     use std::usize;
     use std::vec::Vec;
+    use wasm_bindgen_test::*;
 
     #[derive(Debug)]
     struct TestStore {
@@ -1083,6 +1046,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn pathological_case() {
         let total_size = 32;
 
@@ -1127,6 +1091,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn encrypt_decrypt() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1272,6 +1237,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn can_decrypt_in_wrong_order_but_can_not_decrypt_twice() {
         let alice_ident = IdentityKeyPair::new();
@@ -1373,6 +1339,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn multiple_prekey_msgs() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1399,6 +1366,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn simultaneous_prekey_msgs() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1445,6 +1413,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn simultaneous_msgs_repeated() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1518,6 +1487,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_session() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1539,6 +1509,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn mass_communication() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1595,8 +1566,9 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
-    fn retry_of_init_from_message_for_the_same_message_should_return_PreKeyNotFound() {
+    fn retry_of_init_from_message_for_the_same_message_should_return_pre_key_not_found() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1622,6 +1594,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn skipped_message_keys() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1727,6 +1700,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn fail_on_unknown_and_invalid_prekeys_and_verify_valid_prekeys() {
         let bob_ident = IdentityKeyPair::new();
@@ -1759,6 +1733,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn session_states_limit() {
         let alice = IdentityKeyPair::new();
         let bob = IdentityKeyPair::new();
@@ -1813,6 +1788,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn fail_on_decryption_of_a_too_old_message() {
         let alice = IdentityKeyPair::new();
@@ -1887,6 +1863,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn replaced_prekeys() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
@@ -1918,6 +1895,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn max_counter_gap() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();

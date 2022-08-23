@@ -371,13 +371,17 @@ impl<'r> Envelope<'r> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::internal::derived::MacKey;
-    use crate::internal::keys::{IdentityKey, KeyPair, PreKeyId};
+    use crate::internal::{
+        derived::MacKey,
+        keys::{IdentityKey, KeyPair, PreKeyId},
+    };
     use std::borrow::Cow;
+    use wasm_bindgen_test::*;
 
     #[test]
+    #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
-    fn envelope_created_with_MacKey_should_be_verified_with_that_key_after_serialization_deserialization(
+    fn envelope_created_with_mac_key_should_be_verified_with_that_key_after_serialization_deserialization(
     ) {
         let mk = MacKey::new([1; 32]);
         let bk = KeyPair::new().public_key;
