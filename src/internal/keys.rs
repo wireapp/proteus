@@ -22,7 +22,7 @@ use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
 use crate::internal::util::{fmt_hex, opt, Bytes32, Bytes64};
 // use sodiumoxide::crypto::scalarmult as ecdh;
 // use sodiumoxide::crypto::sign;
-use std::fmt::{self, Debug, Error, Formatter};
+use std::fmt::{self, Debug, Formatter};
 use std::io::{Cursor, Read, Write};
 use std::u16;
 use std::vec::Vec;
@@ -81,7 +81,10 @@ impl Default for IdentityKeyPair {
 
 impl IdentityKeyPair {
     pub fn new() -> IdentityKeyPair {
-        let k = KeyPair::new();
+        Self::from_keypair(KeyPair::new())
+    }
+
+    fn from_keypair(k: KeyPair) -> Self {
         IdentityKeyPair {
             version: 1,
             secret_key: k.secret_key,
@@ -638,8 +641,10 @@ impl Signature {
 mod tests {
     use super::*;
     use crate::internal::util::roundtrip;
+    use wasm_bindgen_test::*;
 
     #[test]
+    #[wasm_bindgen_test]
     fn prekey_generation() {
         let k = gen_prekeys(PreKeyId::new(0xFFFC), 5)
             .iter()
@@ -649,6 +654,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn dh_agreement() {
         let a = KeyPair::new();
         let b = KeyPair::new();
@@ -658,6 +664,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn sign_and_verify() {
         let a = KeyPair::new();
         let s = a.secret_key.sign(b"foobarbaz");
@@ -666,6 +673,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_pubkey() {
         let k = KeyPair::new();
         let r = roundtrip(
@@ -676,6 +684,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_seckey() {
         let k = KeyPair::new();
         let r = roundtrip(
@@ -686,6 +695,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_prekey_bundle() {
         let i = IdentityKeyPair::new();
         let k = PreKey::new(PreKeyId::new(1));
@@ -699,6 +709,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn enc_dec_signed_prekey_bundle() {
         let i = IdentityKeyPair::new();
         let k = PreKey::new(PreKeyId::new(1));
@@ -713,6 +724,7 @@ mod tests {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn degenerated_key() {
         let k = KeyPair::new();
         let bytes: Vec<u8> = k.public_key.0.to_bytes().into_iter().map(|_| 0).collect();

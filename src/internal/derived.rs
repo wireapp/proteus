@@ -15,14 +15,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
-use crate::internal::util::Bytes32;
-use cbor::skip::Skip;
-use cbor::{Decoder, Encoder};
+use crate::internal::{
+    types::{DecodeError, DecodeResult, EncodeResult, InternalError},
+    util::Bytes32,
+};
+use cbor::{skip::Skip, Decoder, Encoder};
 use hmac::Mac as _;
-use std::io::{Read, Write};
-use std::ops::Deref;
-use std::vec::Vec;
+use std::{
+    io::{Read, Write},
+    ops::Deref,
+    vec::Vec,
+};
 
 type HmacSha256 = hmac::SimpleHmac<sha2::Sha256>;
 type HkdfSha256 = hkdf::Hkdf<sha2::Sha256>;
@@ -36,25 +39,28 @@ pub struct DerivedSecrets {
 }
 
 impl DerivedSecrets {
-    pub fn kdf(input: &[u8], salt: Option<&[u8]>, info: &[u8]) -> DerivedSecrets {
+    pub fn kdf(
+        input: &[u8],
+        salt: Option<&[u8]>,
+        info: &[u8],
+    ) -> Result<DerivedSecrets, InternalError> {
         let mut ck = [0u8; 32];
         let mut mk = [0u8; 32];
 
         let hkdf = HkdfSha256::new(salt, input);
         let mut okm = zeroize::Zeroizing::new([0u8; 64]);
-        // FIXME: Expand phase is faillible, we should break API and return a Result
-        hkdf.expand(info, okm.as_mut()).unwrap();
+        hkdf.expand(info, okm.as_mut())?;
 
-        ck.as_mut().write_all(&okm[0..32]).unwrap();
-        mk.as_mut().write_all(&okm[32..64]).unwrap();
+        ck.as_mut().write_all(&okm[0..32])?;
+        mk.as_mut().write_all(&okm[32..64])?;
 
-        DerivedSecrets {
+        Ok(DerivedSecrets {
             cipher_key: CipherKey::new(ck),
             mac_key: MacKey::new(mk),
-        }
+        })
     }
 
-    pub fn kdf_without_salt(input: &[u8], info: &[u8]) -> DerivedSecrets {
+    pub fn kdf_without_salt(input: &[u8], info: &[u8]) -> Result<DerivedSecrets, InternalError> {
         Self::kdf(input, None, info)
     }
 }
@@ -247,9 +253,10 @@ impl Deref for Mac {
 // Tests ////////////////////////////////////////////////////////////////////
 
 #[test]
+#[wasm_bindgen_test::wasm_bindgen_test]
 fn derive_secrets() {
     let nc = chacha20::LegacyNonce::from_slice(&[0; 8]);
-    let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar");
+    let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar").unwrap();
     let ct = ds.cipher_key.encrypt(b"plaintext", &nc);
     assert_eq!(ct.len(), b"plaintext".len());
     assert!(ct != b"plaintext");
