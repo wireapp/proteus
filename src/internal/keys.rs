@@ -132,6 +132,16 @@ impl IdentityKeyPair {
                 .ok_or(DecodeError::MissingField("IdentityKeyPair::public_key"))?,
         })
     }
+
+    #[cfg(feature = "hazmat")]
+    pub fn from_raw_secret_key(raw: [u8; 64]) -> Self {
+        Self::from_keypair(KeyPair::from_secret_key_raw(raw))
+    }
+
+    #[cfg(feature = "hazmat")]
+    pub fn from_raw_secret_key_std(raw: [u8; 32]) -> Self {
+        Self::from_keypair(KeyPair::from_secret_key_raw_std(raw))
+    }
 }
 
 // Prekey ///////////////////////////////////////////////////////////////////
@@ -404,6 +414,29 @@ impl KeyPair {
             public_key: public_key.ok_or(DecodeError::MissingField("KeyPair::public_key"))?,
         })
     }
+
+    #[cfg(feature = "hazmat")]
+    pub fn from_secret_key_raw_std(sk_raw: [u8; 32]) -> Self {
+        let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
+        let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
+        let pk = ed25519_dalek::PublicKey::from(&sk_weird);
+
+        KeyPair {
+            secret_key: SecretKey(sk_weird),
+            public_key: PublicKey(pk),
+        }
+    }
+
+    #[cfg(feature = "hazmat")]
+    pub fn from_secret_key_raw(sk_raw: [u8; 64]) -> Self {
+        let sk_weird = ed25519_dalek::ExpandedSecretKey::from_bytes(&sk_raw).unwrap();
+        let pk = ed25519_dalek::PublicKey::from(&sk_weird);
+
+        KeyPair {
+            secret_key: SecretKey(sk_weird),
+            public_key: PublicKey(pk),
+        }
+    }
 }
 
 // SecretKey ////////////////////////////////////////////////////////////////
@@ -480,6 +513,18 @@ impl SecretKey {
         let secret_key = secret_key.ok_or(DecodeError::MissingField("SecretKey::secret_key"))?;
 
         Ok(SecretKey(secret_key))
+    }
+
+    #[cfg(feature = "hazmat")]
+    pub fn to_bytes(&self) -> [u8; 32] {
+        let mut ret = [0; 32];
+        ret.copy_from_slice(&self.0.to_bytes()[..32]);
+        ret
+    }
+
+    #[cfg(feature = "hazmat")]
+    pub fn to_bytes_extended(&self) -> [u8; 64] {
+        self.0.to_bytes()
     }
 }
 

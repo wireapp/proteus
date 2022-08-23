@@ -1,3 +1,6 @@
+#![cfg(test)]
+
+use pretty_assertions::assert_eq;
 use wasm_bindgen_test::*;
 
 #[derive(Debug)]
@@ -38,7 +41,6 @@ macro_rules! impl_harness_for_crate {
         pub struct $client {
             pub identity: $target::keys::IdentityKeyPair,
             pub store: TestStore<$target::keys::PreKey>,
-            pub sessions: Vec<$target::session::Session<$target::keys::IdentityKeyPair>>,
         }
 
         impl $client {
@@ -46,10 +48,18 @@ macro_rules! impl_harness_for_crate {
                 let mut client = Self {
                     identity: $target::keys::IdentityKeyPair::new(),
                     store: TestStore::default(),
-                    sessions: vec![],
                 };
 
                 client.gen_prekeys(10);
+
+                client
+            }
+
+            pub fn from_raw_sk(sk: [u8; 64]) -> Self {
+                let client = Self {
+                    identity: $target::keys::IdentityKeyPair::from_raw_secret_key(sk),
+                    store: TestStore::default(),
+                };
 
                 client
             }
@@ -90,6 +100,36 @@ macro_rules! impl_harness_for_crate {
 impl_harness_for_crate!(TestStore, Client, proteus);
 impl_harness_for_crate!(TestStore, LegacyClient, proteus_legacy);
 
+#[test]
+#[wasm_bindgen_test]
+fn serialize_interop() {
+    assert!(proteus::init());
+    assert!(proteus_legacy::init());
+    let alice_legacy = LegacyClient::new();
+    let mut alice = Client::from_raw_sk(alice_legacy.identity.secret_key.to_bytes());
+
+    let alice_legacy_prekeys = alice_legacy
+        .store
+        .prekeys
+        .iter()
+        .map(|pk| pk.serialise().unwrap());
+
+    for pk in alice_legacy_prekeys {
+        alice
+            .store
+            .prekeys
+            .push(proteus::keys::PreKey::deserialise(&pk).unwrap());
+    }
+
+    let alice_bundle = alice.get_prekey_bundle(1).unwrap();
+    let alice_legacy_bundle = alice_legacy.get_prekey_bundle(1).unwrap();
+
+    assert_eq!(
+        alice_bundle.serialise().unwrap(),
+        alice_legacy_bundle.serialise().unwrap()
+    );
+}
+
 const MSG: &[u8] = b"Hello world!";
 
 macro_rules! impl_interop_test {
@@ -97,6 +137,8 @@ macro_rules! impl_interop_test {
         #[test]
         #[wasm_bindgen_test]
         fn $test_name() {
+            assert!(proteus::init());
+            assert!(proteus_legacy::init());
             let mut alice = $client1::new();
             let mut bob = $client2::new();
             let bob_bundle = bob.get_prekey_bundle(1).unwrap();
@@ -105,7 +147,7 @@ macro_rules! impl_interop_test {
                     .unwrap();
 
             let mut alice_bob = $client1_crate::session::Session::init_from_prekey::<()>(
-                alice.identity,
+                &alice.identity,
                 bob_bundle_for_alice,
             )
             .unwrap();
@@ -116,7 +158,7 @@ macro_rules! impl_interop_test {
             .unwrap();
 
             let (mut bob_alice, hello_bob) = $client2_crate::session::Session::init_from_message(
-                bob.identity,
+                &bob.identity,
                 &mut bob.store,
                 &hello_bob_from_alice,
             )
