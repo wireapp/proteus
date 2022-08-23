@@ -1,0 +1,8 @@
+= CBOR Codec
+
+Encoder and decoder implementations for the Concise Binary Object
+Representation (CBOR, https://tools.ietf.org/html/rfc7049[RFC 7049]).
+
+== Documentation
+
+API documentation is available at https://twittner.gitlab.io/cbor-codec/cbor/

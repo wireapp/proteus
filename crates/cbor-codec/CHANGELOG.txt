@@ -1,0 +1,53 @@
+0.7.1
+-----
+- Add `categories` to Cargo.toml
+
+0.7.0
+-----
+- Add `Decoder::read_bytes`.
+- Minor internal improvements.
+
+0.6.0
+-----
+- Add `Other` constructor to `EncodeError` end `DecodeError`.
+- Change `DecodeError::DuplicateKey` to contain the key value.
+- Update tests.
+
+0.5.0
+-----
+- Update `byteorder` dependency.
+
+0.4.2
+-----
+- Bugfix release (fixes indefinite object/array encoding).
+
+0.4.1
+-----
+- Internal improvements.
+
+0.4.0
+-----
+- Add trait `ReadSlice` to support borrowing bytes and strings instead
+  of copying them (thanks to Paul Colomiets).
+
+0.3.0
+-----
+- Fix `Decoder::{i8,i16,i32,i64}` to support positive values (#7).
+- Handle (signed) integer overflows.
+- Add `Int` and `Decoder::int` to support negative integer decoding
+  without overflows.
+- Expose `Kernel` in `Decoder` (#4).
+- Expose writer in `Encoder` (#6).
+
+0.2.0
+-----
+- Add `Decoder::skip` method (see issue #3 for details).
+
+0.1.1
+-----
+- Workaround unstable features.
+  For now this requires `libc` as an additional dependency.
+
+0.1.0
+-----
+- Initial release
