@@ -2,10 +2,10 @@ extern crate criterion;
 use criterion::{criterion_group, criterion_main, Criterion};
 
 extern crate proteus;
-use proteus::internal::keys::*;
+use proteus::internal::keys::KeyPair;
 
 fn bench_keygen(c: &mut Criterion) {
-    c.bench_function("keygen", |b| b.iter(|| KeyPair::new()));
+    c.bench_function("keygen", |b| b.iter(KeyPair::new));
 }
 
 fn bench_dh(c: &mut Criterion) {

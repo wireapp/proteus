@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#![allow(clippy::missing_errors_doc, clippy::module_name_repetitions)]
+
 pub mod error;
 pub mod internal;
 pub mod keys;
@@ -22,6 +24,7 @@ pub mod message;
 pub mod session;
 
 /// It's here for compatibility purposes, since it's not needed at all anymore
+#[must_use]
 pub fn init() -> bool {
     true
 }

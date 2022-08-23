@@ -4,9 +4,12 @@ version      = "2.0.0"
 authors      = ["Wire Swiss GmbH <seceng@wire.com>"]
 description  = "Axolotl protocol implementation"
 homepage     = "https://github.com/wireapp/proteus"
-repository   = "git@github.com:wireapp/proteus.git"
+repository   = "https://github.com/wireapp/proteus.git"
 license      = "GPL-3.0"
 edition      = "2021"
+
+[workspace]
+members = ["crates/cbor-codec"]
 
 [features]
 default = []
@@ -28,12 +31,17 @@ hmac = "0.12"
 chacha20 = "0.9"
 elliptic-curve = "0.11"
 ed25519 = "1.3"
-ed25519-dalek = "1.0"
-curve25519-dalek = "3.2"
-x25519-dalek = { version = "1.1.1", package = "x25519-dalek-ng" }
+ed25519-dalek = { version = "1.0", default-features = false, features = ["std", "u64_backend"] }
+curve25519-dalek = { version = "4.1", package = "curve25519-dalek-ng", default-features = false, features = ["std", "u64_backend"] }
+x25519-dalek = { version = "1.1", package = "x25519-dalek-ng", default-features = false, features = ["std", "u64_backend"] }
 subtle = "2.4"
 cbor-codec = { path = "crates/cbor-codec" }
-eyre = "0.6.8"
+eyre = "0.6"
+
+[target.wasm32-unknown-unknown.dependencies]
+ed25519-dalek = { version = "1.0", default-features = false, features = ["std", "u32_backend"] }
+curve25519-dalek = { version = "4.1", package = "curve25519-dalek-ng", default-features = false, features = ["std", "u32_backend"] }
+x25519-dalek = { version = "1.1", package = "x25519-dalek-ng", default-features = false, features = ["std", "u32_backend"] }
 
 [dev-dependencies]
 criterion = "0.3"

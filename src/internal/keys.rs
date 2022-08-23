@@ -15,17 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use cbor::skip::Skip;
-use cbor::{Config, Decoder, Encoder};
-//use crate::internal::ffi;
 use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
 use crate::internal::util::{fmt_hex, opt, Bytes32, Bytes64};
-// use sodiumoxide::crypto::scalarmult as ecdh;
-// use sodiumoxide::crypto::sign;
+use cbor::skip::Skip;
+use cbor::{Config, Decoder, Encoder};
 use std::fmt::{self, Debug, Formatter};
 use std::io::{Cursor, Read, Write};
 use std::u16;
 use std::vec::Vec;
+use zeroize::ZeroizeOnDrop;
 
 // Identity Key /////////////////////////////////////////////////////////////
 
@@ -35,10 +33,12 @@ pub struct IdentityKey {
 }
 
 impl IdentityKey {
+    #[must_use]
     pub fn new(k: PublicKey) -> IdentityKey {
         IdentityKey { public_key: k }
     }
 
+    #[must_use]
     pub fn fingerprint(&self) -> String {
         self.public_key.fingerprint()
     }
@@ -80,6 +80,7 @@ impl Default for IdentityKeyPair {
 }
 
 impl IdentityKeyPair {
+    #[must_use]
     pub fn new() -> IdentityKeyPair {
         Self::from_keypair(KeyPair::new())
     }
@@ -137,11 +138,13 @@ impl IdentityKeyPair {
     }
 
     #[cfg(feature = "hazmat")]
+    #[must_use]
     pub fn from_raw_secret_key(raw: [u8; 64]) -> Self {
         Self::from_keypair(KeyPair::from_secret_key_raw(raw))
     }
 
     #[cfg(feature = "hazmat")]
+    #[must_use]
     pub fn from_raw_secret_key_std(raw: [u8; 32]) -> Self {
         Self::from_keypair(KeyPair::from_secret_key_raw_std(raw))
     }
@@ -157,6 +160,7 @@ pub struct PreKey {
 }
 
 impl PreKey {
+    #[must_use]
     pub fn new(i: PreKeyId) -> PreKey {
         PreKey {
             version: 1,
@@ -165,6 +169,7 @@ impl PreKey {
         }
     }
 
+    #[must_use]
     pub fn last_resort() -> PreKey {
         PreKey::new(MAX_PREKEY_ID)
     }
@@ -210,6 +215,7 @@ impl PreKey {
     }
 }
 
+#[must_use]
 pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
     (1..)
         .map(|i| ((u32::from(start.value()) + i) % u32::from(MAX_PREKEY_ID.value())))
@@ -237,6 +243,7 @@ pub struct PreKeyBundle {
 }
 
 impl PreKeyBundle {
+    #[must_use]
     pub fn new(ident: IdentityKey, key: &PreKey) -> PreKeyBundle {
         PreKeyBundle {
             version: 1,
@@ -247,6 +254,7 @@ impl PreKeyBundle {
         }
     }
 
+    #[must_use]
     pub fn signed(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
         let ratchet_key = key.key_pair.public_key.clone();
         let signature = ident.secret_key.sign(&ratchet_key.0.to_bytes());
@@ -259,6 +267,7 @@ impl PreKeyBundle {
         }
     }
 
+    #[must_use]
     pub fn verify(&self) -> PreKeyAuth {
         match self.signature {
             Some(ref sig) => {
@@ -339,10 +348,12 @@ pub struct PreKeyId(u16);
 pub const MAX_PREKEY_ID: PreKeyId = PreKeyId(u16::MAX);
 
 impl PreKeyId {
+    #[must_use]
     pub fn new(i: u16) -> PreKeyId {
         PreKeyId(i)
     }
 
+    #[must_use]
     pub fn value(self) -> u16 {
         self.0
     }
@@ -364,6 +375,7 @@ impl fmt::Display for PreKeyId {
 
 // Keypair //////////////////////////////////////////////////////////////////
 
+// SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
 #[derive(Clone, Debug)]
 pub struct KeyPair {
     pub secret_key: SecretKey,
@@ -377,6 +389,7 @@ impl Default for KeyPair {
 }
 
 impl KeyPair {
+    #[must_use]
     pub fn new() -> KeyPair {
         use rand::{RngCore as _, SeedableRng as _};
         let mut rng = rand_chacha::ChaCha20Rng::from_entropy();
@@ -385,11 +398,13 @@ impl KeyPair {
         rng.fill_bytes(&mut sk_raw);
         let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
-        let pk = ed25519_dalek::PublicKey::from(&sk_weird);
+
+        let secret_key = SecretKey(sk_weird);
+        let public_key = secret_key.public_key();
 
         KeyPair {
-            secret_key: SecretKey(sk_weird),
-            public_key: PublicKey(pk),
+            secret_key,
+            public_key,
         }
     }
 
@@ -419,10 +434,11 @@ impl KeyPair {
     }
 
     #[cfg(feature = "hazmat")]
+    #[must_use]
     pub fn from_secret_key_raw_std(sk_raw: [u8; 32]) -> Self {
         let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
-        let pk = ed25519_dalek::PublicKey::from(&sk_weird);
+        let pk = ed25519_dalek::PublicKey::from_bytes(&sk_weird.to_bytes()[32..]).unwrap();
 
         KeyPair {
             secret_key: SecretKey(sk_weird),
@@ -431,9 +447,10 @@ impl KeyPair {
     }
 
     #[cfg(feature = "hazmat")]
+    #[must_use]
     pub fn from_secret_key_raw(sk_raw: [u8; 64]) -> Self {
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from_bytes(&sk_raw).unwrap();
-        let pk = ed25519_dalek::PublicKey::from(&sk_weird);
+        let pk = ed25519_dalek::PublicKey::from_bytes(&sk_raw[32..]).unwrap();
 
         KeyPair {
             secret_key: SecretKey(sk_weird),
@@ -447,6 +464,7 @@ impl KeyPair {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero {}
 
+#[derive(ZeroizeOnDrop)]
 pub struct SecretKey(ed25519_dalek::ExpandedSecretKey);
 
 impl std::fmt::Debug for SecretKey {
@@ -464,11 +482,23 @@ impl Clone for SecretKey {
 }
 
 impl SecretKey {
+    #[must_use]
+    pub(crate) fn public_key(&self) -> PublicKey {
+        // ? Standard way of doing things
+        // PublicKey(ed25519_dalek::PublicKey::from(&self.0))
+
+        // ? Cursed - We manually implement the operation while dodging the scalar clamping
+        let mut scalar_raw = zeroize::Zeroizing::new([0u8; 32]);
+        scalar_raw.copy_from_slice(&self.0.to_bytes()[..32]);
+        let scalar = curve25519_dalek::scalar::Scalar::from_bits(*scalar_raw);
+        let point = &scalar * &curve25519_dalek::constants::ED25519_BASEPOINT_TABLE;
+        PublicKey(ed25519_dalek::PublicKey::from_bytes(&point.compress().to_bytes()).unwrap())
+    }
+
+    #[must_use]
     pub fn sign(&self, m: &[u8]) -> Signature {
-        let pk = ed25519_dalek::PublicKey::from(&self.0);
-        Signature {
-            sig: self.0.sign(m, &pk),
-        }
+        let pk = self.public_key();
+        Signature(self.0.sign(m, &pk.0))
     }
 
     pub fn shared_secret(&self, bob_public: &PublicKey) -> Result<[u8; 32], Zero> {
@@ -480,6 +510,7 @@ impl SecretKey {
             return Err(Zero {});
         }
 
+        // SAFETY: This unwrap is safe as the compressed edwards point can always be decompressed
         let bob_pk_montgomery = curve25519_dalek::edwards::CompressedEdwardsY(bob_pk)
             .decompress()
             .unwrap()
@@ -488,9 +519,27 @@ impl SecretKey {
         let mut alice_sk = zeroize::Zeroizing::new(zero_slice);
         alice_sk.copy_from_slice(&self.0.to_bytes()[..32]);
 
-        let alice_secret = x25519_dalek::StaticSecret::from(*alice_sk);
-        let bob_public = x25519_dalek::PublicKey::from(bob_pk_montgomery.to_bytes());
-        let shared = alice_secret.diffie_hellman(&bob_public);
+        // ? Okay, this is going to be extremely cursed and scary so make sure you're sitting
+        // ? ---
+        // ? Proteus, in its previous versions, was managing Scalar points and Edwards curves manually
+        // ? probably in an attempt to "look cool/clever" or whatever, but it's insanely flawed because
+        // ? when you have no fucking clue what you're doing, you're doing things wrong.
+        // ? ---
+        // ? In this instance, since Scalar points were handled manually, it was "forgotten" to implement
+        // ? a mathematical operation called "Scalar clamping" as defined in the RFC.
+        // ? So now we inherit a bug basically forever, that makes Proteus incompatible with anything related to
+        // ? RFC-compatible ed25519/x25519 libraries, because this **ISN'T** ed/x25519.
+        // ? ---
+        // ? Much like how this library uses "CBOR" but serializes structs as flat arrays instead of maps,
+        // ? every day we stray further away from the RFCs.
+
+        // ? Normal code
+        // ? // let alice_secret = x25519_dalek::StaticSecret::from(*alice_sk);
+        // ? // let bob_public = x25519_dalek::PublicKey::from(bob_pk_montgomery.to_bytes());
+        // ? // let shared = alice_secret.diffie_hellman(&bob_public);
+        // ? Cursed code - With this we avoid falling into the scalar clamping codepath
+        let sk_scalar = curve25519_dalek::scalar::Scalar::from_bits(*alice_sk);
+        let shared = sk_scalar * bob_pk_montgomery;
         Ok(shared.to_bytes())
     }
 
@@ -508,7 +557,7 @@ impl SecretKey {
                 0 if secret_key.is_none() => {
                     secret_key = Some(ed25519_dalek::ExpandedSecretKey::from_bytes(
                         &*Bytes64::decode(d)?.array,
-                    )?)
+                    )?);
                 }
                 _ => d.skip()?,
             }
@@ -519,6 +568,7 @@ impl SecretKey {
     }
 
     #[cfg(feature = "hazmat")]
+    #[must_use]
     pub fn to_bytes(&self) -> [u8; 32] {
         let mut ret = [0; 32];
         ret.copy_from_slice(&self.0.to_bytes()[..32]);
@@ -526,6 +576,7 @@ impl SecretKey {
     }
 
     #[cfg(feature = "hazmat")]
+    #[must_use]
     pub fn to_bytes_extended(&self) -> [u8; 64] {
         self.0.to_bytes()
     }
@@ -533,6 +584,7 @@ impl SecretKey {
 
 // PublicKey ////////////////////////////////////////////////////////////////
 
+// SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
 #[derive(Clone, Debug)]
 pub struct PublicKey(ed25519_dalek::PublicKey);
 
@@ -548,8 +600,10 @@ impl PartialEq for PublicKey {
 impl Eq for PublicKey {}
 
 impl PublicKey {
+    #[must_use]
     pub fn verify(&self, s: &Signature, m: &[u8]) -> bool {
-        let res = self.0.verify_strict(m, &s.sig);
+        use ed25519_dalek::Verifier as _;
+        let res = self.0.verify(m, &s.0);
 
         if let Err(e) = &res {
             println!("{}", e);
@@ -558,6 +612,7 @@ impl PublicKey {
         res.is_ok()
     }
 
+    #[must_use]
     pub fn fingerprint(&self) -> String {
         fmt_hex(self.0.as_bytes())
     }
@@ -569,9 +624,14 @@ impl PublicKey {
         Ok(PublicKey(pk))
     }
 
+    // This will always contain 32 bytes
+    pub(crate) fn to_edwards(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(self.0.as_bytes()))?;
+        e.u8(0).and(e.bytes(self.to_edwards()))?;
         Ok(())
     }
 
@@ -594,6 +654,7 @@ impl PublicKey {
 
 // Random ///////////////////////////////////////////////////////////////////
 
+#[must_use]
 pub fn rand_bytes(size: usize) -> Vec<u8> {
     let mut buf = Vec::with_capacity(size);
     use rand::{RngCore as _, SeedableRng as _};
@@ -604,15 +665,15 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 
 // Signature ////////////////////////////////////////////////////////////////
 
+// SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Signature {
-    sig: ed25519_dalek::Signature,
-}
+#[repr(transparent)]
+pub struct Signature(ed25519_dalek::Signature);
 
 impl Signature {
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.sig.to_bytes()))?;
+        e.u8(0).and(e.bytes(&self.0.to_bytes()))?;
         Ok(())
     }
 
@@ -624,14 +685,14 @@ impl Signature {
                 0 if sig.is_none() => {
                     sig = Some(ed25519_dalek::Signature::from_bytes(
                         &*Bytes64::decode(d)?.array,
-                    )?)
+                    )?);
                 }
                 _ => d.skip()?,
             }
         }
-        Ok(Signature {
-            sig: sig.ok_or(DecodeError::MissingField("Signature::sig"))?,
-        })
+        Ok(Signature(
+            sig.ok_or(DecodeError::MissingField("Signature::sig"))?,
+        ))
     }
 }
 
@@ -641,7 +702,7 @@ impl Signature {
 mod tests {
     use super::*;
     use crate::internal::util::roundtrip;
-    use wasm_bindgen_test::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     #[test]
     #[wasm_bindgen_test]
