@@ -31,8 +31,8 @@ pub enum InternalError {
 impl PartialEq for InternalError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (InternalError::NoSessionForTag, InternalError::NoSessionForTag) => true,
-            (InternalError::InvalidKdfLength, InternalError::InvalidKdfLength) => true,
+            (InternalError::InvalidKdfLength, InternalError::InvalidKdfLength)
+            | (InternalError::NoSessionForTag, InternalError::NoSessionForTag) => true,
             (InternalError::IoError(e1), InternalError::IoError(e2)) if e1.kind() == e2.kind() => {
                 true
             }

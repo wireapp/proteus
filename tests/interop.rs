@@ -1,7 +1,6 @@
 #![cfg(all(test, not(target_family = "wasm")))]
 
 use pretty_assertions::assert_eq;
-use wasm_bindgen_test::*;
 
 #[derive(Debug)]
 pub struct TestStore<T> {
@@ -43,7 +42,14 @@ macro_rules! impl_harness_for_crate {
             pub store: TestStore<$target::keys::PreKey>,
         }
 
+        impl Default for $client {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
         impl $client {
+            #[must_use]
             pub fn new() -> Self {
                 let mut client = Self {
                     identity: $target::keys::IdentityKeyPair::new(),
@@ -55,6 +61,7 @@ macro_rules! impl_harness_for_crate {
                 client
             }
 
+            #[must_use]
             pub fn from_raw_sk(sk: [u8; 64]) -> Self {
                 let client = Self {
                     identity: $target::keys::IdentityKeyPair::from_raw_secret_key(sk),
@@ -78,6 +85,7 @@ macro_rules! impl_harness_for_crate {
                 }
             }
 
+            #[must_use]
             pub fn get_prekey_bundle(&self, id: u16) -> Option<$target::keys::PreKeyBundle> {
                 if id == 0 {
                     panic!("PreKeyId cannot be 0. Ever.");
@@ -98,42 +106,11 @@ macro_rules! impl_harness_for_crate {
 impl_harness_for_crate!(TestStore, Client, proteus);
 impl_harness_for_crate!(TestStore, LegacyClient, proteus_legacy);
 
-#[test]
-#[wasm_bindgen_test]
-fn serialize_interop() {
-    assert!(proteus::init());
-    assert!(proteus_legacy::init());
-    let alice_legacy = LegacyClient::new();
-    let mut alice = Client::from_raw_sk(alice_legacy.identity.secret_key.to_bytes());
-
-    let alice_legacy_prekeys = alice_legacy
-        .store
-        .prekeys
-        .iter()
-        .map(|pk| pk.serialise().unwrap());
-
-    for pk in alice_legacy_prekeys {
-        alice
-            .store
-            .prekeys
-            .push(proteus::keys::PreKey::deserialise(&pk).unwrap());
-    }
-
-    let alice_bundle = alice.get_prekey_bundle(1).unwrap();
-    let alice_legacy_bundle = alice_legacy.get_prekey_bundle(1).unwrap();
-
-    assert_eq!(
-        alice_bundle.serialise().unwrap(),
-        alice_legacy_bundle.serialise().unwrap()
-    );
-}
-
 const MSG: &[u8] = b"Hello world!";
 
 macro_rules! impl_interop_test {
     ($test_name:ident, $client1:ident @ $client1_crate:ident, $client2:ident @ $client2_crate:ident) => {
         #[test]
-        #[wasm_bindgen_test]
         fn $test_name() {
             assert!(proteus::init());
             assert!(proteus_legacy::init());
@@ -183,3 +160,121 @@ impl_interop_test!(proteus_v2_interop, Client @ proteus, Client @ proteus);
 impl_interop_test!(proteus_v1_interop, LegacyClient @ proteus_legacy, LegacyClient @ proteus_legacy);
 impl_interop_test!(proteus_v2_to_v1_interop, Client @ proteus, LegacyClient @ proteus_legacy);
 impl_interop_test!(proteus_v1_to_v2_interop, LegacyClient @ proteus_legacy, Client @ proteus);
+
+fn get_client_pair() -> (Client, LegacyClient) {
+    assert!(proteus::init());
+    assert!(proteus_legacy::init());
+    let alice_legacy = LegacyClient::new();
+    let mut alice = Client::from_raw_sk(alice_legacy.identity.secret_key.to_bytes());
+
+    let alice_legacy_prekeys = alice_legacy
+        .store
+        .prekeys
+        .iter()
+        .map(|pk| pk.serialise().unwrap());
+
+    for pk in alice_legacy_prekeys {
+        alice
+            .store
+            .prekeys
+            .push(proteus::keys::PreKey::deserialise(&pk).unwrap());
+    }
+
+    (alice, alice_legacy)
+}
+
+#[test]
+// FIXME: flaky
+fn serialize_interop_identity() {
+    let (alice, alice_legacy) = get_client_pair();
+
+    assert_eq!(
+        alice.identity.serialise().unwrap(),
+        alice_legacy.identity.serialise().unwrap()
+    );
+}
+
+#[test]
+// FIXME: flaky
+fn serialize_interop_prekey() {
+    let (alice, alice_legacy) = get_client_pair();
+
+    let prekey = alice.store.prekeys.get(0).unwrap();
+    let prekey_legacy = alice_legacy.store.prekeys.get(0).unwrap();
+
+    // Check if prekeys serialize the same
+    assert_eq!(
+        prekey.serialise().unwrap(),
+        prekey_legacy.serialise().unwrap()
+    );
+}
+
+#[test]
+fn serialize_interop_prekey_bundle() {
+    let (alice, alice_legacy) = get_client_pair();
+
+    // Check if prekeybundles serialize the same
+    let alice_bundle = alice.get_prekey_bundle(1).unwrap();
+    let alice_legacy_bundle = alice_legacy.get_prekey_bundle(1).unwrap();
+
+    assert_eq!(
+        alice_bundle.serialise().unwrap(),
+        alice_legacy_bundle.serialise().unwrap()
+    );
+}
+
+#[test]
+// FIXME: flaky
+fn serialize_interop_session() {
+    let (alice, alice_legacy) = get_client_pair();
+
+    // Start a session with `bob` from both `alice` and `alice_legacy` and check if `Sessions` are also compatible
+    let bob_legacy = LegacyClient::new();
+    let bob_bundle_for_alice_legacy = bob_legacy.get_prekey_bundle(1).unwrap();
+
+    let alice_legacy_bob = proteus_legacy::session::Session::init_from_prekey::<()>(
+        &alice_legacy.identity,
+        bob_bundle_for_alice_legacy,
+    )
+    .unwrap();
+
+    let alice_bob = proteus::session::Session::deserialise(
+        &alice.identity,
+        &alice_legacy_bob.serialise().unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        alice_bob.serialise().unwrap(),
+        alice_legacy_bob.serialise().unwrap()
+    );
+}
+
+#[test]
+fn serialize_interop_envelope() {
+    let (alice, alice_legacy) = get_client_pair();
+
+    // Start a session with `bob` from both `alice` and `alice_legacy` and check if `Sessions` are also compatible
+    let bob_legacy = LegacyClient::new();
+    let bob_bundle_for_alice_legacy = bob_legacy.get_prekey_bundle(1).unwrap();
+
+    let mut alice_legacy_bob = proteus_legacy::session::Session::init_from_prekey::<()>(
+        &alice_legacy.identity,
+        bob_bundle_for_alice_legacy,
+    )
+    .unwrap();
+
+    let mut alice_bob = proteus::session::Session::deserialise(
+        &alice.identity,
+        &alice_legacy_bob.serialise().unwrap(),
+    )
+    .unwrap();
+
+    let alice_msg = alice_bob.encrypt(MSG).unwrap();
+    let alice_legacy_msg = alice_legacy_bob.encrypt(MSG).unwrap();
+
+    assert_eq!(
+        alice_msg.serialise().unwrap(),
+        alice_legacy_msg.serialise().unwrap()
+    );
+}

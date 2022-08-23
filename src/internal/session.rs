@@ -42,6 +42,7 @@ pub struct RootKey {
 }
 
 impl RootKey {
+    #[must_use]
     pub fn from_cipher_key(k: CipherKey) -> RootKey {
         RootKey { key: k }
     }
@@ -89,10 +90,12 @@ pub struct ChainKey {
 }
 
 impl ChainKey {
+    #[must_use]
     pub fn from_mac_key(k: MacKey, idx: Counter) -> ChainKey {
         ChainKey { key: k, idx }
     }
 
+    #[must_use]
     pub fn next(&self) -> ChainKey {
         ChainKey {
             key: MacKey::new(self.key.sign(b"1").into_bytes()),
@@ -145,6 +148,7 @@ pub struct SendChain {
 }
 
 impl SendChain {
+    #[must_use]
     pub fn new(ck: ChainKey, rk: KeyPair) -> SendChain {
         SendChain {
             chain_key: ck,
@@ -190,6 +194,7 @@ pub struct RecvChain {
 }
 
 impl RecvChain {
+    #[must_use]
     pub fn new(ck: ChainKey, rk: PublicKey) -> RecvChain {
         RecvChain {
             chain_key: ck,
@@ -206,8 +211,7 @@ impl RecvChain {
         let too_old = self
             .message_keys
             .get(0)
-            .map(|k| k.counter > mesg.counter)
-            .unwrap_or(false);
+            .map_or(false, |k| k.counter > mesg.counter);
 
         if too_old {
             return Err(Error::OutdatedMessage);
@@ -245,7 +249,7 @@ impl RecvChain {
 
         for _ in 0..num {
             buf.push_back(chk.message_keys()?);
-            chk = chk.next()
+            chk = chk.next();
         }
 
         let mk = chk.message_keys()?;
@@ -263,7 +267,7 @@ impl RecvChain {
         }
 
         for m in mks {
-            self.message_keys.push_back(m)
+            self.message_keys.push_back(m);
         }
 
         assert!(self.message_keys.len() <= MAX_COUNTER_GAP);
@@ -279,7 +283,7 @@ impl RecvChain {
         {
             e.array(self.message_keys.len())?;
             for m in &self.message_keys {
-                m.encode(e)?
+                m.encode(e)?;
             }
         }
         Ok(())
@@ -299,10 +303,10 @@ impl RecvChain {
                         let lv = d.array()?;
                         let mut vm = VecDeque::with_capacity(lv);
                         for _ in 0..lv {
-                            vm.push_back(MessageKeys::decode(d)?)
+                            vm.push_back(MessageKeys::decode(d)?);
                         }
                         vm
-                    })
+                    });
                 }
                 _ => d.skip()?,
             }
@@ -310,7 +314,7 @@ impl RecvChain {
         Ok(RecvChain {
             chain_key: chain_key.ok_or(DecodeError::MissingField("RecvChain::chain_key"))?,
             ratchet_key: ratchet_key.ok_or(DecodeError::MissingField("RecvChain::ratchet_key"))?,
-            message_keys: message_keys.unwrap_or_else(VecDeque::new),
+            message_keys: message_keys.unwrap_or_default(),
         })
     }
 }
@@ -481,7 +485,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 if pkmsg.prekey_id != MAX_PREKEY_ID {
                     store
                         .remove(pkmsg.prekey_id)
-                        .map_err(Error::PreKeyStoreError)?
+                        .map_err(Error::PreKeyStoreError)?;
                 }
                 Ok((session, plain))
             }
@@ -514,12 +518,12 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                     return Err(Error::RemoteIdentityChanged);
                 }
                 match self.decrypt_cipher_message(env, &m.message) {
-                    e @ Err(Error::InvalidSignature) | e @ Err(Error::InvalidMessage) => {
+                    e @ Err(Error::InvalidSignature | Error::InvalidMessage) => {
                         match self.new_state(store, m)? {
                             Some(mut s) => {
                                 let plain = s.decrypt(env, &m.message)?;
                                 if m.prekey_id != MAX_PREKEY_ID {
-                                    store.remove(m.prekey_id).map_err(Error::PreKeyStoreError)?
+                                    store.remove(m.prekey_id).map_err(Error::PreKeyStoreError)?;
                                 }
                                 self.insert_session_state(m.message.session_tag, s);
                                 self.pending_prekey = None;
@@ -655,7 +659,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                     e.u8(0)?;
                     id.encode(e)?;
                     e.u8(1)?;
-                    pk.encode(e)?
+                    pk.encode(e)?;
                 }
             }
         }
@@ -664,7 +668,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             e.object(self.session_states.len())?;
             for (t, s) in &self.session_states {
                 t.encode(e)?;
-                s.val.encode(e)?
+                s.val.encode(e)?;
             }
         }
         Ok(())
@@ -708,7 +712,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                         } else {
                             None
                         }
-                    })
+                    });
                 }
                 5 if session_states.is_none() => {
                     session_states = Some({
@@ -721,7 +725,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                             counter += 1;
                         }
                         rb
-                    })
+                    });
                 }
                 _ => d.skip()?,
             }
@@ -914,7 +918,7 @@ impl SessionState {
         {
             e.array(self.recv_chains.len())?;
             for r in &self.recv_chains {
-                r.encode(e)?
+                r.encode(e)?;
             }
         }
         e.u8(1)?;
@@ -940,10 +944,10 @@ impl SessionState {
                         let lr = d.array()?;
                         let mut rr = VecDeque::with_capacity(lr);
                         for _ in 0..lr {
-                            rr.push_back(RecvChain::decode(d)?)
+                            rr.push_back(RecvChain::decode(d)?);
                         }
                         rr
-                    })
+                    });
                 }
                 1 if send_chain.is_none() => send_chain = Some(SendChain::decode(d)?),
                 2 if root_key.is_none() => root_key = Some(RootKey::decode(d)?),
@@ -1006,7 +1010,7 @@ mod tests {
     use std::fmt;
     use std::usize;
     use std::vec::Vec;
-    use wasm_bindgen_test::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     #[derive(Debug)]
     struct TestStore {
@@ -1027,7 +1031,7 @@ mod tests {
                 .prekeys
                 .iter()
                 .find(|k| k.key_id == id)
-                .map(|k| k.clone()))
+                .map(std::clone::Clone::clone))
         }
 
         fn remove(&mut self, id: PreKeyId) -> Result<(), ()> {
@@ -1497,7 +1501,7 @@ mod tests {
         };
 
         let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
-        let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
+        let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
         let bytes = alice.serialise().unwrap();
@@ -1613,7 +1617,7 @@ mod tests {
         let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
 
         {
-            let ref s = alice.session_states.get(&alice.session_tag).unwrap().val;
+            let s = &alice.session_states.get(&alice.session_tag).unwrap().val;
             assert_eq!(1, s.recv_chains.len());
             assert_eq!(Counter::zero(), s.recv_chains[0].chain_key.idx);
             assert_eq!(Counter::zero().next(), s.send_chain.chain_key.idx);
@@ -1625,7 +1629,7 @@ mod tests {
 
         {
             // Normal exchange. Bob has created a new receive chain without skipped message keys.
-            let ref s = bob.session_states.get(&bob.session_tag).unwrap().val;
+            let s = &bob.session_states.get(&bob.session_tag).unwrap().val;
             assert_eq!(1, s.recv_chains.len());
             assert_eq!(Counter::zero().next(), s.recv_chains[0].chain_key.idx);
             assert_eq!(Counter::zero(), s.send_chain.chain_key.idx);
@@ -1639,7 +1643,7 @@ mod tests {
 
         {
             // Alice has two skipped message keys in her new receive chain.
-            let ref s = alice.session_states.get(&alice.session_tag).unwrap().val;
+            let s = &alice.session_states.get(&alice.session_tag).unwrap().val;
             assert_eq!(2, s.recv_chains.len());
             assert_eq!(
                 Counter::zero().next().next().next(),
@@ -1657,7 +1661,7 @@ mod tests {
         {
             // For Bob everything is normal still. A new message from Alice means a
             // new receive chain has been created and again no skipped message keys.
-            let ref s = bob.session_states.get(&bob.session_tag).unwrap().val;
+            let s = &bob.session_states.get(&bob.session_tag).unwrap().val;
             assert_eq!(2, s.recv_chains.len());
             assert_eq!(Counter::zero().next(), s.recv_chains[0].chain_key.idx);
             assert_eq!(Counter::zero(), s.send_chain.chain_key.idx);
@@ -1669,7 +1673,7 @@ mod tests {
         {
             // Alice received the first of the two missing messages. Therefore
             // only one message key is still skipped (counter value = 1).
-            let ref s = alice.session_states.get(&alice.session_tag).unwrap().val;
+            let s = &alice.session_states.get(&alice.session_tag).unwrap().val;
             assert_eq!(2, s.recv_chains.len());
             assert_eq!(1, s.recv_chains[0].message_keys.len());
             assert_eq!(1, s.recv_chains[0].message_keys[0].counter.value())
@@ -1688,7 +1692,7 @@ mod tests {
             // ensures that skipped message keys are local to receive chains since the previous
             // receive chain still has a skipped message key with an index > 0 which would
             // cause an `OutdatedMessage` error if the vector was shared across receive chains.
-            let ref s = alice.session_states.get(&alice.session_tag).unwrap().val;
+            let s = &alice.session_states.get(&alice.session_tag).unwrap().val;
             assert_eq!(3, s.recv_chains.len());
             assert_eq!(1, s.recv_chains[0].message_keys.len());
             assert_eq!(1, s.recv_chains[1].message_keys.len());
@@ -1696,7 +1700,7 @@ mod tests {
             assert_eq!(1, s.recv_chains[1].message_keys[0].counter.value());
         }
 
-        assert_decrypt(b"Again0", alice.decrypt(&mut alice_store, &hello_again0))
+        assert_decrypt(b"Again0", alice.decrypt(&mut alice_store, &hello_again0));
     }
 
     #[test]
@@ -1764,7 +1768,7 @@ mod tests {
             for (k, v) in m {
                 if v.idx < n {
                     n = v.idx;
-                    x = k.clone()
+                    x = *k;
                 }
             }
             x
@@ -1782,7 +1786,7 @@ mod tests {
             let n = bob2alice.session_states.len();
             assert!(n < 100);
             if i > 99 {
-                assert_eq!(false, bob2alice.session_states.contains_key(&to_remove))
+                assert!(!bob2alice.session_states.contains_key(&to_remove));
             }
         }
     }
@@ -1819,7 +1823,7 @@ mod tests {
 
         let a2b_m1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         for _ in 0..999 {
-            let _ = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
+            let _encrypted = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
         }
         let a2b_m2 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
 
@@ -1928,9 +1932,9 @@ mod tests {
         match actual {
             Ok(b) => {
                 let r: &[u8] = b.as_ref();
-                assert_eq!(expected, r)
+                assert_eq!(expected, r);
             }
-            Err(e) => assert!(false, "{:?}", e),
+            Err(e) => panic!("{e:?}"),
         }
     }
 
@@ -1951,8 +1955,7 @@ mod tests {
                 s
             }
             Err(e) => {
-                assert!(false, "{:?}", e);
-                unreachable!()
+                unreachable!("{e:?}");
             }
         }
     }

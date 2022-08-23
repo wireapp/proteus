@@ -92,7 +92,7 @@ impl std::fmt::Display for HexSlice<'_> {
     }
 }
 
-pub fn fmt_hex(xs: &[u8]) -> String {
+#[must_use] pub fn fmt_hex(xs: &[u8]) -> String {
     format!("{}", HexSlice::new(xs))
 }
 

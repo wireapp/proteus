@@ -1,3 +1,8 @@
+2.0.0
+
+    * Get rid of libsodium in favor of RustCrypto primitives & company (dalek ed25519 library family)
+    * Fork and update cbor-codec to be WASM-compatible
+
 1.0.0
 
     * Change `Zero` to be compatible with rustc 1.14 (stable).

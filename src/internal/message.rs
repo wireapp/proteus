@@ -32,22 +32,23 @@ use std::{
 // Counter ////////////////////////////////////////////////////////////////////
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[repr(transparent)]
 pub struct Counter(u32);
 
 impl Counter {
-    pub fn zero() -> Counter {
+    #[must_use] pub fn zero() -> Counter {
         Counter(0)
     }
 
-    pub fn value(self) -> u32 {
+    #[must_use] pub fn value(self) -> u32 {
         self.0
     }
 
-    pub fn next(self) -> Counter {
+    #[must_use] pub fn next(self) -> Counter {
         Counter(self.0 + 1)
     }
 
-    pub fn as_nonce(self) -> zeroize::Zeroizing<[u8; 8]> {
+    #[must_use] pub fn as_nonce(self) -> zeroize::Zeroizing<[u8; 8]> {
         let mut nonce = [0; 8];
         nonce[0] = (self.0 >> 24) as u8;
         nonce[1] = (self.0 >> 16) as u8;
@@ -68,21 +69,19 @@ impl Counter {
 // Session Tag //////////////////////////////////////////////////////////////
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct SessionTag {
-    tag: [u8; 16],
-}
+pub struct SessionTag([u8; 16]);
 
 impl SessionTag {
-    pub fn new() -> SessionTag {
+    #[must_use] pub fn new() -> SessionTag {
         let mut bytes = [0; 16];
         use rand::{RngCore as _, SeedableRng as _};
         let mut rng = rand_chacha::ChaCha12Rng::from_entropy();
         rng.fill_bytes(&mut bytes);
-        SessionTag { tag: bytes }
+        SessionTag(bytes)
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
-        e.bytes(&self.tag).map_err(From::from)
+        e.bytes(&self.0).map_err(From::from)
     }
 
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionTag> {
@@ -92,13 +91,13 @@ impl SessionTag {
         }
         let mut a = [0u8; 16];
         a[..16].clone_from_slice(&v[..16]);
-        Ok(SessionTag { tag: a })
+        Ok(SessionTag(a))
     }
 }
 
 impl fmt::Debug for SessionTag {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{:?}", fmt_hex(&self.tag))
+        write!(f, "{:?}", fmt_hex(&self.0))
     }
 }
 
@@ -288,7 +287,7 @@ impl<'r> Envelope<'r> {
         })
     }
 
-    pub fn into_owned<'s>(self) -> Envelope<'s> {
+    #[must_use] pub fn into_owned<'s>(self) -> Envelope<'s> {
         Envelope {
             version: self.version,
             mac: self.mac,
@@ -297,19 +296,19 @@ impl<'r> Envelope<'r> {
         }
     }
 
-    pub fn verify(&self, k: &MacKey) -> bool {
+    #[must_use] pub fn verify(&self, k: &MacKey) -> bool {
         k.verify(&self.mac, &self.message_enc)
     }
 
-    pub fn version(&self) -> u16 {
+    #[must_use] pub fn version(&self) -> u16 {
         u16::from(self.version)
     }
 
-    pub fn mac(&self) -> &Mac {
+    #[must_use] pub fn mac(&self) -> &Mac {
         &self.mac
     }
 
-    pub fn message(&self) -> &Message {
+    #[must_use] pub fn message(&self) -> &Message {
         &self.message
     }
 
@@ -352,7 +351,7 @@ impl<'r> Envelope<'r> {
                         Config::default(),
                         Cursor::new(&msg_enc[..]),
                     ))?);
-                    message_enc = Some(msg_enc)
+                    message_enc = Some(msg_enc);
                 }
                 _ => d.skip()?,
             }
@@ -376,7 +375,7 @@ mod tests {
         keys::{IdentityKey, KeyPair, PreKeyId},
     };
     use std::borrow::Cow;
-    use wasm_bindgen_test::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     #[test]
     #[wasm_bindgen_test]
