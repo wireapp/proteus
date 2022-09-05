@@ -580,6 +580,11 @@ impl PublicKey {
             pub_curve,
         })
     }
+
+    #[cfg(feature = "hazmat")]
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.pub_edward.0
+    }
 }
 
 // Random ///////////////////////////////////////////////////////////////////
