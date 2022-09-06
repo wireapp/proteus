@@ -1,6 +1,6 @@
 #![cfg(all(test, not(target_family = "wasm")))]
 
-use pretty_assertions::assert_eq;
+use pretty_assertions::{assert_eq, assert_ne, assert_str_eq};
 
 #[derive(Debug)]
 pub struct TestStore<T> {
@@ -87,9 +87,7 @@ macro_rules! impl_harness_for_crate {
 
             #[must_use]
             pub fn get_prekey_bundle(&self, id: u16) -> Option<$target::keys::PreKeyBundle> {
-                if id == 0 {
-                    panic!("PreKeyId cannot be 0. Ever.");
-                }
+                assert_ne!(id, 0, "PreKeyId cannot be 0. Ever.");
 
                 self.store
                     .prekeys
@@ -105,6 +103,15 @@ macro_rules! impl_harness_for_crate {
 
 impl_harness_for_crate!(TestStore, Client, proteus);
 impl_harness_for_crate!(TestStore, LegacyClient, proteus_legacy);
+
+impl Client {
+    pub fn from_raw(sk: [u8; 64], pk: [u8; 32]) -> Self {
+        Client {
+            identity: unsafe { proteus::keys::IdentityKeyPair::from_raw_key_pair(sk, pk) },
+            store: TestStore::default(),
+        }
+    }
+}
 
 const MSG: &[u8] = b"Hello world!";
 
@@ -165,7 +172,11 @@ fn get_client_pair() -> (Client, LegacyClient) {
     assert!(proteus::init());
     assert!(proteus_legacy::init());
     let alice_legacy = LegacyClient::new();
-    let mut alice = Client::from_raw_sk(alice_legacy.identity.secret_key.to_bytes());
+    let mut alice = Client::from_raw(
+        alice_legacy.identity.secret_key.to_bytes(),
+        alice_legacy.identity.public_key.public_key.to_bytes(),
+    );
+    // let mut alice = Client::from_raw_sk(alice_legacy.identity.secret_key.to_bytes());
 
     let alice_legacy_prekeys = alice_legacy
         .store
@@ -187,11 +198,17 @@ fn get_client_pair() -> (Client, LegacyClient) {
 // FIXME: flaky
 fn serialize_interop_identity() {
     let (alice, alice_legacy) = get_client_pair();
+    let identity_legacy_ser = alice_legacy.identity.serialise().unwrap();
+    let identity_ser = alice.identity.serialise().unwrap();
 
-    assert_eq!(
-        alice.identity.serialise().unwrap(),
-        alice_legacy.identity.serialise().unwrap()
-    );
+    let identity_legacy: ciborium::value::Value =
+        ciborium::de::from_reader(&identity_legacy_ser[..]).unwrap();
+
+    let identity: ciborium::value::Value = ciborium::de::from_reader(&identity_ser[..]).unwrap();
+
+    assert_eq!(identity_legacy, identity);
+
+    assert_str_eq!(hex::encode(identity_legacy_ser), hex::encode(identity_ser),);
 }
 
 #[test]
@@ -204,8 +221,8 @@ fn serialize_interop_prekey() {
 
     // Check if prekeys serialize the same
     assert_eq!(
+        prekey_legacy.serialise().unwrap(),
         prekey.serialise().unwrap(),
-        prekey_legacy.serialise().unwrap()
     );
 }
 
@@ -218,8 +235,8 @@ fn serialize_interop_prekey_bundle() {
     let alice_legacy_bundle = alice_legacy.get_prekey_bundle(1).unwrap();
 
     assert_eq!(
+        alice_legacy_bundle.serialise().unwrap(),
         alice_bundle.serialise().unwrap(),
-        alice_legacy_bundle.serialise().unwrap()
     );
 }
 
@@ -245,8 +262,8 @@ fn serialize_interop_session() {
     .unwrap();
 
     assert_eq!(
+        alice_legacy_bob.serialise().unwrap(),
         alice_bob.serialise().unwrap(),
-        alice_legacy_bob.serialise().unwrap()
     );
 }
 
@@ -274,7 +291,7 @@ fn serialize_interop_envelope() {
     let alice_legacy_msg = alice_legacy_bob.encrypt(MSG).unwrap();
 
     assert_eq!(
+        alice_legacy_msg.serialise().unwrap(),
         alice_msg.serialise().unwrap(),
-        alice_legacy_msg.serialise().unwrap()
     );
 }
