@@ -145,6 +145,12 @@ impl IdentityKeyPair {
 
     #[cfg(feature = "hazmat")]
     #[must_use]
+    pub unsafe fn from_raw_key_pair(sk: [u8; 64], pk: [u8; 32]) -> Self {
+        Self::from_keypair(KeyPair::from_raw(sk, pk))
+    }
+
+    #[cfg(feature = "hazmat")]
+    #[must_use]
     pub fn from_raw_secret_key_std(raw: [u8; 32]) -> Self {
         Self::from_keypair(KeyPair::from_secret_key_raw_std(raw))
     }
@@ -438,11 +444,14 @@ impl KeyPair {
     pub fn from_secret_key_raw_std(sk_raw: [u8; 32]) -> Self {
         let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
-        let pk = ed25519_dalek::PublicKey::from_bytes(&sk_weird.to_bytes()[32..]).unwrap();
+        let secret_key = SecretKey(sk_weird);
+        let public_key = secret_key.public_key();
+        // let pk = ed25519_dalek::PublicKey::from_bytes(&sk_raw[32..]).unwrap();
+        // let public_key = PublicKey(pk);
 
         KeyPair {
-            secret_key: SecretKey(sk_weird),
-            public_key: PublicKey(pk),
+            secret_key,
+            public_key,
         }
     }
 
@@ -450,11 +459,30 @@ impl KeyPair {
     #[must_use]
     pub fn from_secret_key_raw(sk_raw: [u8; 64]) -> Self {
         let sk_weird = ed25519_dalek::ExpandedSecretKey::from_bytes(&sk_raw).unwrap();
-        let pk = ed25519_dalek::PublicKey::from_bytes(&sk_raw[32..]).unwrap();
+        let secret_key = SecretKey(sk_weird);
+        let public_key = secret_key.public_key();
+        // let pk = ed25519_dalek::PublicKey::from_bytes(&sk_raw[32..]).unwrap();
+        // let public_key = PublicKey(pk);
 
         KeyPair {
-            secret_key: SecretKey(sk_weird),
-            public_key: PublicKey(pk),
+            secret_key,
+            public_key,
+        }
+    }
+
+    #[cfg(feature = "hazmat")]
+    #[must_use]
+    pub unsafe fn from_raw(sk: [u8; 64], pk: [u8; 32]) -> Self {
+        let sk_weird = ed25519_dalek::ExpandedSecretKey::from_bytes_unchecked(&sk).unwrap();
+        let pk = ed25519_dalek::PublicKey::from_bytes(&pk).unwrap();
+        let secret_key = SecretKey(sk_weird);
+        let public_key = PublicKey(pk);
+
+        // assert_eq!(secret_key.public_key(), public_key);
+
+        KeyPair {
+            secret_key,
+            public_key,
         }
     }
 }
@@ -482,17 +510,28 @@ impl Clone for SecretKey {
 }
 
 impl SecretKey {
+    fn pk_bytes(&self, clamped: bool) -> zeroize::Zeroizing<[u8; 32]> {
+        let mut scalar_raw = zeroize::Zeroizing::new([0u8; 32]);
+        scalar_raw.copy_from_slice(&self.0.to_bytes()[..32]);
+        if clamped {
+            scalar_raw[0] &= 248;
+            scalar_raw[31] &= 127;
+            scalar_raw[31] |= 64;
+        }
+
+        scalar_raw
+    }
+
     #[must_use]
     pub(crate) fn public_key(&self) -> PublicKey {
         // ? Standard way of doing things
-        // PublicKey(ed25519_dalek::PublicKey::from(&self.0))
+        PublicKey(ed25519_dalek::PublicKey::from(&self.0))
 
         // ? Cursed - We manually implement the operation while dodging the scalar clamping
-        let mut scalar_raw = zeroize::Zeroizing::new([0u8; 32]);
-        scalar_raw.copy_from_slice(&self.0.to_bytes()[..32]);
-        let scalar = curve25519_dalek::scalar::Scalar::from_bits(*scalar_raw);
-        let point = &scalar * &curve25519_dalek::constants::ED25519_BASEPOINT_TABLE;
-        PublicKey(ed25519_dalek::PublicKey::from_bytes(&point.compress().to_bytes()).unwrap())
+        // let scalar_raw = self.pk_bytes(true);
+        // let scalar = curve25519_dalek::scalar::Scalar::from_bits(*scalar_raw);
+        // let point = &scalar * &curve25519_dalek::constants::ED25519_BASEPOINT_TABLE;
+        // PublicKey(ed25519_dalek::PublicKey::from_bytes(&point.compress().to_bytes()).unwrap())
     }
 
     #[must_use]
@@ -516,14 +555,13 @@ impl SecretKey {
             .unwrap()
             .to_montgomery();
 
-        let mut alice_sk = zeroize::Zeroizing::new(zero_slice);
-        alice_sk.copy_from_slice(&self.0.to_bytes()[..32]);
+        let alice_sk = self.pk_bytes(true);
 
         // ? Okay, this is going to be extremely cursed and scary so make sure you're sitting
         // ? ---
         // ? Proteus, in its previous versions, was managing Scalar points and Edwards curves manually
         // ? probably in an attempt to "look cool/clever" or whatever, but it's insanely flawed because
-        // ? when you have no fucking clue what you're doing, you're doing things wrong.
+        // ? when you have no clue what you're doing, you're doing things wrong.
         // ? ---
         // ? In this instance, since Scalar points were handled manually, it was "forgotten" to implement
         // ? a mathematical operation called "Scalar clamping" as defined in the RFC.
@@ -555,9 +593,11 @@ impl SecretKey {
         for _ in 0..n {
             match d.u8()? {
                 0 if secret_key.is_none() => {
-                    secret_key = Some(ed25519_dalek::ExpandedSecretKey::from_bytes(
-                        &*Bytes64::decode(d)?.array,
-                    )?);
+                    secret_key = Some(unsafe {
+                        ed25519_dalek::ExpandedSecretKey::from_bytes_unchecked(
+                            &*Bytes64::decode(d)?.array,
+                        )
+                    }?);
                 }
                 _ => d.skip()?,
             }
