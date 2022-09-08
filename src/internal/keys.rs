@@ -263,7 +263,9 @@ impl PreKeyBundle {
     #[must_use]
     pub fn signed(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
         let ratchet_key = key.key_pair.public_key.clone();
-        let signature = ident.secret_key.sign(&ratchet_key.0.to_bytes());
+        let signature = ident
+            .secret_key
+            .sign(&ratchet_key.0.to_bytes(), &ident.public_key.public_key);
         PreKeyBundle {
             version: 1,
             prekey_id: key.key_id,
@@ -510,18 +512,6 @@ impl Clone for SecretKey {
 }
 
 impl SecretKey {
-    fn pk_bytes(&self, clamped: bool) -> zeroize::Zeroizing<[u8; 32]> {
-        let mut scalar_raw = zeroize::Zeroizing::new([0u8; 32]);
-        scalar_raw.copy_from_slice(&self.0.to_bytes()[..32]);
-        if clamped {
-            scalar_raw[0] &= 248;
-            scalar_raw[31] &= 127;
-            scalar_raw[31] |= 64;
-        }
-
-        scalar_raw
-    }
-
     #[must_use]
     pub(crate) fn public_key(&self) -> PublicKey {
         // ? Standard way of doing things
@@ -535,27 +525,15 @@ impl SecretKey {
     }
 
     #[must_use]
-    pub fn sign(&self, m: &[u8]) -> Signature {
-        let pk = self.public_key();
+    pub fn sign(&self, m: &[u8], pk: &PublicKey) -> Signature {
+        // let pk = self.public_key();
         Signature(self.0.sign(m, &pk.0))
     }
 
     pub fn shared_secret(&self, bob_public: &PublicKey) -> Result<[u8; 32], Zero> {
-        let bob_pk = bob_public.0.to_bytes();
-        let zero_slice = [0u8; 32];
-
-        use subtle::ConstantTimeEq as _;
-        if bob_pk.ct_eq(&zero_slice).unwrap_u8() == 1 {
+        if bob_public.0.is_zero_ct() {
             return Err(Zero {});
         }
-
-        // SAFETY: This unwrap is safe as the compressed edwards point can always be decompressed
-        let bob_pk_montgomery = curve25519_dalek::edwards::CompressedEdwardsY(bob_pk)
-            .decompress()
-            .unwrap()
-            .to_montgomery();
-
-        let alice_sk = self.pk_bytes(true);
 
         // ? Okay, this is going to be extremely cursed and scary so make sure you're sitting
         // ? ---
@@ -576,8 +554,7 @@ impl SecretKey {
         // ? // let bob_public = x25519_dalek::PublicKey::from(bob_pk_montgomery.to_bytes());
         // ? // let shared = alice_secret.diffie_hellman(&bob_public);
         // ? Cursed code - With this we avoid falling into the scalar clamping codepath
-        let sk_scalar = curve25519_dalek::scalar::Scalar::from_bits(*alice_sk);
-        let shared = sk_scalar * bob_pk_montgomery;
+        let shared = self.0.key_scalar() * bob_public.0.to_montgomery();
         Ok(shared.to_bytes())
     }
 
@@ -610,9 +587,7 @@ impl SecretKey {
     #[cfg(feature = "hazmat")]
     #[must_use]
     pub fn to_bytes(&self) -> [u8; 32] {
-        let mut ret = [0; 32];
-        ret.copy_from_slice(&self.0.to_bytes()[..32]);
-        ret
+        self.0.key_scalar().to_bytes()
     }
 
     #[cfg(feature = "hazmat")]
@@ -768,7 +743,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn sign_and_verify() {
         let a = KeyPair::new();
-        let s = a.secret_key.sign(b"foobarbaz");
+        let s = a.secret_key.sign(b"foobarbaz", &a.public_key);
         assert!(a.public_key.verify(&s, b"foobarbaz"));
         assert!(!a.public_key.verify(&s, b"foobar"));
     }

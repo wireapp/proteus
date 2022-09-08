@@ -28,7 +28,7 @@ use serde::de::Error as SerdeError;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[cfg(feature = "serde")]
-use serde_bytes::{Bytes as SerdeBytes, ByteBuf as SerdeByteBuf};
+use serde_bytes::{ByteBuf as SerdeByteBuf, Bytes as SerdeBytes};
 
 use crate::constants::*;
 use crate::errors::*;
@@ -89,6 +89,22 @@ impl PublicKey {
         &(self.0).0
     }
 
+    /// Check if this is a zero public key, in constant time
+    pub fn is_zero_ct(&self) -> bool {
+        let mut ret = true;
+        for v in (self.0).0.iter() {
+            if *v != 0 {
+                ret = false;
+            }
+        }
+        ret
+    }
+
+    /// Direct conversion to montgomery point
+    pub fn to_montgomery(&self) -> curve25519_dalek::montgomery::MontgomeryPoint {
+        self.1.to_montgomery()
+    }
+
     /// Construct a `PublicKey` from a slice of bytes.
     ///
     /// # Warning
@@ -131,7 +147,8 @@ impl PublicKey {
             return Err(InternalError::BytesLengthError {
                 name: "PublicKey",
                 length: PUBLIC_KEY_LENGTH,
-            }.into());
+            }
+            .into());
         }
         let mut bits: [u8; 32] = [0u8; 32];
         bits.copy_from_slice(&bytes[..32]);
@@ -195,7 +212,10 @@ impl PublicKey {
         let k: Scalar;
 
         let ctx: &[u8] = context.unwrap_or(b"");
-        debug_assert!(ctx.len() <= 255, "The context must not be longer than 255 octets.");
+        debug_assert!(
+            ctx.len() <= 255,
+            "The context must not be longer than 255 octets."
+        );
 
         let minus_A: EdwardsPoint = -self.1;
 
@@ -284,32 +304,29 @@ impl PublicKey {
         &self,
         message: &[u8],
         signature: &ed25519::Signature,
-    ) -> Result<(), SignatureError>
-    {
+    ) -> Result<(), SignatureError> {
         let signature = InternalSignature::try_from(signature)?;
 
-        let mut h: Sha512 = Sha512::new();
-        let R: EdwardsPoint;
-        let k: Scalar;
-        let minus_A: EdwardsPoint = -self.1;
-        let signature_R: EdwardsPoint;
-
-        match signature.R.decompress() {
-            None => return Err(InternalError::VerifyError.into()),
-            Some(x) => signature_R = x,
-        }
+        let signature_R: EdwardsPoint = signature
+            .R
+            .decompress()
+            .ok_or_else(|| SignatureError::from(InternalError::VerifyError))?;
 
         // Logical OR is fine here as we're not trying to be constant time.
         if signature_R.is_small_order() || self.1.is_small_order() {
             return Err(InternalError::VerifyError.into());
         }
 
+        let mut h: Sha512 = Sha512::new();
+
         h.update(signature.R.as_bytes());
         h.update(self.as_bytes());
         h.update(&message);
 
-        k = Scalar::from_hash(h);
-        R = EdwardsPoint::vartime_double_scalar_mul_basepoint(&k, &(minus_A), &signature.s);
+        let k: Scalar = Scalar::from_hash(h);
+        let minus_A: EdwardsPoint = -self.1;
+        let R: EdwardsPoint =
+            EdwardsPoint::vartime_double_scalar_mul_basepoint(&k, &(minus_A), &signature.s);
 
         if R == signature_R {
             Ok(())
@@ -326,12 +343,7 @@ impl Verifier<ed25519::Signature> for PublicKey {
     ///
     /// Returns `Ok(())` if the signature is valid, and `Err` otherwise.
     #[allow(non_snake_case)]
-    fn verify(
-        &self,
-        message: &[u8],
-        signature: &ed25519::Signature
-    ) -> Result<(), SignatureError>
-    {
+    fn verify(&self, message: &[u8], signature: &ed25519::Signature) -> Result<(), SignatureError> {
         let signature = InternalSignature::try_from(signature)?;
 
         let mut h: Sha512 = Sha512::new();
