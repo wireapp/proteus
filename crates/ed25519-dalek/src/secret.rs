@@ -344,6 +344,11 @@ impl ExpandedSecretKey {
         bytes
     }
 
+    /// Borrow the key scalar
+    pub fn key_scalar(&self) -> &Scalar {
+        &self.key
+    }
+
     /// Construct an `ExpandedSecretKey` from a slice of bytes.
     ///
     /// # Returns

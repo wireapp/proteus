@@ -10,11 +10,11 @@
 // - Henry de Valence <hdevalence@hdevalence.ca>
 #![allow(non_snake_case)]
 
-use constants;
-use traits::Identity;
-use scalar::Scalar;
-use edwards::EdwardsPoint;
 use backend::serial::curve_models::{ProjectiveNielsPoint, ProjectivePoint};
+use constants;
+use edwards::EdwardsPoint;
+use scalar::Scalar;
+use traits::Identity;
 use window::NafLookupTable5;
 
 /// Compute \\(aA + bB\\) in variable time, where \\(B\\) is the Ed25519 basepoint.

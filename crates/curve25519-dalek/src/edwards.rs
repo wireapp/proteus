@@ -190,7 +190,9 @@ impl CompressedEdwardsY {
     /// Returns `None` if the input is not the \\(y\\)-coordinate of a
     /// curve point.
     pub fn decompress(&self) -> Option<EdwardsPoint> {
-        let Y = FieldElement::from_bytes(self.as_bytes());
+        let bytes = self.as_bytes();
+        let choice = bytes[31] >> 7;
+        let Y = FieldElement::from_bytes(bytes);
         let Z = FieldElement::one();
         let YY = Y.square();
         let u = &YY - &Z; // u =  y²-1
@@ -203,7 +205,7 @@ impl CompressedEdwardsY {
 
         // FieldElement::sqrt_ratio_i always returns the nonnegative square root,
         // so we negate according to the supplied sign bit.
-        let compressed_sign_bit = Choice::from(self.as_bytes()[31] >> 7);
+        let compressed_sign_bit = Choice::from(choice);
         X.conditional_negate(compressed_sign_bit);
 
         Some(EdwardsPoint {
