@@ -35,10 +35,11 @@ impl proteus_legacy::session::PreKeyStore for TestStore<proteus_legacy::keys::Pr
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl proteus_traits::PreKeyStore for TestStore<proteus::keys::PreKey> {
     type Error = ();
 
-    fn prekey(
+    async fn prekey(
         &mut self,
         id: proteus_traits::RawPreKeyId,
     ) -> Result<Option<proteus_traits::RawPreKey>, ()> {
@@ -49,7 +50,7 @@ impl proteus_traits::PreKeyStore for TestStore<proteus::keys::PreKey> {
             .map(|pk| proteus::keys::PreKey::serialise(pk).unwrap()))
     }
 
-    fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), ()> {
+    async fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), ()> {
         self.prekeys
             .iter()
             .position(|k| k.key_id.value() == id)
@@ -139,58 +140,173 @@ impl Client {
 
 const MSG: &[u8] = b"Hello world!";
 
-macro_rules! impl_interop_test {
-    ($test_name:ident, $client1:ident @ $client1_crate:ident, $client2:ident @ $client2_crate:ident) => {
-        #[test]
-        fn $test_name() {
-            assert!(proteus::init());
-            assert!(proteus_legacy::init());
-            let mut alice = $client1::new();
-            let mut bob = $client2::new();
-            let bob_bundle = bob.get_prekey_bundle(1).unwrap();
-            let bob_bundle_for_alice =
-                $client1_crate::keys::PreKeyBundle::deserialise(&bob_bundle.serialise().unwrap())
-                    .unwrap();
+#[async_std::test]
+async fn proteus_v2_interop() {
+    assert!(proteus::init());
+    assert!(proteus_legacy::init());
+    let mut alice = Client::new();
+    let mut bob = Client::new();
+    let bob_bundle = bob.get_prekey_bundle(1).unwrap();
+    let bob_bundle_for_alice =
+        proteus::keys::PreKeyBundle::deserialise(&bob_bundle.serialise().unwrap()).unwrap();
 
-            let mut alice_bob = $client1_crate::session::Session::init_from_prekey::<()>(
-                &alice.identity,
-                bob_bundle_for_alice,
-            )
+    let mut alice_bob =
+        proteus::session::Session::init_from_prekey::<()>(&alice.identity, bob_bundle_for_alice)
             .unwrap();
 
-            let hello_bob_from_alice = $client2_crate::message::Envelope::deserialise(
-                &alice_bob.encrypt(MSG).unwrap().serialise().unwrap(),
-            )
-            .unwrap();
+    let hello_bob_from_alice = proteus::message::Envelope::deserialise(
+        &alice_bob.encrypt(MSG).unwrap().serialise().unwrap(),
+    )
+    .unwrap();
 
-            let (mut bob_alice, hello_bob) = $client2_crate::session::Session::init_from_message(
-                &bob.identity,
-                &mut bob.store,
-                &hello_bob_from_alice,
-            )
-            .unwrap();
+    let (mut bob_alice, hello_bob) = proteus::session::Session::init_from_message(
+        &bob.identity,
+        &mut bob.store,
+        &hello_bob_from_alice,
+    )
+    .await
+    .unwrap();
 
-            assert_eq!(hello_bob, MSG);
+    assert_eq!(hello_bob, MSG);
 
-            let hello_alice_from_bob = $client1_crate::message::Envelope::deserialise(
-                &bob_alice.encrypt(MSG).unwrap().serialise().unwrap(),
-            )
-            .unwrap();
+    let hello_alice_from_bob = proteus::message::Envelope::deserialise(
+        &bob_alice.encrypt(MSG).unwrap().serialise().unwrap(),
+    )
+    .unwrap();
 
-            assert_eq!(
-                alice_bob
-                    .decrypt(&mut alice.store, &hello_alice_from_bob)
-                    .unwrap(),
-                MSG
-            );
-        }
-    };
+    let decrypted = alice_bob
+        .decrypt(&mut alice.store, &hello_alice_from_bob)
+        .await
+        .unwrap();
+
+    assert_eq!(decrypted, MSG);
 }
 
-impl_interop_test!(proteus_v2_interop, Client @ proteus, Client @ proteus);
-impl_interop_test!(proteus_v1_interop, LegacyClient @ proteus_legacy, LegacyClient @ proteus_legacy);
-impl_interop_test!(proteus_v2_to_v1_interop, Client @ proteus, LegacyClient @ proteus_legacy);
-impl_interop_test!(proteus_v1_to_v2_interop, LegacyClient @ proteus_legacy, Client @ proteus);
+#[async_std::test]
+async fn proteus_v1_interop() {
+    assert!(proteus::init());
+    assert!(proteus_legacy::init());
+    let mut alice = LegacyClient::new();
+    let mut bob = LegacyClient::new();
+    let bob_bundle = bob.get_prekey_bundle(1).unwrap();
+    let bob_bundle_for_alice =
+        proteus_legacy::keys::PreKeyBundle::deserialise(&bob_bundle.serialise().unwrap()).unwrap();
+
+    let mut alice_bob = proteus_legacy::session::Session::init_from_prekey::<()>(
+        &alice.identity,
+        bob_bundle_for_alice,
+    )
+    .unwrap();
+
+    let hello_bob_from_alice = proteus_legacy::message::Envelope::deserialise(
+        &alice_bob.encrypt(MSG).unwrap().serialise().unwrap(),
+    )
+    .unwrap();
+
+    let (mut bob_alice, hello_bob) = proteus_legacy::session::Session::init_from_message(
+        &bob.identity,
+        &mut bob.store,
+        &hello_bob_from_alice,
+    )
+    .unwrap();
+
+    assert_eq!(hello_bob, MSG);
+
+    let hello_alice_from_bob = proteus_legacy::message::Envelope::deserialise(
+        &bob_alice.encrypt(MSG).unwrap().serialise().unwrap(),
+    )
+    .unwrap();
+
+    let decrypted = alice_bob
+        .decrypt(&mut alice.store, &hello_alice_from_bob)
+        .unwrap();
+
+    assert_eq!(decrypted, MSG);
+}
+
+#[async_std::test]
+async fn proteus_v2_to_v1_interop() {
+    assert!(proteus::init());
+    assert!(proteus_legacy::init());
+    let mut alice = Client::new();
+    let mut bob = LegacyClient::new();
+    let bob_bundle = bob.get_prekey_bundle(1).unwrap();
+    let bob_bundle_for_alice =
+        proteus::keys::PreKeyBundle::deserialise(&bob_bundle.serialise().unwrap()).unwrap();
+
+    let mut alice_bob =
+        proteus::session::Session::init_from_prekey::<()>(&alice.identity, bob_bundle_for_alice)
+            .unwrap();
+
+    let hello_bob_from_alice = proteus_legacy::message::Envelope::deserialise(
+        &alice_bob.encrypt(MSG).unwrap().serialise().unwrap(),
+    )
+    .unwrap();
+
+    let (mut bob_alice, hello_bob) = proteus_legacy::session::Session::init_from_message(
+        &bob.identity,
+        &mut bob.store,
+        &hello_bob_from_alice,
+    )
+    .unwrap();
+
+    assert_eq!(hello_bob, MSG);
+
+    let hello_alice_from_bob = proteus::message::Envelope::deserialise(
+        &bob_alice.encrypt(MSG).unwrap().serialise().unwrap(),
+    )
+    .unwrap();
+
+    let decrypted = alice_bob
+        .decrypt(&mut alice.store, &hello_alice_from_bob)
+        .await
+        .unwrap();
+
+    assert_eq!(decrypted, MSG);
+}
+
+#[async_std::test]
+async fn proteus_v1_to_v2_interop() {
+    assert!(proteus::init());
+    assert!(proteus_legacy::init());
+    let mut alice = LegacyClient::new();
+    let mut bob = Client::new();
+    let bob_bundle = bob.get_prekey_bundle(1).unwrap();
+    let bob_bundle_for_alice =
+        proteus_legacy::keys::PreKeyBundle::deserialise(&bob_bundle.serialise().unwrap()).unwrap();
+
+    let mut alice_bob = proteus_legacy::session::Session::init_from_prekey::<()>(
+        &alice.identity,
+        bob_bundle_for_alice,
+    )
+    .unwrap();
+
+    let hello_bob_from_alice = proteus::message::Envelope::deserialise(
+        &alice_bob.encrypt(MSG).unwrap().serialise().unwrap(),
+    )
+    .unwrap();
+
+    let (mut bob_alice, hello_bob) = proteus::session::Session::init_from_message(
+        &bob.identity,
+        &mut bob.store,
+        &hello_bob_from_alice,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(hello_bob, MSG);
+
+    let hello_alice_from_bob = proteus_legacy::message::Envelope::deserialise(
+        &bob_alice.encrypt(MSG).unwrap().serialise().unwrap(),
+    )
+    .unwrap();
+
+    let decrypted = alice_bob
+        .decrypt(&mut alice.store, &hello_alice_from_bob)
+        .unwrap();
+
+    assert_eq!(decrypted, MSG);
+}
 
 fn get_client_pair() -> (Client, LegacyClient) {
     assert!(proteus::init());
