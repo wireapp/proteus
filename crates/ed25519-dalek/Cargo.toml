@@ -22,7 +22,7 @@ travis-ci = { repository = "dalek-cryptography/ed25519-dalek", branch = "master"
 features = ["nightly", "batch"]
 
 [dependencies]
-curve25519-dalek = { version = "=6.6.6-cursed", default-features = false }
+curve25519-dalek = { path = "../curve25519-dalek", default-features = false }
 ed25519 = { version = "1", default-features = false }
 merlin = { version = "2", default-features = false, optional = true }
 rand = { version = "0.8", default-features = false, optional = true }

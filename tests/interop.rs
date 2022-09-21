@@ -15,28 +15,52 @@ impl<T> Default for TestStore<T> {
     }
 }
 
+impl proteus_legacy::session::PreKeyStore for TestStore<proteus_legacy::keys::PreKey> {
+    type Error = ();
+
+    fn prekey(
+        &mut self,
+        id: proteus_legacy::keys::PreKeyId,
+    ) -> Result<Option<proteus_legacy::keys::PreKey>, ()> {
+        Ok(self.prekeys.iter().find(|k| k.key_id == id).cloned())
+    }
+
+    fn remove(&mut self, id: proteus_legacy::keys::PreKeyId) -> Result<(), ()> {
+        self.prekeys
+            .iter()
+            .position(|k| k.key_id == id)
+            .map(|idx| self.prekeys.swap_remove(idx));
+
+        Ok(())
+    }
+}
+
+impl proteus_traits::PreKeyStore for TestStore<proteus::keys::PreKey> {
+    type Error = ();
+
+    fn prekey(
+        &mut self,
+        id: proteus_traits::RawPreKeyId,
+    ) -> Result<Option<proteus_traits::RawPreKey>, ()> {
+        Ok(self
+            .prekeys
+            .iter()
+            .find(|k| k.key_id.value() == id)
+            .map(|pk| proteus::keys::PreKey::serialise(pk).unwrap()))
+    }
+
+    fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), ()> {
+        self.prekeys
+            .iter()
+            .position(|k| k.key_id.value() == id)
+            .map(|idx| self.prekeys.swap_remove(idx));
+
+        Ok(())
+    }
+}
+
 macro_rules! impl_harness_for_crate {
     ($store:ident, $client:ident, $target:ident) => {
-        impl $target::session::PreKeyStore for $store<$target::keys::PreKey> {
-            type Error = ();
-
-            fn prekey(
-                &mut self,
-                id: $target::keys::PreKeyId,
-            ) -> Result<Option<$target::keys::PreKey>, ()> {
-                Ok(self.prekeys.iter().find(|k| k.key_id == id).cloned())
-            }
-
-            fn remove(&mut self, id: $target::keys::PreKeyId) -> Result<(), ()> {
-                self.prekeys
-                    .iter()
-                    .position(|k| k.key_id == id)
-                    .map(|idx| self.prekeys.swap_remove(idx));
-
-                Ok(())
-            }
-        }
-
         pub struct $client {
             pub identity: $target::keys::IdentityKeyPair,
             pub store: TestStore<$target::keys::PreKey>,
@@ -195,7 +219,6 @@ fn get_client_pair() -> (Client, LegacyClient) {
 }
 
 #[test]
-// FIXME: flaky
 fn serialize_interop_identity() {
     let (alice, alice_legacy) = get_client_pair();
     let identity_legacy_ser = alice_legacy.identity.serialise().unwrap();
@@ -212,7 +235,6 @@ fn serialize_interop_identity() {
 }
 
 #[test]
-// FIXME: flaky
 fn serialize_interop_prekey() {
     let (alice, alice_legacy) = get_client_pair();
 
@@ -241,7 +263,6 @@ fn serialize_interop_prekey_bundle() {
 }
 
 #[test]
-// FIXME: flaky
 fn serialize_interop_session() {
     let (alice, alice_legacy) = get_client_pair();
 

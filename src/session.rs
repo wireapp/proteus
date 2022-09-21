@@ -16,5 +16,4 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub use crate::internal::session::Error;
-pub use crate::internal::session::PreKeyStore;
 pub use crate::internal::session::Session;
