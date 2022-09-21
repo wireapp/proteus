@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use proteus_traits::PreKeyStore;
 use std::{
     borrow::{Borrow, Cow},
     cmp::{Ord, Ordering},
@@ -370,18 +371,6 @@ impl MessageKeys {
     }
 }
 
-// Store ////////////////////////////////////////////////////////////////////
-
-pub trait PreKeyStore {
-    type Error;
-
-    /// Lookup prekey by ID.
-    fn prekey(&mut self, id: PreKeyId) -> Result<Option<PreKey>, Self::Error>;
-
-    /// Remove prekey by ID.
-    fn remove(&mut self, id: PreKeyId) -> Result<(), Self::Error>;
-}
-
 // Session //////////////////////////////////////////////////////////////////
 
 const MAX_RECV_CHAINS: usize = 5;
@@ -458,7 +447,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn init_from_message<S: PreKeyStore>(
+    pub fn init_from_message<S: proteus_traits::PreKeyStore>(
         ours: I,
         store: &mut S,
         env: &Envelope,
@@ -484,7 +473,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 session.insert_session_state(pkmsg.message.session_tag, s);
                 if pkmsg.prekey_id != MAX_PREKEY_ID {
                     store
-                        .remove(pkmsg.prekey_id)
+                        .remove(pkmsg.prekey_id.value())
                         .map_err(Error::PreKeyStoreError)?;
                 }
                 Ok((session, plain))
@@ -523,7 +512,9 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                             Some(mut s) => {
                                 let plain = s.decrypt(env, &m.message)?;
                                 if m.prekey_id != MAX_PREKEY_ID {
-                                    store.remove(m.prekey_id).map_err(Error::PreKeyStoreError)?;
+                                    store
+                                        .remove(m.prekey_id.value())
+                                        .map_err(Error::PreKeyStoreError)?;
                                 }
                                 self.insert_session_state(m.message.session_tag, s);
                                 self.pending_prekey = None;
@@ -558,12 +549,16 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     // newly created state. It is the caller's responsibility to remove the
     // prekey from the store.
     // See note [no_new_state] for those cases where no prekey has been found.
-    fn new_state<S: PreKeyStore>(
+    fn new_state<S: proteus_traits::PreKeyStore>(
         &self,
         store: &mut S,
         m: &PreKeyMessage,
     ) -> Result<Option<SessionState>, Error<S::Error>> {
-        if let Some(prekey) = store.prekey(m.prekey_id).map_err(Error::PreKeyStoreError)? {
+        if let Some(prekey) = store
+            .prekey(m.prekey_id.value())
+            .map_err(Error::PreKeyStoreError)?
+            .and_then(|raw_prekey| PreKey::deserialise(&raw_prekey).ok())
+        {
             let s = SessionState::init_as_bob(BobParams {
                 bob_ident: self.local_identity.borrow(),
                 bob_prekey: prekey.key_pair,
@@ -1023,21 +1018,24 @@ mod tests {
         }
     }
 
-    impl PreKeyStore for TestStore {
+    impl proteus_traits::PreKeyStore for TestStore {
         type Error = ();
 
-        fn prekey(&mut self, id: PreKeyId) -> Result<Option<PreKey>, ()> {
-            Ok(self
-                .prekeys
-                .iter()
-                .find(|k| k.key_id == id)
-                .map(std::clone::Clone::clone))
+        fn prekey(
+            &mut self,
+            id: proteus_traits::RawPreKeyId,
+        ) -> Result<Option<proteus_traits::RawPreKey>, ()> {
+            if let Some(prekey) = self.prekeys.iter().find(|k| k.key_id.value() == id) {
+                Ok(Some(prekey.serialise().unwrap()))
+            } else {
+                Ok(None)
+            }
         }
 
-        fn remove(&mut self, id: PreKeyId) -> Result<(), ()> {
+        fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), ()> {
             self.prekeys
                 .iter()
-                .position(|k| k.key_id == id)
+                .position(|k| k.key_id.value() == id)
                 .map(|ix| self.prekeys.swap_remove(ix));
             Ok(())
         }
@@ -1747,12 +1745,17 @@ mod tests {
         };
 
         let get_bob = |i, store: &mut TestStore| {
-            PreKeyBundle::new(bob.public_key.clone(), &store.prekey(i).unwrap().unwrap())
+            PreKeyBundle::new(
+                bob.public_key.clone(),
+                &PreKey::deserialise(&store.prekey(i).unwrap().unwrap()).unwrap(),
+            )
         };
 
-        let mut alice2bob =
-            Session::init_from_prekey::<()>(&alice, get_bob(PreKeyId::new(1), &mut bob_store))
-                .unwrap();
+        let mut alice2bob = Session::init_from_prekey::<()>(
+            &alice,
+            get_bob(PreKeyId::new(1).value(), &mut bob_store),
+        )
+        .unwrap();
         let mut hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
         assert_is_msg(&hello_bob, MsgType::Keyed);
 
@@ -1775,9 +1778,11 @@ mod tests {
         };
 
         for i in 2..500 {
-            alice2bob =
-                Session::init_from_prekey::<()>(&alice, get_bob(PreKeyId::new(i), &mut bob_store))
-                    .unwrap();
+            alice2bob = Session::init_from_prekey::<()>(
+                &alice,
+                get_bob(PreKeyId::new(i).value(), &mut bob_store),
+            )
+            .unwrap();
             hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
             assert_is_msg(&hello_bob, MsgType::Keyed);
 
@@ -1807,12 +1812,17 @@ mod tests {
         };
 
         let get_bob = |i, store: &mut TestStore| {
-            PreKeyBundle::new(bob.public_key.clone(), &store.prekey(i).unwrap().unwrap())
+            PreKeyBundle::new(
+                bob.public_key.clone(),
+                &PreKey::deserialise(&store.prekey(i).unwrap().unwrap()).unwrap(),
+            )
         };
 
-        let mut alice2bob =
-            Session::init_from_prekey::<()>(&alice, get_bob(PreKeyId::new(1), &mut bob_store))
-                .unwrap();
+        let mut alice2bob = Session::init_from_prekey::<()>(
+            &alice,
+            get_bob(PreKeyId::new(1).value(), &mut bob_store),
+        )
+        .unwrap();
         let hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
         assert_is_msg(&hello_bob, MsgType::Keyed);
 
@@ -1879,7 +1889,13 @@ mod tests {
             prekeys: vec![PreKey::new(PreKeyId::new(1))],
         };
 
-        let bob_prekey = bob_store1.prekey(PreKeyId::new(1)).unwrap().unwrap();
+        let bob_prekey = PreKey::deserialise(
+            &bob_store1
+                .prekey(PreKeyId::new(1).value())
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
@@ -1908,7 +1924,13 @@ mod tests {
             prekeys: vec![PreKey::last_resort()],
         };
 
-        let bob_prekey = bob_store.prekey(PreKeyId::new(0xFFFF)).unwrap().unwrap();
+        let bob_prekey = PreKey::deserialise(
+            &bob_store
+                .prekey(PreKeyId::new(0xFFFF).value())
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
