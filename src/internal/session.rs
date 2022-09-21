@@ -447,10 +447,10 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn init_from_message<S: proteus_traits::PreKeyStore>(
+    pub async fn init_from_message<S: proteus_traits::PreKeyStore>(
         ours: I,
         store: &mut S,
-        env: &Envelope,
+        env: &Envelope<'_>,
     ) -> Result<(Session<I>, Vec<u8>), Error<S::Error>> {
         let pkmsg = match *env.message() {
             Message::Plain(_) => return Err(Error::InvalidMessage),
@@ -467,13 +467,14 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
             session_states: BTreeMap::new(),
         };
 
-        match session.new_state(store, pkmsg)? {
+        match session.new_state(store, pkmsg).await? {
             Some(mut s) => {
                 let plain = s.decrypt(env, &pkmsg.message)?;
                 session.insert_session_state(pkmsg.message.session_tag, s);
                 if pkmsg.prekey_id != MAX_PREKEY_ID {
                     store
                         .remove(pkmsg.prekey_id.value())
+                        .await
                         .map_err(Error::PreKeyStoreError)?;
                 }
                 Ok((session, plain))
@@ -495,10 +496,10 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         )
     }
 
-    pub fn decrypt<S: PreKeyStore>(
+    pub async fn decrypt<S: PreKeyStore>(
         &mut self,
         store: &mut S,
-        env: &Envelope,
+        env: &Envelope<'_>,
     ) -> Result<Vec<u8>, Error<S::Error>> {
         match *env.message() {
             Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
@@ -508,12 +509,13 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 }
                 match self.decrypt_cipher_message(env, &m.message) {
                     e @ Err(Error::InvalidSignature | Error::InvalidMessage) => {
-                        match self.new_state(store, m)? {
+                        match self.new_state(store, m).await? {
                             Some(mut s) => {
                                 let plain = s.decrypt(env, &m.message)?;
                                 if m.prekey_id != MAX_PREKEY_ID {
                                     store
                                         .remove(m.prekey_id.value())
+                                        .await
                                         .map_err(Error::PreKeyStoreError)?;
                                 }
                                 self.insert_session_state(m.message.session_tag, s);
@@ -549,13 +551,14 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     // newly created state. It is the caller's responsibility to remove the
     // prekey from the store.
     // See note [no_new_state] for those cases where no prekey has been found.
-    fn new_state<S: proteus_traits::PreKeyStore>(
+    async fn new_state<S: proteus_traits::PreKeyStore>(
         &self,
         store: &mut S,
-        m: &PreKeyMessage,
+        m: &PreKeyMessage<'_>,
     ) -> Result<Option<SessionState>, Error<S::Error>> {
         if let Some(prekey) = store
             .prekey(m.prekey_id.value())
+            .await
             .map_err(Error::PreKeyStoreError)?
             .and_then(|raw_prekey| PreKey::deserialise(&raw_prekey).ok())
         {
@@ -1018,10 +1021,11 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait(?Send)]
     impl proteus_traits::PreKeyStore for TestStore {
         type Error = ();
 
-        fn prekey(
+        async fn prekey(
             &mut self,
             id: proteus_traits::RawPreKeyId,
         ) -> Result<Option<proteus_traits::RawPreKey>, ()> {
@@ -1032,7 +1036,7 @@ mod tests {
             }
         }
 
-        fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), ()> {
+        async fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), ()> {
             self.prekeys
                 .iter()
                 .position(|k| k.key_id.value() == id)
@@ -1047,9 +1051,9 @@ mod tests {
         Keyed,
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn pathological_case() {
+    async fn pathological_case() {
         let total_size = 32;
 
         let alice_ident = IdentityKeyPair::new();
@@ -1071,6 +1075,7 @@ mod tests {
             &mut bob_store,
             &alices[0].encrypt(b"hello").unwrap().into_owned(),
         )
+        .await
         .unwrap()
         .0;
 
@@ -1080,7 +1085,7 @@ mod tests {
                 let _ = a.encrypt(b"hello").unwrap();
             }
             let hello_bob = a.encrypt(b"Hello Bob!").unwrap();
-            assert!(bob.decrypt(&mut bob_store, &hello_bob).is_ok())
+            assert!(bob.decrypt(&mut bob_store, &hello_bob).await.is_ok())
         }
 
         assert_eq!(total_size, bob.session_states.len());
@@ -1088,13 +1093,14 @@ mod tests {
         for a in &mut alices {
             assert!(bob
                 .decrypt(&mut bob_store, &a.encrypt(b"Hello Bob!").unwrap())
+                .await
                 .is_ok());
         }
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn encrypt_decrypt() {
+    async fn encrypt_decrypt() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1137,7 +1143,7 @@ mod tests {
         );
 
         let mut bob =
-            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
+            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!").await;
         bob = Session::deserialise(&bob_ident, &bob.serialise().unwrap())
             .unwrap_or_else(|e| panic!("Failed to decode session: {}", e));
         assert_eq!(1, bob.session_states.len());
@@ -1160,7 +1166,7 @@ mod tests {
         // Alice
         assert_decrypt(
             b"Hello Alice!",
-            alice.decrypt(&mut alice_store, &hello_alice),
+            alice.decrypt(&mut alice_store, &hello_alice).await,
         );
         assert!(alice.pending_prekey.is_none());
         assert_eq!(
@@ -1184,7 +1190,7 @@ mod tests {
         assert_prev_count(&alice, 2);
 
         // Bob
-        assert_decrypt(b"Ping1!", bob.decrypt(&mut bob_store, &ping_bob_1));
+        assert_decrypt(b"Ping1!", bob.decrypt(&mut bob_store, &ping_bob_1).await);
         assert_eq!(
             2,
             bob.session_states
@@ -1194,7 +1200,7 @@ mod tests {
                 .recv_chains
                 .len()
         );
-        assert_decrypt(b"Ping2!", bob.decrypt(&mut bob_store, &ping_bob_2));
+        assert_decrypt(b"Ping2!", bob.decrypt(&mut bob_store, &ping_bob_2).await);
         assert_eq!(
             2,
             bob.session_states
@@ -1208,7 +1214,7 @@ mod tests {
         assert_prev_count(&bob, 1);
 
         // Alice
-        assert_decrypt(b"Pong!", alice.decrypt(&mut alice_store, &pong_alice));
+        assert_decrypt(b"Pong!", alice.decrypt(&mut alice_store, &pong_alice).await);
         assert_eq!(
             3,
             alice
@@ -1224,7 +1230,7 @@ mod tests {
         // Bob (Delayed (prekey) message, decrypted with the "old" receive chain)
         assert_decrypt(
             b"Hello delay!",
-            bob.decrypt(&mut bob_store, &hello_bob_delayed),
+            bob.decrypt(&mut bob_store, &hello_bob_delayed).await,
         );
         assert_eq!(
             2,
@@ -1238,10 +1244,10 @@ mod tests {
         assert_prev_count(&bob, 1);
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
-    fn can_decrypt_in_wrong_order_but_can_not_decrypt_twice() {
+    async fn can_decrypt_in_wrong_order_but_can_not_decrypt_twice() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1259,7 +1265,7 @@ mod tests {
         let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
 
         let mut bob =
-            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
+            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!").await;
 
         let hello1 = bob.encrypt(b"Hello1").unwrap().into_owned();
         let hello2 = bob.encrypt(b"Hello2").unwrap().into_owned();
@@ -1267,7 +1273,7 @@ mod tests {
         let hello4 = bob.encrypt(b"Hello4").unwrap().into_owned();
         let hello5 = bob.encrypt(b"Hello5").unwrap().into_owned();
 
-        assert_decrypt(b"Hello2", alice.decrypt(&mut alice_store, &hello2));
+        assert_decrypt(b"Hello2", alice.decrypt(&mut alice_store, &hello2).await);
         assert_eq!(
             1,
             alice
@@ -1280,7 +1286,7 @@ mod tests {
                 .len()
         );
 
-        assert_decrypt(b"Hello1", alice.decrypt(&mut alice_store, &hello1));
+        assert_decrypt(b"Hello1", alice.decrypt(&mut alice_store, &hello1).await);
         assert_eq!(
             0,
             alice
@@ -1293,7 +1299,7 @@ mod tests {
                 .len()
         );
 
-        assert_decrypt(b"Hello3", alice.decrypt(&mut alice_store, &hello3));
+        assert_decrypt(b"Hello3", alice.decrypt(&mut alice_store, &hello3).await);
         assert_eq!(
             0,
             alice
@@ -1306,7 +1312,7 @@ mod tests {
                 .len()
         );
 
-        assert_decrypt(b"Hello5", alice.decrypt(&mut alice_store, &hello5));
+        assert_decrypt(b"Hello5", alice.decrypt(&mut alice_store, &hello5).await);
         assert_eq!(
             1,
             alice
@@ -1319,7 +1325,7 @@ mod tests {
                 .len()
         );
 
-        assert_decrypt(b"Hello4", alice.decrypt(&mut alice_store, &hello4));
+        assert_decrypt(b"Hello4", alice.decrypt(&mut alice_store, &hello4).await);
         assert_eq!(
             0,
             alice
@@ -1335,14 +1341,14 @@ mod tests {
         for m in &vec![hello1, hello2, hello3, hello4, hello5] {
             assert_eq!(
                 Some(Error::DuplicateMessage),
-                alice.decrypt(&mut alice_store, m).err()
+                alice.decrypt(&mut alice_store, m).await.err()
             );
         }
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn multiple_prekey_msgs() {
+    async fn multiple_prekey_msgs() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1359,17 +1365,23 @@ mod tests {
         let hello_bob3 = alice.encrypt(b"Hello Bob3!").unwrap().into_owned();
 
         let mut bob =
-            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob1, b"Hello Bob1!");
+            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob1, b"Hello Bob1!").await;
         assert_eq!(1, bob.session_states.len());
-        assert_decrypt(b"Hello Bob2!", bob.decrypt(&mut bob_store, &hello_bob2));
+        assert_decrypt(
+            b"Hello Bob2!",
+            bob.decrypt(&mut bob_store, &hello_bob2).await,
+        );
         assert_eq!(1, bob.session_states.len());
-        assert_decrypt(b"Hello Bob3!", bob.decrypt(&mut bob_store, &hello_bob3));
+        assert_decrypt(
+            b"Hello Bob3!",
+            bob.decrypt(&mut bob_store, &hello_bob3).await,
+        );
         assert_eq!(1, bob.session_states.len());
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn simultaneous_prekey_msgs() {
+    async fn simultaneous_prekey_msgs() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1395,28 +1407,31 @@ mod tests {
         let hello_alice = bob.encrypt(b"Hello Alice!").unwrap().into_owned();
         assert_is_msg(&hello_alice, MsgType::Keyed);
 
-        assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
+        assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob).await);
         assert_eq!(2, bob.session_states.len());
 
         assert_decrypt(
             b"Hello Alice!",
-            alice.decrypt(&mut alice_store, &hello_alice),
+            alice.decrypt(&mut alice_store, &hello_alice).await,
         );
         assert_eq!(2, alice.session_states.len());
 
         // Non-simultaneous answer, which results in agreement of a session.
         let greet_bob = alice.encrypt(b"That was fast!").unwrap().into_owned();
         assert_is_msg(&greet_bob, MsgType::Plain);
-        assert_decrypt(b"That was fast!", bob.decrypt(&mut bob_store, &greet_bob));
+        assert_decrypt(
+            b"That was fast!",
+            bob.decrypt(&mut bob_store, &greet_bob).await,
+        );
 
         let answer_alice = bob.encrypt(b":-)").unwrap().into_owned();
         assert_is_msg(&answer_alice, MsgType::Plain);
-        assert_decrypt(b":-)", alice.decrypt(&mut alice_store, &answer_alice));
+        assert_decrypt(b":-)", alice.decrypt(&mut alice_store, &answer_alice).await);
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn simultaneous_msgs_repeated() {
+    async fn simultaneous_msgs_repeated() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1442,10 +1457,10 @@ mod tests {
         let hello_alice = bob.encrypt(b"Hello Alice!").unwrap().into_owned();
         assert_is_msg(&hello_alice, MsgType::Keyed);
 
-        assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob));
+        assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob).await);
         assert_decrypt(
             b"Hello Alice!",
-            alice.decrypt(&mut alice_store, &hello_alice),
+            alice.decrypt(&mut alice_store, &hello_alice).await,
         );
 
         // Second simultaneous message
@@ -1455,12 +1470,12 @@ mod tests {
         let echo_alice1 = bob.encrypt(b"Echo Alice1!").unwrap().into_owned();
         assert_is_msg(&echo_alice1, MsgType::Plain);
 
-        assert_decrypt(b"Echo Bob1!", bob.decrypt(&mut bob_store, &echo_bob1));
+        assert_decrypt(b"Echo Bob1!", bob.decrypt(&mut bob_store, &echo_bob1).await);
         assert_eq!(2, bob.session_states.len());
 
         assert_decrypt(
             b"Echo Alice1!",
-            alice.decrypt(&mut alice_store, &echo_alice1),
+            alice.decrypt(&mut alice_store, &echo_alice1).await,
         );
         assert_eq!(2, alice.session_states.len());
 
@@ -1471,21 +1486,21 @@ mod tests {
         let echo_alice2 = bob.encrypt(b"Echo Alice2!").unwrap().into_owned();
         assert_is_msg(&echo_alice2, MsgType::Plain);
 
-        assert_decrypt(b"Echo Bob2!", bob.decrypt(&mut bob_store, &echo_bob2));
+        assert_decrypt(b"Echo Bob2!", bob.decrypt(&mut bob_store, &echo_bob2).await);
         assert_eq!(2, bob.session_states.len());
 
         assert_decrypt(
             b"Echo Alice2!",
-            alice.decrypt(&mut alice_store, &echo_alice2),
+            alice.decrypt(&mut alice_store, &echo_alice2).await,
         );
         assert_eq!(2, alice.session_states.len());
 
         // Non-simultaneous answer, which results in agreement of a session.
         let stop_bob = alice.encrypt(b"Stop it!").unwrap().into_owned();
-        assert_decrypt(b"Stop it!", bob.decrypt(&mut bob_store, &stop_bob));
+        assert_decrypt(b"Stop it!", bob.decrypt(&mut bob_store, &stop_bob).await);
 
         let answer_alice = bob.encrypt(b"OK").unwrap().into_owned();
-        assert_decrypt(b"OK", alice.decrypt(&mut alice_store, &answer_alice));
+        assert_decrypt(b"OK", alice.decrypt(&mut alice_store, &answer_alice).await);
     }
 
     #[test]
@@ -1510,9 +1525,9 @@ mod tests {
         };
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn mass_communication() {
+    async fn mass_communication() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1530,7 +1545,7 @@ mod tests {
         let hello_bob = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
 
         let mut bob =
-            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
+            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!").await;
 
         let mut buffer = Vec::new();
         for _ in 0..1001 {
@@ -1540,7 +1555,9 @@ mod tests {
         for msg in &buffer {
             assert_decrypt(
                 b"Hello Alice!",
-                alice.decrypt(&mut alice_store, &Envelope::deserialise(msg).unwrap()),
+                alice
+                    .decrypt(&mut alice_store, &Envelope::deserialise(msg).unwrap())
+                    .await,
             );
         }
 
@@ -1553,7 +1570,7 @@ mod tests {
 
         for msg in &buffer {
             let env = Envelope::deserialise(msg).unwrap();
-            assert!(alice.decrypt(&mut alice_store, &env).is_err(),);
+            assert!(alice.decrypt(&mut alice_store, &env).await.is_err(),);
         }
 
         let msg = bob
@@ -1563,14 +1580,16 @@ mod tests {
             .unwrap();
         assert_eq!(
             Err(Error::TooDistantFuture),
-            alice.decrypt(&mut alice_store, &Envelope::deserialise(&msg).unwrap()),
+            alice
+                .decrypt(&mut alice_store, &Envelope::deserialise(&msg).unwrap())
+                .await,
         );
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
-    fn retry_of_init_from_message_for_the_same_message_should_return_pre_key_not_found() {
+    async fn retry_of_init_from_message_for_the_same_message_should_return_pre_key_not_found() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1584,20 +1603,20 @@ mod tests {
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
         let hello_bob = alice.encrypt(b"Hello Bob!").unwrap();
 
-        assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
+        assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!").await;
         // The behavior on retry depends on the PreKeyStore implementation.
         // With a PreKeyStore that eagerly deletes prekeys, like the TestStore,
         // the prekey will be gone and a retry cause an error (and thus a lost message).
-        match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob) {
+        match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob).await {
             Err(Error::PreKeyNotFound(_)) => {} // expected
             Err(e) => panic!("{:?}", e),
             Ok(_) => panic!("Unexpected success on retrying init_from_message"),
         }
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn skipped_message_keys() {
+    async fn skipped_message_keys() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1623,7 +1642,7 @@ mod tests {
         }
 
         let mut bob =
-            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!");
+            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!").await;
 
         {
             // Normal exchange. Bob has created a new receive chain without skipped message keys.
@@ -1637,7 +1656,10 @@ mod tests {
         let hello_alice0 = bob.encrypt(b"Hello0").unwrap().into_owned();
         let _ = bob.encrypt(b"Hello1").unwrap().into_owned();
         let hello_alice2 = bob.encrypt(b"Hello2").unwrap().into_owned();
-        assert_decrypt(b"Hello2", alice.decrypt(&mut alice_store, &hello_alice2));
+        assert_decrypt(
+            b"Hello2",
+            alice.decrypt(&mut alice_store, &hello_alice2).await,
+        );
 
         {
             // Alice has two skipped message keys in her new receive chain.
@@ -1654,7 +1676,7 @@ mod tests {
         }
 
         let hello_bob0 = alice.encrypt(b"Hello0").unwrap().into_owned();
-        assert_decrypt(b"Hello0", bob.decrypt(&mut bob_store, &hello_bob0));
+        assert_decrypt(b"Hello0", bob.decrypt(&mut bob_store, &hello_bob0).await);
 
         {
             // For Bob everything is normal still. A new message from Alice means a
@@ -1666,7 +1688,10 @@ mod tests {
             assert_eq!(0, s.recv_chains[0].message_keys.len())
         }
 
-        assert_decrypt(b"Hello0", alice.decrypt(&mut alice_store, &hello_alice0));
+        assert_decrypt(
+            b"Hello0",
+            alice.decrypt(&mut alice_store, &hello_alice0).await,
+        );
 
         {
             // Alice received the first of the two missing messages. Therefore
@@ -1680,7 +1705,10 @@ mod tests {
         let hello_again0 = bob.encrypt(b"Again0").unwrap().into_owned();
         let hello_again1 = bob.encrypt(b"Again1").unwrap().into_owned();
 
-        assert_decrypt(b"Again1", alice.decrypt(&mut alice_store, &hello_again1));
+        assert_decrypt(
+            b"Again1",
+            alice.decrypt(&mut alice_store, &hello_again1).await,
+        );
 
         {
             // Bob has sent two new messages which Alice receives out of order.
@@ -1698,7 +1726,10 @@ mod tests {
             assert_eq!(1, s.recv_chains[1].message_keys[0].counter.value());
         }
 
-        assert_decrypt(b"Again0", alice.decrypt(&mut alice_store, &hello_again0));
+        assert_decrypt(
+            b"Again0",
+            alice.decrypt(&mut alice_store, &hello_again0).await,
+        );
     }
 
     #[test]
@@ -1734,9 +1765,9 @@ mod tests {
         assert_eq!(PreKeyAuth::Valid, bob_bundle_signed.verify());
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn session_states_limit() {
+    async fn session_states_limit() {
         let alice = IdentityKeyPair::new();
         let bob = IdentityKeyPair::new();
 
@@ -1744,22 +1775,23 @@ mod tests {
             prekeys: gen_prekeys(PreKeyId::new(0), 500),
         };
 
-        let get_bob = |i, store: &mut TestStore| {
+        async fn get_bob(bob: &IdentityKeyPair, i: u16, store: &mut TestStore) -> PreKeyBundle {
             PreKeyBundle::new(
                 bob.public_key.clone(),
-                &PreKey::deserialise(&store.prekey(i).unwrap().unwrap()).unwrap(),
+                &PreKey::deserialise(&store.prekey(i).await.unwrap().unwrap()).unwrap(),
             )
-        };
+        }
 
         let mut alice2bob = Session::init_from_prekey::<()>(
             &alice,
-            get_bob(PreKeyId::new(1).value(), &mut bob_store),
+            get_bob(&bob, PreKeyId::new(1).value(), &mut bob_store).await,
         )
         .unwrap();
         let mut hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
         assert_is_msg(&hello_bob, MsgType::Keyed);
 
         let mut bob2alice = Session::init_from_message(&bob, &mut bob_store, &hello_bob)
+            .await
             .unwrap()
             .0;
         assert_eq!(1, bob2alice.session_states.len());
@@ -1780,14 +1812,17 @@ mod tests {
         for i in 2..500 {
             alice2bob = Session::init_from_prekey::<()>(
                 &alice,
-                get_bob(PreKeyId::new(i).value(), &mut bob_store),
+                get_bob(&bob, PreKeyId::new(i).value(), &mut bob_store).await,
             )
             .unwrap();
             hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
             assert_is_msg(&hello_bob, MsgType::Keyed);
 
             let to_remove = oldest(&bob2alice.session_states);
-            assert_decrypt(b"Hello Bob!", bob2alice.decrypt(&mut bob_store, &hello_bob));
+            assert_decrypt(
+                b"Hello Bob!",
+                bob2alice.decrypt(&mut bob_store, &hello_bob).await,
+            );
             let n = bob2alice.session_states.len();
             assert!(n < 100);
             if i > 99 {
@@ -1796,10 +1831,10 @@ mod tests {
         }
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
-    fn fail_on_decryption_of_a_too_old_message() {
+    async fn fail_on_decryption_of_a_too_old_message() {
         let alice = IdentityKeyPair::new();
         let bob = IdentityKeyPair::new();
 
@@ -1811,22 +1846,23 @@ mod tests {
             prekeys: gen_prekeys(PreKeyId::new(1), 1),
         };
 
-        let get_bob = |i, store: &mut TestStore| {
+        async fn get_bob(bob: &IdentityKeyPair, i: u16, store: &mut TestStore) -> PreKeyBundle {
             PreKeyBundle::new(
                 bob.public_key.clone(),
-                &PreKey::deserialise(&store.prekey(i).unwrap().unwrap()).unwrap(),
+                &PreKey::deserialise(&store.prekey(i).await.unwrap().unwrap()).unwrap(),
             )
-        };
+        }
 
         let mut alice2bob = Session::init_from_prekey::<()>(
             &alice,
-            get_bob(PreKeyId::new(1).value(), &mut bob_store),
+            get_bob(&bob, PreKeyId::new(1).value(), &mut bob_store).await,
         )
         .unwrap();
         let hello_bob = alice2bob.encrypt(b"Hello Bob!").unwrap().into_owned();
         assert_is_msg(&hello_bob, MsgType::Keyed);
 
         let mut bob2alice = Session::init_from_message(&bob, &mut bob_store, &hello_bob)
+            .await
             .unwrap()
             .0;
         assert_eq!(1, bob2alice.session_states.len());
@@ -1837,48 +1873,48 @@ mod tests {
         }
         let a2b_m2 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
 
-        let b_m1 = bob2alice.decrypt(&mut bob_store, &a2b_m1).unwrap();
+        let b_m1 = bob2alice.decrypt(&mut bob_store, &a2b_m1).await.unwrap();
 
         assert_eq!(b_m1, &[1, 2, 3]);
 
         let b2a_m1 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
 
-        let _a_m1 = alice2bob.decrypt(&mut alice_store, &b2a_m1).unwrap();
+        let _a_m1 = alice2bob.decrypt(&mut alice_store, &b2a_m1).await.unwrap();
 
         let a2b_s2e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s2e1 = bob2alice.decrypt(&mut bob_store, &a2b_s2e1).unwrap();
+        let _b2a_s2e1 = bob2alice.decrypt(&mut bob_store, &a2b_s2e1).await.unwrap();
         let a2b_s2e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s2e2 = alice2bob.decrypt(&mut bob_store, &a2b_s2e2).unwrap();
+        let _b2a_s2e2 = alice2bob.decrypt(&mut bob_store, &a2b_s2e2).await.unwrap();
 
         let a2b_s3e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s3e1 = bob2alice.decrypt(&mut bob_store, &a2b_s3e1).unwrap();
+        let _b2a_s3e1 = bob2alice.decrypt(&mut bob_store, &a2b_s3e1).await.unwrap();
         let a2b_s3e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s3e2 = alice2bob.decrypt(&mut bob_store, &a2b_s3e2).unwrap();
+        let _b2a_s3e2 = alice2bob.decrypt(&mut bob_store, &a2b_s3e2).await.unwrap();
 
         let a2b_s4e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s4e1 = bob2alice.decrypt(&mut bob_store, &a2b_s4e1).unwrap();
+        let _b2a_s4e1 = bob2alice.decrypt(&mut bob_store, &a2b_s4e1).await.unwrap();
         let a2b_s4e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s4e2 = alice2bob.decrypt(&mut bob_store, &a2b_s4e2).unwrap();
+        let _b2a_s4e2 = alice2bob.decrypt(&mut bob_store, &a2b_s4e2).await.unwrap();
 
         let a2b_s5e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s5e1 = bob2alice.decrypt(&mut bob_store, &a2b_s5e1).unwrap();
+        let _b2a_s5e1 = bob2alice.decrypt(&mut bob_store, &a2b_s5e1).await.unwrap();
         let a2b_s5e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s5e2 = alice2bob.decrypt(&mut bob_store, &a2b_s5e2).unwrap();
+        let _b2a_s5e2 = alice2bob.decrypt(&mut bob_store, &a2b_s5e2).await.unwrap();
 
         let a2b_s6e1 = alice2bob.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s6e1 = bob2alice.decrypt(&mut bob_store, &a2b_s6e1).unwrap();
+        let _b2a_s6e1 = bob2alice.decrypt(&mut bob_store, &a2b_s6e1).await.unwrap();
         let a2b_s6e2 = bob2alice.encrypt(&[1, 2, 3]).unwrap().into_owned();
-        let _b2a_s6e2 = alice2bob.decrypt(&mut bob_store, &a2b_s6e2).unwrap();
+        let _b2a_s6e2 = alice2bob.decrypt(&mut bob_store, &a2b_s6e2).await.unwrap();
 
         // At this point we don't have the key material to decrypt.
-        let out = bob2alice.decrypt(&mut bob_store, &a2b_m2);
+        let out = bob2alice.decrypt(&mut bob_store, &a2b_m2).await;
         assert_eq!(out, Err(Error::TooDistantFuture));
         assert!(out.is_err());
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn replaced_prekeys() {
+    async fn replaced_prekeys() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1892,6 +1928,7 @@ mod tests {
         let bob_prekey = PreKey::deserialise(
             &bob_store1
                 .prekey(PreKeyId::new(1).value())
+                .await
                 .unwrap()
                 .unwrap(),
         )
@@ -1902,21 +1939,28 @@ mod tests {
         let hello_bob1 = alice.encrypt(b"Hello Bob1!").unwrap().into_owned();
 
         let mut bob =
-            assert_init_from_message(&bob_ident, &mut bob_store1, &hello_bob1, b"Hello Bob1!");
+            assert_init_from_message(&bob_ident, &mut bob_store1, &hello_bob1, b"Hello Bob1!")
+                .await;
         assert_eq!(1, bob.session_states.len());
 
         let hello_bob2 = alice.encrypt(b"Hello Bob2!").unwrap().into_owned();
-        assert_decrypt(b"Hello Bob2!", bob.decrypt(&mut bob_store1, &hello_bob2));
+        assert_decrypt(
+            b"Hello Bob2!",
+            bob.decrypt(&mut bob_store1, &hello_bob2).await,
+        );
         assert_eq!(1, bob.session_states.len());
 
         let hello_bob3 = alice.encrypt(b"Hello Bob3!").unwrap().into_owned();
-        assert_decrypt(b"Hello Bob3!", bob.decrypt(&mut bob_store2, &hello_bob3));
+        assert_decrypt(
+            b"Hello Bob3!",
+            bob.decrypt(&mut bob_store2, &hello_bob3).await,
+        );
         assert_eq!(1, bob.session_states.len());
     }
 
-    #[test]
+    #[async_std::test]
     #[wasm_bindgen_test]
-    fn max_counter_gap() {
+    async fn max_counter_gap() {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
@@ -1927,6 +1971,7 @@ mod tests {
         let bob_prekey = PreKey::deserialise(
             &bob_store
                 .prekey(PreKeyId::new(0xFFFF).value())
+                .await
                 .unwrap()
                 .unwrap(),
         )
@@ -1937,12 +1982,15 @@ mod tests {
         let hello_bob1 = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
 
         let mut bob =
-            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob1, b"Hello Bob!");
+            assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob1, b"Hello Bob!").await;
         assert_eq!(1, bob.session_states.len());
 
         for _ in 0..1001 {
             let hello_bob2 = alice.encrypt(b"Hello Bob!").unwrap().into_owned();
-            assert_decrypt(b"Hello Bob!", bob.decrypt(&mut bob_store, &hello_bob2));
+            assert_decrypt(
+                b"Hello Bob!",
+                bob.decrypt(&mut bob_store, &hello_bob2).await,
+            );
             assert_eq!(1, bob.session_states.len());
         }
     }
@@ -1960,17 +2008,17 @@ mod tests {
         }
     }
 
-    fn assert_init_from_message<'r, S>(
+    async fn assert_init_from_message<'r, S>(
         i: &'r IdentityKeyPair,
         s: &mut S,
-        m: &Envelope,
+        m: &Envelope<'_>,
         t: &[u8],
     ) -> Session<&'r IdentityKeyPair>
     where
         S: PreKeyStore,
         S::Error: fmt::Debug,
     {
-        match Session::init_from_message(i, s, m) {
+        match Session::init_from_message(i, s, m).await {
             Ok((s, b)) => {
                 let r: &[u8] = b.as_ref();
                 assert_eq!(t, r);
