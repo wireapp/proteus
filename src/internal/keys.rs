@@ -66,7 +66,7 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityKeyPair {
     pub version: u8,
     pub secret_key: SecretKey,
@@ -496,6 +496,15 @@ pub struct Zero {}
 
 #[derive(ZeroizeOnDrop)]
 pub struct SecretKey(ed25519_dalek::ExpandedSecretKey);
+
+impl PartialEq for SecretKey {
+    fn eq(&self, other: &Self) -> bool {
+        use subtle::ConstantTimeEq as _;
+        self.0.to_bytes().ct_eq(&other.0.to_bytes()).unwrap_u8() == 1
+    }
+}
+
+impl Eq for SecretKey {}
 
 impl std::fmt::Debug for SecretKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
