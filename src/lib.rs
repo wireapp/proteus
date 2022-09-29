@@ -23,6 +23,9 @@ pub mod keys;
 pub mod message;
 pub mod session;
 
+#[cfg(feature = "cryptobox-identity")]
+pub mod identity;
+
 /// It's here for compatibility purposes, since it's not needed at all anymore
 #[must_use]
 pub fn init() -> bool {

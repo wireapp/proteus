@@ -24,6 +24,7 @@ path = "crates/ed25519-dalek"
 
 [features]
 default = []
+cryptobox-identity = []
 hazmat = []
 
 [dependencies]
