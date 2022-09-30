@@ -74,27 +74,9 @@ impl Bytes64 {
     }
 }
 
-// Hex formatting ///////////////////////////////////////////////////////////
-
-struct HexSlice<'a>(&'a [u8]);
-impl<'a> HexSlice<'a> {
-    fn new<T: ?Sized + AsRef<[u8]> + 'a>(data: &'a T) -> Self {
-        Self(data.as_ref())
-    }
-}
-
-impl std::fmt::Display for HexSlice<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for b in self.0 {
-            write!(f, "{:x}", b)?;
-        }
-        Ok(())
-    }
-}
-
 #[must_use]
 pub fn fmt_hex(xs: &[u8]) -> String {
-    format!("{}", HexSlice::new(xs))
+    hex::encode(xs)
 }
 
 // Test support /////////////////////////////////////////////////////////////
