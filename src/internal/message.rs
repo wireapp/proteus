@@ -36,19 +36,23 @@ use std::{
 pub struct Counter(u32);
 
 impl Counter {
-    #[must_use] pub fn zero() -> Counter {
+    #[must_use]
+    pub fn zero() -> Counter {
         Counter(0)
     }
 
-    #[must_use] pub fn value(self) -> u32 {
+    #[must_use]
+    pub fn value(self) -> u32 {
         self.0
     }
 
-    #[must_use] pub fn next(self) -> Counter {
+    #[must_use]
+    pub fn next(self) -> Counter {
         Counter(self.0 + 1)
     }
 
-    #[must_use] pub fn as_nonce(self) -> zeroize::Zeroizing<[u8; 8]> {
+    #[must_use]
+    pub fn as_nonce(self) -> zeroize::Zeroizing<[u8; 8]> {
         let mut nonce = [0; 8];
         nonce[0] = (self.0 >> 24) as u8;
         nonce[1] = (self.0 >> 16) as u8;
@@ -72,7 +76,8 @@ impl Counter {
 pub struct SessionTag([u8; 16]);
 
 impl SessionTag {
-    #[must_use] pub fn new() -> SessionTag {
+    #[must_use]
+    pub fn new() -> SessionTag {
         let mut bytes = [0; 16];
         use rand::{RngCore as _, SeedableRng as _};
         let mut rng = rand_chacha::ChaCha12Rng::from_entropy();
@@ -103,6 +108,7 @@ impl fmt::Debug for SessionTag {
 
 // Message //////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub enum Message<'r> {
     Plain(Box<CipherMessage<'r>>),
     Keyed(Box<PreKeyMessage<'r>>),
@@ -140,6 +146,7 @@ impl<'r> Message<'r> {
 
 // Prekey Message ///////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub struct PreKeyMessage<'r> {
     pub prekey_id: PreKeyId,
     pub base_key: Cow<'r, PublicKey>,
@@ -199,6 +206,7 @@ impl<'r> PreKeyMessage<'r> {
 
 // CipherMessage ////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub struct CipherMessage<'r> {
     pub session_tag: SessionTag,
     pub counter: Counter,
@@ -267,6 +275,7 @@ impl<'r> CipherMessage<'r> {
 
 // Message Envelope /////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub struct Envelope<'r> {
     version: u8,
     mac: Mac,
@@ -287,7 +296,8 @@ impl<'r> Envelope<'r> {
         })
     }
 
-    #[must_use] pub fn into_owned<'s>(self) -> Envelope<'s> {
+    #[must_use]
+    pub fn into_owned<'s>(self) -> Envelope<'s> {
         Envelope {
             version: self.version,
             mac: self.mac,
@@ -296,19 +306,23 @@ impl<'r> Envelope<'r> {
         }
     }
 
-    #[must_use] pub fn verify(&self, k: &MacKey) -> bool {
+    #[must_use]
+    pub fn verify(&self, k: &MacKey) -> bool {
         k.verify(&self.mac, &self.message_enc)
     }
 
-    #[must_use] pub fn version(&self) -> u16 {
+    #[must_use]
+    pub fn version(&self) -> u16 {
         u16::from(self.version)
     }
 
-    #[must_use] pub fn mac(&self) -> &Mac {
+    #[must_use]
+    pub fn mac(&self) -> &Mac {
         &self.mac
     }
 
-    #[must_use] pub fn message(&self) -> &Message {
+    #[must_use]
+    pub fn message(&self) -> &Message {
         &self.message
     }
 

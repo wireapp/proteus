@@ -73,11 +73,13 @@ impl DerivedSecrets {
 pub struct CipherKey(chacha20::Key);
 
 impl CipherKey {
-    #[must_use] pub fn new(b: [u8; 32]) -> CipherKey {
+    #[must_use]
+    pub fn new(b: [u8; 32]) -> CipherKey {
         CipherKey(chacha20::Key::clone_from_slice(&b))
     }
 
-    #[must_use] pub fn encrypt(&self, text: &[u8], nonce: &[u8]) -> Vec<u8> {
+    #[must_use]
+    pub fn encrypt(&self, text: &[u8], nonce: &[u8]) -> Vec<u8> {
         use chacha20::cipher::{KeyIvInit as _, StreamCipher as _};
         let nonce = chacha20::LegacyNonce::from_slice(nonce);
         let mut cipher = chacha20::ChaCha20Legacy::new(&self.0, nonce);
@@ -86,7 +88,8 @@ impl CipherKey {
         data
     }
 
-    #[must_use] pub fn decrypt(&self, data: &[u8], nonce: &[u8]) -> Vec<u8> {
+    #[must_use]
+    pub fn decrypt(&self, data: &[u8], nonce: &[u8]) -> Vec<u8> {
         use chacha20::cipher::{KeyIvInit as _, StreamCipher as _, StreamCipherSeek as _};
         let nonce = chacha20::LegacyNonce::from_slice(nonce);
         let mut cipher = chacha20::ChaCha20Legacy::new(&self.0, nonce);
@@ -136,18 +139,21 @@ impl Deref for CipherKey {
 pub struct MacKey([u8; 32]);
 
 impl MacKey {
-    #[must_use] pub fn new(b: [u8; 32]) -> MacKey {
+    #[must_use]
+    pub fn new(b: [u8; 32]) -> MacKey {
         MacKey(b)
     }
 
-    #[must_use] pub fn sign(&self, msg: &[u8]) -> Mac {
+    #[must_use]
+    pub fn sign(&self, msg: &[u8]) -> Mac {
         let mut mac = HmacSha256::new_from_slice(&self.0).unwrap();
         mac.update(msg);
 
         Mac::new(mac.finalize())
     }
 
-    #[must_use] pub fn verify(&self, sig: &Mac, msg: &[u8]) -> bool {
+    #[must_use]
+    pub fn verify(&self, sig: &Mac, msg: &[u8]) -> bool {
         let mut mac = HmacSha256::new_from_slice(&self.0).unwrap();
         mac.update(msg);
         mac.verify_slice(sig).map(|_| true).unwrap_or(false)
@@ -177,16 +183,18 @@ impl MacKey {
 
 // MAC //////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
+#[derive(Debug, Clone, PartialEq, Eq, ZeroizeOnDrop)]
 #[repr(transparent)]
 pub struct Mac([u8; 32]);
 
 impl Mac {
-    #[must_use] pub fn new(signature: hmac::digest::CtOutput<HmacSha256>) -> Self {
+    #[must_use]
+    pub fn new(signature: hmac::digest::CtOutput<HmacSha256>) -> Self {
         Self(signature.into_bytes().into())
     }
 
-    #[must_use] pub fn into_bytes(self) -> [u8; 32] {
+    #[must_use]
+    pub fn into_bytes(self) -> [u8; 32] {
         self.0
     }
 
