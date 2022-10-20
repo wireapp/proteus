@@ -100,6 +100,7 @@ impl fmt::Debug for SessionTag {
 
 // Message //////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub enum Message<'r> {
     Plain(CipherMessage<'r>),
     Keyed(PreKeyMessage<'r>),
@@ -137,6 +138,7 @@ impl<'r> Message<'r> {
 
 // Prekey Message ///////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub struct PreKeyMessage<'r> {
     pub prekey_id: PreKeyId,
     pub base_key: Cow<'r, PublicKey>,
@@ -196,6 +198,7 @@ impl<'r> PreKeyMessage<'r> {
 
 // CipherMessage ////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub struct CipherMessage<'r> {
     pub session_tag: SessionTag,
     pub counter: Counter,
@@ -271,6 +274,7 @@ impl<'r> CipherMessage<'r> {
 
 // Message Envelope /////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub struct Envelope<'r> {
     version: u8,
     mac: Mac,
@@ -380,7 +384,8 @@ mod tests {
 
     #[test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
-    fn envelope_created_with_MacKey_should_be_verified_with_that_key_after_serialization_deserialization() {
+    fn envelope_created_with_MacKey_should_be_verified_with_that_key_after_serialization_deserialization(
+    ) {
         let mk = MacKey::new([1; 32]);
         let bk = KeyPair::new().public_key;
         let ik = IdentityKey::new(KeyPair::new().public_key);

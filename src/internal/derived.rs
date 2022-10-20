@@ -171,7 +171,7 @@ impl MacKey {
 
 // MAC //////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mac {
     sig: mac::Tag,
 }
