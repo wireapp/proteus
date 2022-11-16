@@ -425,6 +425,17 @@ struct BobParams<'r> {
     alice_base: &'r PublicKey,
 }
 
+#[cfg(feature = "hazmat")]
+impl<I: Borrow<IdentityKeyPair>> Session<I> {
+    pub fn session_states(&self) -> &BTreeMap<SessionTag, Indexed<SessionState>> {
+        &self.session_states
+    }
+
+    pub fn session_tag(&self) -> &SessionTag {
+        &self.session_tag
+    }
+}
+
 impl<I: Borrow<IdentityKeyPair>> Session<I> {
     pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> Result<Session<I>, Error<E>> {
         let alice_base = KeyPair::new();
@@ -742,6 +753,25 @@ pub struct SessionState {
     send_chain: SendChain,
     root_key: RootKey,
     prev_counter: Counter,
+}
+
+#[cfg(feature = "hazmat")]
+impl SessionState {
+    pub fn inspect_recv_chains(&self) -> &VecDeque<RecvChain> {
+        &self.recv_chains
+    }
+
+    pub fn inspect_send_chain(&self) -> &SendChain {
+        &self.send_chain
+    }
+
+    pub fn inspect_root_key(&self) -> &RootKey {
+        &self.root_key
+    }
+
+    pub fn prev_counter(&self) -> &Counter {
+        &self.prev_counter
+    }
 }
 
 impl SessionState {
