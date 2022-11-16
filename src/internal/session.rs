@@ -81,6 +81,7 @@ impl RootKey {
 // Chain key /////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "hazmat", derive(Eq, PartialEq))]
 pub struct ChainKey {
     key: MacKey,
     idx: Counter,
@@ -181,6 +182,7 @@ impl SendChain {
 const MAX_COUNTER_GAP: usize = 1000;
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "hazmat", derive(Eq, PartialEq))]
 pub struct RecvChain {
     chain_key: ChainKey,
     ratchet_key: PublicKey,
@@ -314,6 +316,7 @@ impl RecvChain {
 // Message Keys /////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "hazmat", derive(Eq, PartialEq))]
 pub struct MessageKeys {
     cipher_key: CipherKey,
     mac_key: MacKey,

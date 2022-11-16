@@ -59,6 +59,7 @@ impl DerivedSecrets {
 // Cipher Key ///////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "hazmat", derive(Eq, PartialEq))]
 pub struct CipherKey {
     key: stream::Key,
 }
@@ -125,6 +126,7 @@ impl Nonce {
 // MAC Key //////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "hazmat", derive(Eq, PartialEq))]
 pub struct MacKey {
     key: mac::Key,
 }
