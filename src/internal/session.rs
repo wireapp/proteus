@@ -87,6 +87,17 @@ pub struct ChainKey {
     idx: Counter,
 }
 
+#[cfg(feature = "hazmat")]
+impl ChainKey {
+    pub fn inspect_mac_key(&self) -> &MacKey {
+        &self.key
+    }
+
+    pub fn inspect_counter(&self) -> &Counter {
+        &self.idx
+    }
+}
+
 impl ChainKey {
     pub fn from_mac_key(k: MacKey, idx: Counter) -> ChainKey {
         ChainKey { key: k, idx }
