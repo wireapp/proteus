@@ -189,6 +189,21 @@ pub struct RecvChain {
     message_keys: VecDeque<MessageKeys>,
 }
 
+#[cfg(feature = "hazmat")]
+impl RecvChain {
+    pub fn inspect_chain_key(&self) -> &ChainKey {
+        &self.chain_key
+    }
+
+    pub fn inspect_ratchet_key(&self) -> &PublicKey {
+        &self.ratchet_key
+    }
+
+    pub fn inspect_message_keys(&self) -> &VecDeque<MessageKeys> {
+        &self.message_keys
+    }
+}
+
 impl RecvChain {
     pub fn new(ck: ChainKey, rk: PublicKey) -> RecvChain {
         RecvChain {

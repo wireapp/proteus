@@ -136,6 +136,11 @@ impl MacKey {
         MacKey { key: mac::Key(b) }
     }
 
+    #[cfg(feature = "hazmat")]
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.key.0
+    }
+
     pub fn sign(&self, msg: &[u8]) -> Mac {
         Mac {
             sig: mac::authenticate(msg, &self.key),
