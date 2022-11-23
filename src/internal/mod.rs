@@ -19,7 +19,6 @@
 pub mod util;
 
 pub mod derived;
-// pub mod ffi;
 pub mod keys;
 pub mod message;
 pub mod session;

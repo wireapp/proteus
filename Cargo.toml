@@ -26,6 +26,7 @@ path = "crates/ed25519-dalek"
 default = []
 cryptobox-identity = []
 hazmat = []
+leak-my-secret-keys-please = []
 
 [dependencies]
 thiserror = "1.0"

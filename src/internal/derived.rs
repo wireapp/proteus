@@ -29,7 +29,7 @@ use std::{
 use zeroize::ZeroizeOnDrop;
 
 type HmacSha256 = hmac::SimpleHmac<sha2::Sha256>;
-type HkdfSha256 = hkdf::Hkdf<sha2::Sha256>;
+type HkdfSha256 = hkdf::SimpleHkdf<sha2::Sha256>;
 
 // Derived Secrets //////////////////////////////////////////////////////////
 
@@ -40,7 +40,11 @@ pub struct DerivedSecrets {
 }
 
 impl DerivedSecrets {
-    pub fn kdf(
+    pub fn kdf(input: &[u8], salt: &[u8], info: &[u8]) -> Result<DerivedSecrets, InternalError> {
+        Self::kdf_internal(input, Some(salt), info)
+    }
+
+    fn kdf_internal(
         input: &[u8],
         salt: Option<&[u8]>,
         info: &[u8],
@@ -52,8 +56,8 @@ impl DerivedSecrets {
         let mut okm = zeroize::Zeroizing::new([0u8; 64]);
         hkdf.expand(info, okm.as_mut())?;
 
-        ck.as_mut().write_all(&okm[0..32])?;
-        mk.as_mut().write_all(&okm[32..64])?;
+        ck.as_mut().write_all(&okm[..32])?;
+        mk.as_mut().write_all(&okm[32..])?;
 
         Ok(DerivedSecrets {
             cipher_key: CipherKey::new(ck),
@@ -62,13 +66,13 @@ impl DerivedSecrets {
     }
 
     pub fn kdf_without_salt(input: &[u8], info: &[u8]) -> Result<DerivedSecrets, InternalError> {
-        Self::kdf(input, None, info)
+        Self::kdf_internal(input, None, info)
     }
 }
 
 // Cipher Key ///////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, ZeroizeOnDrop)]
+#[derive(Clone, Debug, PartialEq, Eq, ZeroizeOnDrop)]
 #[repr(transparent)]
 pub struct CipherKey(chacha20::Key);
 
@@ -90,11 +94,10 @@ impl CipherKey {
 
     #[must_use]
     pub fn decrypt(&self, data: &[u8], nonce: &[u8]) -> Vec<u8> {
-        use chacha20::cipher::{KeyIvInit as _, StreamCipher as _, StreamCipherSeek as _};
+        use chacha20::cipher::{KeyIvInit as _, StreamCipher as _};
         let nonce = chacha20::LegacyNonce::from_slice(nonce);
         let mut cipher = chacha20::ChaCha20Legacy::new(&self.0, nonce);
         let mut text = Vec::from(data);
-        cipher.seek(0);
         cipher.apply_keystream(&mut text);
         text
     }
@@ -134,7 +137,7 @@ impl Deref for CipherKey {
 
 // MAC Key //////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, ZeroizeOnDrop)]
+#[derive(Clone, Debug, PartialEq, Eq, ZeroizeOnDrop)]
 #[repr(transparent)]
 pub struct MacKey([u8; 32]);
 
@@ -149,14 +152,29 @@ impl MacKey {
         let mut mac = HmacSha256::new_from_slice(&self.0).unwrap();
         mac.update(msg);
 
-        Mac::new(mac.finalize())
+        Mac::new(mac.finalize().into_bytes().into())
     }
 
     #[must_use]
     pub fn verify(&self, sig: &Mac, msg: &[u8]) -> bool {
+        if sig.len() != 32 {
+            println!("MAC len mismatch, expected 32, got {}", sig.len());
+            return false;
+        }
+
         let mut mac = HmacSha256::new_from_slice(&self.0).unwrap();
         mac.update(msg);
-        mac.verify_slice(sig).map(|_| true).unwrap_or(false)
+
+        match mac.verify_slice(sig) {
+            Ok(_) => {
+                println!("MAC OK");
+                true
+            }
+            Err(e) => {
+                println!("MAC NOK: [{e:?}] {e}");
+                false
+            }
+        }
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -189,8 +207,8 @@ pub struct Mac([u8; 32]);
 
 impl Mac {
     #[must_use]
-    pub fn new(signature: hmac::digest::CtOutput<HmacSha256>) -> Self {
-        Self(signature.into_bytes().into())
+    pub fn new(signature: [u8; 32]) -> Self {
+        Self(signature)
     }
 
     #[must_use]
@@ -230,13 +248,31 @@ impl Deref for Mac {
 
 // Tests ////////////////////////////////////////////////////////////////////
 
-#[test]
-#[wasm_bindgen_test::wasm_bindgen_test]
-fn derive_secrets() {
-    let nc = chacha20::LegacyNonce::from_slice(&[0; 8]);
-    let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar").unwrap();
-    let ct = ds.cipher_key.encrypt(b"plaintext", nc);
-    assert_eq!(ct.len(), b"plaintext".len());
-    assert!(ct != b"plaintext");
-    assert_eq!(ds.cipher_key.decrypt(&ct, nc), b"plaintext");
+#[cfg(test)]
+mod tests {
+    use super::{DerivedSecrets, MacKey};
+
+    #[test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
+    fn derive_secrets() {
+        let nc = chacha20::LegacyNonce::from_slice(&[0; 8]);
+        let info = b"foobar";
+        let key = b"346234876";
+        let payload = b"plaintext";
+        let ds = DerivedSecrets::kdf_without_salt(key, info).unwrap();
+        let ct = ds.cipher_key.encrypt(payload, nc);
+        assert_eq!(ct.len(), payload.len());
+        assert!(ct != payload);
+        assert_eq!(ds.cipher_key.decrypt(&ct, nc), payload);
+    }
+
+    #[test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
+    fn mac_integrity() {
+        let mac_bytes = crate::internal::keys::rand_bytes_array(None);
+        let mac_key = MacKey::new(*mac_bytes);
+        let message = b"Hello world!";
+        let signature = mac_key.sign(message);
+        assert!(mac_key.verify(&signature, message))
+    }
 }

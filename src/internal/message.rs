@@ -51,6 +51,10 @@ impl Counter {
         Counter(self.0 + 1)
     }
 
+    pub fn next_in_place(&mut self) {
+        self.0 += 1;
+    }
+
     #[must_use]
     pub fn as_nonce(self) -> zeroize::Zeroizing<[u8; 8]> {
         let mut nonce = [0; 8];
@@ -78,11 +82,8 @@ pub struct SessionTag([u8; 16]);
 impl SessionTag {
     #[must_use]
     pub fn new() -> SessionTag {
-        let mut bytes = [0; 16];
-        use rand::{RngCore as _, SeedableRng as _};
-        let mut rng = rand_chacha::ChaCha12Rng::from_entropy();
-        rng.fill_bytes(&mut bytes);
-        SessionTag(bytes)
+        let bytes = crate::internal::keys::rand_bytes_array::<16>(None);
+        SessionTag(*bytes)
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -95,7 +96,7 @@ impl SessionTag {
             return Err(DecodeError::InvalidArrayLen(v.len()));
         }
         let mut a = [0u8; 16];
-        a[..16].clone_from_slice(&v[..16]);
+        a.copy_from_slice(&v[..16]);
         Ok(SessionTag(a))
     }
 }
@@ -342,7 +343,8 @@ impl<'r> Envelope<'r> {
         e.u8(self.version)?;
         e.u8(1)?;
         self.mac.encode(e)?;
-        e.u8(2).and(e.bytes(&self.message_enc))?;
+        e.u8(2)?;
+        e.bytes(&self.message_enc)?;
         Ok(())
     }
 

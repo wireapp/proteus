@@ -49,15 +49,17 @@ impl<'r> Identity<'r> {
                 e.u8(1)?;
                 e.object(1)?;
                 e.u8(0)?;
-                id.encode(e)
+                id.encode(e)?;
             }
             Identity::Pub(ref id) => {
                 e.u8(2)?;
                 e.object(1)?;
                 e.u8(0)?;
-                id.encode(e)
+                id.encode(e)?;
             }
         }
+
+        Ok(())
     }
 
     fn decode<'s, R: io::Read + Skip>(d: &mut Decoder<R>) -> Result<Identity<'s>, DecodeError> {

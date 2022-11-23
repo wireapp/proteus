@@ -54,7 +54,7 @@ impl RootKey {
         theirs: &PublicKey,
     ) -> Result<(RootKey, ChainKey), Error<E>> {
         let secret = ours.secret_key.shared_secret(theirs)?;
-        let dsecs = DerivedSecrets::kdf(&secret, Some(&self.key), b"dh_ratchet")?;
+        let dsecs = DerivedSecrets::kdf(&secret, &self.key, b"dh_ratchet")?;
         Ok((
             RootKey::from_cipher_key(dsecs.cipher_key),
             ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()),
@@ -84,7 +84,7 @@ impl RootKey {
 
 // Chain key /////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChainKey {
     key: MacKey,
     idx: Counter,
@@ -102,6 +102,11 @@ impl ChainKey {
             key: MacKey::new(self.key.sign(b"1").into_bytes()),
             idx: self.idx.next(),
         }
+    }
+
+    pub fn next_ratchet(&mut self) {
+        self.key = MacKey::new(self.key.sign(b"1").into_bytes());
+        self.idx.next_in_place();
     }
 
     pub fn message_keys(&self) -> Result<MessageKeys, InternalError> {
@@ -188,6 +193,7 @@ impl SendChain {
 const MAX_COUNTER_GAP: usize = 1000;
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "hazmat", derive(PartialEq, Eq))]
 pub struct RecvChain {
     chain_key: ChainKey,
     ratchet_key: PublicKey,
@@ -250,7 +256,7 @@ impl RecvChain {
 
         for _ in 0..num {
             buf.push_back(chk.message_keys()?);
-            chk = chk.next();
+            chk.next_ratchet();
         }
 
         let mk = chk.message_keys()?;
@@ -322,7 +328,7 @@ impl RecvChain {
 
 // Message Keys /////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct MessageKeys {
     cipher_key: CipherKey,
     mac_key: MacKey,
@@ -422,9 +428,20 @@ struct BobParams<'r> {
     alice_base: &'r PublicKey,
 }
 
+#[cfg(feature = "hazmat")]
+impl<I: Borrow<IdentityKeyPair>> Session<I> {
+    pub fn session_states(&self) -> &BTreeMap<SessionTag, Indexed<SessionState>> {
+        &self.session_states
+    }
+
+    pub fn session_tag(&self) -> &SessionTag {
+        &self.session_tag
+    }
+}
+
 impl<I: Borrow<IdentityKeyPair>> Session<I> {
     pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> Result<Session<I>, Error<E>> {
-        let alice_base = KeyPair::new();
+        let alice_base = unsafe { KeyPair::new_unclamped() };
         let state = SessionState::init_as_alice(&AliceParams {
             alice_ident: alice.borrow(),
             alice_base: &alice_base,
@@ -752,6 +769,25 @@ pub struct SessionState {
     prev_counter: Counter,
 }
 
+#[cfg(feature = "hazmat")]
+impl SessionState {
+    pub fn inspect_recv_chains(&self) -> &VecDeque<RecvChain> {
+        &self.recv_chains
+    }
+
+    pub fn inspect_send_chain(&self) -> &SendChain {
+        &self.send_chain
+    }
+
+    pub fn inspect_root_key(&self) -> &RootKey {
+        &self.root_key
+    }
+
+    pub fn prev_counter(&self) -> &Counter {
+        &self.prev_counter
+    }
+}
+
 impl SessionState {
     fn init_as_alice<E>(p: &AliceParams) -> Result<SessionState, Error<E>> {
         let master_key = {
@@ -816,7 +852,7 @@ impl SessionState {
         })
     }
 
-    fn ratchet<E>(&mut self, ratchet_key: PublicKey) -> Result<(), Error<E>> {
+    fn ratchet<E>(&mut self, ratchet_key: PublicKey) -> Result<&mut RecvChain, Error<E>> {
         let new_ratchet = KeyPair::new();
 
         let (recv_root_key, recv_chain_key) = self
@@ -838,7 +874,7 @@ impl SessionState {
             self.recv_chains.pop_back();
         }
 
-        Ok(())
+        Ok(&mut self.recv_chains[0])
     }
 
     fn encrypt<'r>(
@@ -868,43 +904,56 @@ impl SessionState {
             })),
         };
 
-        let env = Envelope::new(&msgkeys.mac_key, message);
-        self.send_chain.chain_key = self.send_chain.chain_key.next();
-        env
+        let env = Envelope::new(&msgkeys.mac_key, message)?;
+        self.send_chain.chain_key.next_ratchet();
+        Ok(env)
     }
 
     fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, Error<E>> {
-        let rchain: &mut RecvChain = match self
-            .recv_chains
-            .iter_mut()
-            .find(|c| c.ratchet_key == *m.ratchet_key)
-        {
-            Some(chain) => chain,
-            None => {
-                self.ratchet::<E>((*m.ratchet_key).clone())?;
-                &mut self.recv_chains[0]
-            }
+        // FIXME: Things are probably wrong here, where we load the ratchet_key's public key wrong
+        let message_ratchet_key = &*m.ratchet_key;
+        dbg!(hex::encode(message_ratchet_key.to_edwards()));
+        let rchain: &mut RecvChain = if self.recv_chains.is_empty() {
+            println!("recvchain is empty, ratcheting...");
+            self.ratchet::<E>(message_ratchet_key.clone())?
+        } else if let Some(chain) = self.recv_chains.iter_mut().find(|c| {
+            dbg!(hex::encode(c.ratchet_key.to_edwards()));
+            c.ratchet_key == *message_ratchet_key
+        }) {
+            println!("Found recvchain!");
+            chain
+        } else {
+            self.ratchet::<E>(message_ratchet_key.clone())?
         };
+
+        dbg!(rchain.chain_key.idx);
+        dbg!(m.counter);
 
         match m.counter.cmp(&rchain.chain_key.idx) {
             Ordering::Less => rchain.try_message_keys(env, m),
             Ordering::Greater => {
+                println!("Counter is greater than the matching rchain's idx");
                 let (chk, mk, mks) = rchain.stage_message_keys::<E>(m)?;
-                let plain = mk.decrypt(&m.cipher_text);
+
                 if !env.verify(&mk.mac_key) {
                     return Err(Error::InvalidSignature);
                 }
+
+                let plain = mk.decrypt(&m.cipher_text);
                 rchain.chain_key = chk.next();
                 rchain.commit_message_keys(mks);
                 Ok(plain)
             }
             Ordering::Equal => {
+                println!("Counter is equal to the matching rchain's idx");
                 let mks = rchain.chain_key.message_keys()?;
-                let plain = mks.decrypt(&m.cipher_text);
+
                 if !env.verify(&mks.mac_key) {
                     return Err(Error::InvalidSignature);
                 }
-                rchain.chain_key = rchain.chain_key.next();
+
+                let plain = mks.decrypt(&m.cipher_text);
+                rchain.chain_key.next_ratchet();
                 Ok(plain)
             }
         }
@@ -1547,8 +1596,9 @@ mod tests {
         let mut bob =
             assert_init_from_message(&bob_ident, &mut bob_store, &hello_bob, b"Hello Bob!").await;
 
-        let mut buffer = Vec::new();
-        for _ in 0..1001 {
+        const ITER_COUNT: usize = 1001;
+        let mut buffer = Vec::with_capacity(ITER_COUNT);
+        for _ in 0..ITER_COUNT {
             buffer.push(bob.encrypt(b"Hello Alice!").unwrap().serialise().unwrap())
         }
 
@@ -1562,7 +1612,7 @@ mod tests {
         }
 
         buffer.clear();
-        for _ in 0..1001 {
+        for _ in 0..ITER_COUNT {
             let mut msg = bob.encrypt(b"Hello Alice!").unwrap().serialise().unwrap();
             msg[10] ^= 0xFF; // Flip some bits in the Mac.
             buffer.push(msg);
@@ -1570,7 +1620,10 @@ mod tests {
 
         for msg in &buffer {
             let env = Envelope::deserialise(msg).unwrap();
-            assert!(alice.decrypt(&mut alice_store, &env).await.is_err(),);
+            assert_eq!(
+                Err(Error::InvalidSignature),
+                alice.decrypt(&mut alice_store, &env).await
+            );
         }
 
         let msg = bob

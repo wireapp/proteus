@@ -80,9 +80,15 @@ impl Default for IdentityKeyPair {
 }
 
 impl IdentityKeyPair {
+    // #[must_use]
+    // pub fn new() -> IdentityKeyPair {
+    //     Self::from_keypair(KeyPair::new())
+    // }
+
     #[must_use]
     pub fn new() -> IdentityKeyPair {
-        Self::from_keypair(KeyPair::new())
+        // FIXME: seems unclamped doesn't work and clamped does. Why?
+        Self::from_keypair(unsafe { KeyPair::new_unclamped() })
     }
 
     fn from_keypair(k: KeyPair) -> Self {
@@ -399,13 +405,33 @@ impl Default for KeyPair {
 impl KeyPair {
     #[must_use]
     pub fn new() -> KeyPair {
-        use rand::{RngCore as _, SeedableRng as _};
-        let mut rng = rand_chacha::ChaCha20Rng::from_entropy();
+        Self::new_with_entropy_and_clamping(None, true)
+    }
 
-        let mut sk_raw = [0u8; 32];
-        rng.fill_bytes(&mut sk_raw);
-        let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&sk_raw).unwrap();
-        let sk_weird = ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird);
+    #[must_use]
+    pub unsafe fn new_unclamped() -> KeyPair {
+        Self::new_with_entropy_and_clamping(None, false)
+    }
+
+    #[must_use]
+    pub unsafe fn new_unclamped_with_entropy(entropy: [u8; 32]) -> KeyPair {
+        Self::new_with_entropy_and_clamping(Some(entropy), false)
+    }
+
+    #[must_use]
+    pub fn new_with_entropy(entropy: [u8; 32]) -> KeyPair {
+        Self::new_with_entropy_and_clamping(Some(entropy), true)
+    }
+
+    fn new_with_entropy_and_clamping(entropy: Option<[u8; 32]>, clamp: bool) -> KeyPair {
+        let sk_weird = if clamp {
+            let sk_raw = rand_bytes_array::<32>(entropy);
+            let sk_not_weird = ed25519_dalek::SecretKey::from_bytes(&*sk_raw).unwrap();
+            ed25519_dalek::ExpandedSecretKey::from(&sk_not_weird)
+        } else {
+            let sk_raw = rand_bytes_array::<64>(entropy);
+            unsafe { ed25519_dalek::ExpandedSecretKey::from_bytes_unchecked(&*sk_raw).unwrap() }
+        };
 
         let secret_key = SecretKey(sk_weird);
         let public_key = secret_key.public_key();
@@ -506,10 +532,20 @@ impl PartialEq for SecretKey {
 
 impl Eq for SecretKey {}
 
+#[cfg(not(feature = "leak-my-secret-keys-please"))]
 impl std::fmt::Debug for SecretKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("SecretKey")
             .field("secret_key", &["[REDACTED]"])
+            .finish()
+    }
+}
+
+#[cfg(feature = "leak-my-secret-keys-please")]
+impl std::fmt::Debug for SecretKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecretKey")
+            .field("secret_key", &self.0.to_bytes())
             .finish()
     }
 }
@@ -527,8 +563,8 @@ impl SecretKey {
         PublicKey(ed25519_dalek::PublicKey::from(&self.0))
 
         // ? Cursed - We manually implement the operation while dodging the scalar clamping
-        // let scalar_raw = self.pk_bytes(true);
-        // let scalar = curve25519_dalek::scalar::Scalar::from_bits(*scalar_raw);
+        // let scalar_raw = self.to_bytes();
+        // let scalar = curve25519_dalek::scalar::Scalar::from_bits(scalar_raw);
         // let point = &scalar * &curve25519_dalek::constants::ED25519_BASEPOINT_TABLE;
         // PublicKey(ed25519_dalek::PublicKey::from_bytes(&point.compress().to_bytes()).unwrap())
     }
@@ -540,6 +576,18 @@ impl SecretKey {
     }
 
     pub fn shared_secret(&self, bob_public: &PublicKey) -> Result<[u8; 32], Zero> {
+        self.shared_secret_internal(bob_public, false)
+    }
+
+    pub fn shared_secret_clamped(&self, bob_public: &PublicKey) -> Result<[u8; 32], Zero> {
+        self.shared_secret_internal(bob_public, true)
+    }
+
+    fn shared_secret_internal(
+        &self,
+        bob_public: &PublicKey,
+        clamp: bool,
+    ) -> Result<[u8; 32], Zero> {
         if bob_public.0.is_zero_ct() {
             return Err(Zero {});
         }
@@ -563,7 +611,19 @@ impl SecretKey {
         // ? // let bob_public = x25519_dalek::PublicKey::from(bob_pk_montgomery.to_bytes());
         // ? // let shared = alice_secret.diffie_hellman(&bob_public);
         // ? Cursed code - With this we avoid falling into the scalar clamping codepath
-        let shared = self.0.key_scalar() * bob_public.0.to_montgomery();
+
+        let self_scalar_point = if !clamp {
+            self.0.key_scalar().clone()
+        } else {
+            let mut scalar_bytes = self.0.key_scalar().to_bytes();
+            scalar_bytes[0] &= 248;
+            scalar_bytes[31] &= 127;
+            scalar_bytes[31] |= 64;
+
+            curve25519_dalek::scalar::Scalar::from_bits(scalar_bytes)
+        };
+
+        let shared = self_scalar_point * bob_public.0.to_montgomery();
         Ok(shared.to_bytes())
     }
 
@@ -617,7 +677,7 @@ impl PartialEq for PublicKey {
         use subtle::ConstantTimeEq as _;
         let ct = self.0.as_bytes().ct_eq(other.0.as_bytes());
 
-        ct.unwrap_u8() == 1
+        ct.into()
     }
 }
 
@@ -627,6 +687,9 @@ impl PublicKey {
     #[must_use]
     pub fn verify(&self, s: &Signature, m: &[u8]) -> bool {
         use ed25519_dalek::Verifier as _;
+        // SECURITY: This is weak to scalar & point malleability
+        // We should be using this: https://docs.rs/ed25519-dalek/latest/ed25519_dalek/struct.PublicKey.html#method.verify_strict
+        // But we can't because messages coming from proteus 1.x won't be verifiable as they do not pass the check
         let res = self.0.verify(m, &s.0);
 
         if let Err(e) = &res {
@@ -679,12 +742,28 @@ impl PublicKey {
 // Random ///////////////////////////////////////////////////////////////////
 
 #[must_use]
-pub fn rand_bytes(size: usize) -> Vec<u8> {
+pub fn rand_bytes(size: usize, entropy: Option<[u8; 32]>) -> Vec<u8> {
     let mut buf = Vec::with_capacity(size);
-    use rand::{RngCore as _, SeedableRng as _};
-    let mut rng = rand_chacha::ChaCha12Rng::from_entropy();
-    rng.fill_bytes(&mut buf);
+    rand_bytes_into(&mut buf, entropy);
     buf
+}
+
+pub fn rand_bytes_array<const LEN: usize>(
+    entropy: Option<[u8; 32]>,
+) -> zeroize::Zeroizing<[u8; LEN]> {
+    let mut arr = zeroize::Zeroizing::new([0u8; LEN]);
+    rand_bytes_into(&mut *arr, entropy);
+    arr
+}
+
+fn rand_bytes_into(arr: &mut [u8], mut entropy: Option<[u8; 32]>) {
+    use rand::{RngCore as _, SeedableRng as _};
+    let mut rng = if let Some(seed) = entropy.take() {
+        rand_chacha::ChaCha20Rng::from_seed(seed)
+    } else {
+        rand_chacha::ChaCha20Rng::from_entropy()
+    };
+    rng.fill_bytes(&mut *arr);
 }
 
 // Signature ////////////////////////////////////////////////////////////////
