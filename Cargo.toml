@@ -11,5 +11,5 @@ license      = "GPL-3.0"
 [dependencies]
 cbor-codec    = ">= 0.7.0"
 hkdf          = { git = "https://github.com/wireapp/hkdf", tag = "v0.3.2"}
-sodiumoxide   = { version = "^0.2.5", default-features = false, features = ["std"] }
+sodiumoxide   = { version = "=0.2.5", default-features = false, features = ["std"] }
 
