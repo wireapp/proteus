@@ -52,9 +52,9 @@ impl RootKey {
         &self,
         ours: &KeyPair,
         theirs: &PublicKey,
-    ) -> Result<(RootKey, ChainKey), Error<E>> {
+    ) -> SessionResult<(RootKey, ChainKey), E> {
         let secret = ours.secret_key.shared_secret(theirs)?;
-        let dsecs = DerivedSecrets::kdf(&secret, Some(&self.key), b"dh_ratchet")?;
+        let dsecs = DerivedSecrets::kdf(secret.as_slice(), Some(&self.key), b"dh_ratchet")?;
         Ok((
             RootKey::from_cipher_key(dsecs.cipher_key),
             ChainKey::from_mac_key(dsecs.mac_key, Counter::zero()),
@@ -208,14 +208,14 @@ impl RecvChain {
         &mut self,
         env: &Envelope,
         mesg: &CipherMessage,
-    ) -> Result<Vec<u8>, Error<E>> {
+    ) -> SessionResult<Vec<u8>, E> {
         let too_old = self
             .message_keys
             .get(0)
             .map_or(false, |k| k.counter > mesg.counter);
 
         if too_old {
-            return Err(Error::OutdatedMessage);
+            return Err(SessionError::OutdatedMessage);
         }
 
         match self
@@ -228,21 +228,21 @@ impl RecvChain {
                 if env.verify(&mk.mac_key) {
                     Ok(mk.decrypt(&mesg.cipher_text))
                 } else {
-                    Err(Error::InvalidSignature)
+                    Err(SessionError::InvalidSignature)
                 }
             }
-            None => Err(Error::DuplicateMessage),
+            None => Err(SessionError::DuplicateMessage),
         }
     }
 
     fn stage_message_keys<E>(
         &self,
         msg: &CipherMessage,
-    ) -> Result<(ChainKey, MessageKeys, VecDeque<MessageKeys>), Error<E>> {
+    ) -> SessionResult<(ChainKey, MessageKeys, VecDeque<MessageKeys>), E> {
         let num = (msg.counter.value() - self.chain_key.idx.value()) as usize;
 
         if num > MAX_COUNTER_GAP {
-            return Err(Error::TooDistantFuture);
+            return Err(SessionError::TooDistantFuture);
         }
 
         let mut buf = VecDeque::with_capacity(num);
@@ -423,8 +423,8 @@ struct BobParams<'r> {
 }
 
 impl<I: Borrow<IdentityKeyPair>> Session<I> {
-    pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> Result<Session<I>, Error<E>> {
-        let alice_base = KeyPair::new();
+    pub fn init_from_prekey<E>(alice: I, pk: PreKeyBundle) -> SessionResult<Session<I>, E> {
+        let alice_base = KeyPair::new(None);
         let state = SessionState::init_as_alice(&AliceParams {
             alice_ident: alice.borrow(),
             alice_base: &alice_base,
@@ -451,9 +451,9 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         ours: I,
         store: &mut S,
         env: &Envelope<'_>,
-    ) -> Result<(Session<I>, Vec<u8>), Error<S::Error>> {
+    ) -> SessionResult<(Session<I>, Vec<u8>), S::Error> {
         let pkmsg = match *env.message() {
-            Message::Plain(_) => return Err(Error::InvalidMessage),
+            Message::Plain(_) => return Err(SessionError::InvalidMessage),
             Message::Keyed(ref m) => m,
         };
 
@@ -475,11 +475,11 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                     store
                         .remove(pkmsg.prekey_id.value())
                         .await
-                        .map_err(Error::PreKeyStoreError)?;
+                        .map_err(SessionError::PreKeyStoreError)?;
                 }
                 Ok((session, plain))
             }
-            None => Err(Error::PreKeyNotFound(pkmsg.prekey_id)),
+            None => Err(SessionError::PreKeyNotFound(pkmsg.prekey_id)),
         }
     }
 
@@ -500,15 +500,15 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         &mut self,
         store: &mut S,
         env: &Envelope<'_>,
-    ) -> Result<Vec<u8>, Error<S::Error>> {
+    ) -> SessionResult<Vec<u8>, S::Error> {
         match *env.message() {
             Message::Plain(ref m) => self.decrypt_cipher_message(env, m),
             Message::Keyed(ref m) => {
                 if *m.identity_key != self.remote_identity {
-                    return Err(Error::RemoteIdentityChanged);
+                    return Err(SessionError::RemoteIdentityChanged);
                 }
                 match self.decrypt_cipher_message(env, &m.message) {
-                    e @ Err(Error::InvalidSignature | Error::InvalidMessage) => {
+                    e @ Err(SessionError::InvalidSignature | SessionError::InvalidMessage) => {
                         match self.new_state(store, m).await? {
                             Some(mut s) => {
                                 let plain = s.decrypt(env, &m.message)?;
@@ -516,7 +516,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                                     store
                                         .remove(m.prekey_id.value())
                                         .await
-                                        .map_err(Error::PreKeyStoreError)?;
+                                        .map_err(SessionError::PreKeyStoreError)?;
                                 }
                                 self.insert_session_state(m.message.session_tag, s);
                                 self.pending_prekey = None;
@@ -535,10 +535,10 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         &mut self,
         env: &Envelope,
         m: &CipherMessage,
-    ) -> Result<Vec<u8>, Error<E>> {
+    ) -> SessionResult<Vec<u8>, E> {
         let mut s = match self.session_states.get_mut(&m.session_tag) {
             Some(s) => s.val.clone(),
-            None => return Err(Error::InvalidMessage),
+            None => return Err(SessionError::InvalidMessage),
         };
         let plain = s.decrypt(env, m)?;
         self.pending_prekey = None;
@@ -555,11 +555,11 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         &self,
         store: &mut S,
         m: &PreKeyMessage<'_>,
-    ) -> Result<Option<SessionState>, Error<S::Error>> {
+    ) -> SessionResult<Option<SessionState>, S::Error> {
         if let Some(prekey) = store
             .prekey(m.prekey_id.value())
             .await
-            .map_err(Error::PreKeyStoreError)?
+            .map_err(SessionError::PreKeyStoreError)?
             .and_then(|raw_prekey| PreKey::deserialise(&raw_prekey).ok())
         {
             let s = SessionState::init_as_bob(BobParams {
@@ -753,16 +753,16 @@ pub struct SessionState {
 }
 
 impl SessionState {
-    fn init_as_alice<E>(p: &AliceParams) -> Result<SessionState, Error<E>> {
+    fn init_as_alice<E>(p: &AliceParams) -> SessionResult<SessionState, E> {
         let master_key = {
             let mut buf = Vec::new();
-            buf.extend(&p.alice_ident.secret_key.shared_secret(&p.bob.public_key)?);
+            buf.extend(&*p.alice_ident.secret_key.shared_secret(&p.bob.public_key)?);
             buf.extend(
-                &p.alice_base
+                &*p.alice_base
                     .secret_key
                     .shared_secret(&p.bob.identity_key.public_key)?,
             );
-            buf.extend(&p.alice_base.secret_key.shared_secret(&p.bob.public_key)?);
+            buf.extend(&*p.alice_base.secret_key.shared_secret(&p.bob.public_key)?);
             buf
         };
 
@@ -776,7 +776,7 @@ impl SessionState {
         recv_chains.push_front(RecvChain::new(chainkey, p.bob.public_key.clone()));
 
         // sending chain
-        let send_ratchet = KeyPair::new();
+        let send_ratchet = KeyPair::new(None);
         let (rok, chk) = rootkey.dh_ratchet(&send_ratchet, &p.bob.public_key)?;
         let send_chain = SendChain::new(chk, send_ratchet);
 
@@ -788,16 +788,16 @@ impl SessionState {
         })
     }
 
-    fn init_as_bob<E>(p: BobParams) -> Result<SessionState, Error<E>> {
+    fn init_as_bob<E>(p: BobParams) -> SessionResult<SessionState, E> {
         let master_key = {
             let mut buf = Vec::new();
             buf.extend(
-                &p.bob_prekey
+                &*p.bob_prekey
                     .secret_key
                     .shared_secret(&p.alice_ident.public_key)?,
             );
-            buf.extend(&p.bob_ident.secret_key.shared_secret(p.alice_base)?);
-            buf.extend(&p.bob_prekey.secret_key.shared_secret(p.alice_base)?);
+            buf.extend(&*p.bob_ident.secret_key.shared_secret(p.alice_base)?);
+            buf.extend(&*p.bob_prekey.secret_key.shared_secret(p.alice_base)?);
             buf
         };
 
@@ -816,8 +816,8 @@ impl SessionState {
         })
     }
 
-    fn ratchet<E>(&mut self, ratchet_key: PublicKey) -> Result<(), Error<E>> {
-        let new_ratchet = KeyPair::new();
+    fn ratchet<E>(&mut self, ratchet_key: PublicKey) -> SessionResult<(), E> {
+        let new_ratchet = KeyPair::new(None);
 
         let (recv_root_key, recv_chain_key) = self
             .root_key
@@ -873,7 +873,7 @@ impl SessionState {
         env
     }
 
-    fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> Result<Vec<u8>, Error<E>> {
+    fn decrypt<E>(&mut self, env: &Envelope, m: &CipherMessage) -> SessionResult<Vec<u8>, E> {
         let rchain: &mut RecvChain = match self
             .recv_chains
             .iter_mut()
@@ -892,7 +892,7 @@ impl SessionState {
                 let (chk, mk, mks) = rchain.stage_message_keys::<E>(m)?;
                 let plain = mk.decrypt(&m.cipher_text);
                 if !env.verify(&mk.mac_key) {
-                    return Err(Error::InvalidSignature);
+                    return Err(SessionError::InvalidSignature);
                 }
                 rchain.chain_key = chk.next();
                 rchain.commit_message_keys(mks);
@@ -902,7 +902,7 @@ impl SessionState {
                 let mks = rchain.chain_key.message_keys()?;
                 let plain = mks.decrypt(&m.cipher_text);
                 if !env.verify(&mks.mac_key) {
-                    return Err(Error::InvalidSignature);
+                    return Err(SessionError::InvalidSignature);
                 }
                 rchain.chain_key = rchain.chain_key.next();
                 Ok(plain)
@@ -965,8 +965,8 @@ impl SessionState {
 }
 
 // Decrypt Error ////////////////////////////////////////////////////////////
-#[derive(Debug, thiserror::Error, PartialEq)]
-pub enum Error<E> {
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum SessionError<E> {
     #[error("RemoteIdentityChanged")]
     RemoteIdentityChanged,
     #[error("InvalidSignature")]
@@ -987,13 +987,20 @@ pub enum Error<E> {
     DegeneratedKey,
     #[error(transparent)]
     InternalError(#[from] InternalError),
+    #[error(transparent)]
+    ProteusError(crate::error::ProteusError),
 }
 
-impl<E> From<crate::internal::keys::Zero> for Error<E> {
-    fn from(_: crate::internal::keys::Zero) -> Error<E> {
-        Error::DegeneratedKey
+impl<E> From<crate::error::ProteusError> for SessionError<E> {
+    fn from(e: crate::error::ProteusError) -> SessionError<E> {
+        match e {
+            crate::error::ProteusError::Zero => Self::DegeneratedKey,
+            e @ _ => Self::ProteusError(e),
+        }
     }
 }
+
+pub type SessionResult<T, E> = Result<T, SessionError<E>>;
 
 // Tests ////////////////////////////////////////////////////////////////////
 
@@ -1009,6 +1016,8 @@ mod tests {
     use std::usize;
     use std::vec::Vec;
     use wasm_bindgen_test::wasm_bindgen_test;
+
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
     #[derive(Debug)]
     struct TestStore {
@@ -1340,7 +1349,7 @@ mod tests {
 
         for m in &vec![hello1, hello2, hello3, hello4, hello5] {
             assert_eq!(
-                Some(Error::DuplicateMessage),
+                Some(SessionError::DuplicateMessage),
                 alice.decrypt(&mut alice_store, m).await.err()
             );
         }
@@ -1579,7 +1588,7 @@ mod tests {
             .serialise()
             .unwrap();
         assert_eq!(
-            Err(Error::TooDistantFuture),
+            Err(SessionError::TooDistantFuture),
             alice
                 .decrypt(&mut alice_store, &Envelope::deserialise(&msg).unwrap())
                 .await,
@@ -1608,7 +1617,7 @@ mod tests {
         // With a PreKeyStore that eagerly deletes prekeys, like the TestStore,
         // the prekey will be gone and a retry cause an error (and thus a lost message).
         match Session::init_from_message(&bob_ident, &mut bob_store, &hello_bob).await {
-            Err(Error::PreKeyNotFound(_)) => {} // expected
+            Err(SessionError::PreKeyNotFound(_)) => {} // expected
             Err(e) => panic!("{:?}", e),
             Ok(_) => panic!("Unexpected success on retrying init_from_message"),
         }
@@ -1908,7 +1917,7 @@ mod tests {
 
         // At this point we don't have the key material to decrypt.
         let out = bob2alice.decrypt(&mut bob_store, &a2b_m2).await;
-        assert_eq!(out, Err(Error::TooDistantFuture));
+        assert_eq!(out, Err(SessionError::TooDistantFuture));
         assert!(out.is_err());
     }
 
@@ -1995,7 +2004,7 @@ mod tests {
         }
     }
 
-    fn assert_decrypt<E>(expected: &[u8], actual: Result<Vec<u8>, Error<E>>)
+    fn assert_decrypt<E>(expected: &[u8], actual: SessionResult<Vec<u8>, E>)
     where
         E: fmt::Debug,
     {

@@ -391,15 +391,17 @@ mod tests {
     use std::borrow::Cow;
     use wasm_bindgen_test::wasm_bindgen_test;
 
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
     #[test]
     #[wasm_bindgen_test]
     // @SF.Messages @TSFI.RESTfulAPI @S0.3
     fn envelope_created_with_mac_key_should_be_verified_with_that_key_after_serialization_deserialization(
     ) {
         let mk = MacKey::new([1; 32]);
-        let bk = KeyPair::new().public_key;
-        let ik = IdentityKey::new(KeyPair::new().public_key);
-        let rk = KeyPair::new().public_key;
+        let bk = KeyPair::new(None).public_key;
+        let ik = IdentityKey::new(KeyPair::new(None).public_key);
+        let rk = KeyPair::new(None).public_key;
 
         let tg = SessionTag::new();
         let m1 = Message::Keyed(Box::new(PreKeyMessage {
