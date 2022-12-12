@@ -67,8 +67,6 @@ pub type DecodeResult<A> = Result<A, DecodeError>;
 pub enum DecodeError {
     #[error("CBOR decoder error: {0}")]
     Decoder(#[from] cbor::DecodeError),
-    #[error("ed25519 Signature error: {0}")]
-    Signature(#[from] ed25519::Error),
     #[error("CBOR array length mismatch: {0}")]
     InvalidArrayLen(usize),
     #[error("Local identity changed")]

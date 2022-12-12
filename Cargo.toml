@@ -1,5 +1,5 @@
 [package]
-name         = "proteus"
+name         = "proteus-wasm"
 version      = "2.0.0"
 authors      = ["Wire Swiss GmbH <seceng@wire.com>"]
 description  = "Axolotl protocol implementation"
@@ -12,19 +12,20 @@ edition      = "2021"
 members = [
     "crates/proteus-traits",
     "crates/cbor-codec",
-    "crates/curve25519-dalek",
-    "crates/ed25519-dalek"
 ]
 
-[patch.crates-io.curve25519-dalek]
-path = "crates/curve25519-dalek"
-
-[patch.crates-io.ed25519-dalek]
-path = "crates/ed25519-dalek"
+[patch.'https://github.com/wireapp/proteus'.proteus]
+package = "proteus"
+# Keep the extra / in the url, it prevents this error:
+# `patch for `proteus` in `https://github.com/wireapp/proteus` points to the same source, but patches must point to different sources`
+git = "https://github.com/wireapp//proteus"
+branch = "otak/fix-1.0.3"
 
 [features]
-default = []
+default = ["extra-signature-checks"]
+extra-signature-checks = ["ed25519-compact/self-verify"]
 cryptobox-identity = []
+unclamped-dh-exchange = []
 hazmat = []
 
 [dependencies]
@@ -42,10 +43,7 @@ sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
 chacha20 = "0.9"
-elliptic-curve = "0.11"
-ed25519 = "1.3"
-ed25519-dalek = { path = "crates/ed25519-dalek", default-features = false, features = ["std", "u64_backend"] }
-curve25519-dalek = { path = "crates/curve25519-dalek", default-features = false, features = ["std", "u64_backend"] }
+ed25519-compact = { version = "2", default-features = false, features = ["std", "x25519"] }
 subtle = "2.4"
 
 # Utils
@@ -53,17 +51,21 @@ hex = "0.4"
 cbor-codec = { path = "crates/cbor-codec" }
 eyre = "0.6"
 
+[target.'cfg(target_family = "wasm")'.dependencies]
+ed25519-compact = { version = "2", default-features = false, features = ["std", "x25519", "opt_size"] }
+
 [dev-dependencies]
 criterion = "0.3"
 pretty_assertions = "1.3"
-proteus = { path = ".", features = ["hazmat"] }
+proteus-wasm = { path = ".", package = "proteus-wasm", features = ["hazmat", "cryptobox-identity"] }
 wasm-bindgen-test = "0.3"
 ciborium = "0.2"
 async-std = { version = "1.12", features = ["attributes"] }
 async-trait = "0.1"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
-proteus-legacy = { git = "https://github.com/wireapp/proteus", branch = "otak/sodiumoxide-0.2.7", package = "proteus", features = ["hazmat"] }
+cryptobox = { git = "https://github.com/wireapp/cryptobox", tag = "v1.0.3" }
+proteus = { git = "https://github.com/wireapp/proteus", branch = "otak/fix-1.0.3", package = "proteus" }
 
 [[bench]]
 name = "benchmarks"

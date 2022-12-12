@@ -230,13 +230,19 @@ impl Deref for Mac {
 
 // Tests ////////////////////////////////////////////////////////////////////
 
-#[test]
-#[wasm_bindgen_test::wasm_bindgen_test]
-fn derive_secrets() {
-    let nc = chacha20::LegacyNonce::from_slice(&[0; 8]);
-    let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar").unwrap();
-    let ct = ds.cipher_key.encrypt(b"plaintext", nc);
-    assert_eq!(ct.len(), b"plaintext".len());
-    assert!(ct != b"plaintext");
-    assert_eq!(ds.cipher_key.decrypt(&ct, nc), b"plaintext");
+#[cfg(test)]
+mod tests {
+    use super::*;
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+    #[test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
+    fn derive_secrets() {
+        let nc = chacha20::LegacyNonce::from_slice(&[0; 8]);
+        let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar").unwrap();
+        let ct = ds.cipher_key.encrypt(b"plaintext", nc);
+        assert_eq!(ct.len(), b"plaintext".len());
+        assert!(ct != b"plaintext");
+        assert_eq!(ds.cipher_key.decrypt(&ct, nc), b"plaintext");
+    }
 }

@@ -1,19 +1,17 @@
-extern crate criterion;
 use criterion::{criterion_group, criterion_main, Criterion};
 
-extern crate proteus;
-use proteus::internal::keys::*;
+use proteus_wasm::internal::keys::*;
 
 fn bench_keygen(c: &mut Criterion) {
     let mut group = c.benchmark_group("keygen");
     group.throughput(criterion::Throughput::Elements(1));
-    group.bench_function("keygen", |b| b.iter(|| KeyPair::new()));
+    group.bench_function("keygen", |b| b.iter(|| KeyPair::new(None)));
     group.finish();
 }
 
 fn bench_dh(c: &mut Criterion) {
-    let x = KeyPair::new();
-    let y = KeyPair::new();
+    let x = KeyPair::new(None);
+    let y = KeyPair::new(None);
 
     let mut group = c.benchmark_group("diffie-hellman");
     group.throughput(criterion::Throughput::Elements(1));
@@ -26,21 +24,21 @@ fn bench_dh(c: &mut Criterion) {
 }
 
 fn bench_sign(c: &mut Criterion) {
-    let x = KeyPair::new();
+    let x = KeyPair::new(None);
 
     let mut group = c.benchmark_group("sign");
     group.throughput(criterion::Throughput::Elements(1));
     group.bench_function("sign", |b| {
         b.iter(|| {
-            let _s = x.secret_key.sign(b"foobarbaz", &x.public_key);
+            let _s = x.secret_key.sign(b"foobarbaz");
         })
     });
     group.finish();
 }
 
 fn bench_verify(c: &mut Criterion) {
-    let x = KeyPair::new();
-    let s = x.secret_key.sign(b"foobarbaz", &x.public_key);
+    let x = KeyPair::new(None);
+    let s = x.secret_key.sign(b"foobarbaz");
 
     let mut group = c.benchmark_group("verify");
     group.throughput(criterion::Throughput::Elements(1));
