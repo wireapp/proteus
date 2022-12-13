@@ -255,15 +255,17 @@ impl PreKeyBundle {
 
     pub fn verify(&self) -> PreKeyAuth {
         match self.signature {
-            Some(ref sig) => if self
-                .identity_key
-                .public_key
-                .verify(sig, &self.public_key.pub_edward.0)
-            {
-                PreKeyAuth::Valid
-            } else {
-                PreKeyAuth::Invalid
-            },
+            Some(ref sig) => {
+                if self
+                    .identity_key
+                    .public_key
+                    .verify(sig, &self.public_key.pub_edward.0)
+                {
+                    PreKeyAuth::Valid
+                } else {
+                    PreKeyAuth::Invalid
+                }
+            }
             None => PreKeyAuth::Unknown,
         }
     }
@@ -442,6 +444,10 @@ impl SecretKey {
         }
     }
 
+    pub fn as_slice(&self) -> &[u8] {
+        self.sec_edward.0.as_slice()
+    }
+
     pub fn shared_secret(&self, p: &PublicKey) -> Result<[u8; 32], Zero> {
         ecdh::scalarmult(&self.sec_curve, &p.pub_curve)
             .map(|ge| ge.0)
@@ -503,6 +509,10 @@ impl Debug for PublicKey {
 impl PublicKey {
     pub fn verify(&self, s: &Signature, m: &[u8]) -> bool {
         sign::verify_detached(&s.sig, m, &self.pub_edward)
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.pub_edward.0.as_slice()
     }
 
     pub fn fingerprint(&self) -> String {
