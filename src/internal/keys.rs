@@ -1,4 +1,4 @@
-// Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+// Copyright (C) 2022 Wire Swiss GmbH <support@wire.com>
 // Based on libsignal-protocol-java by Open Whisper Systems
 // https://github.com/WhisperSystems/libsignal-protocol-java.
 //
@@ -252,7 +252,7 @@ impl PreKeyBundle {
     #[must_use]
     pub fn signed(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
         let ratchet_key = key.key_pair.public_key.clone();
-        let signature = ident.secret_key.sign(&ratchet_key.0.as_slice());
+        let signature = ident.secret_key.sign(ratchet_key.0.as_slice());
         PreKeyBundle {
             version: 1,
             prekey_id: key.key_id,
@@ -269,7 +269,7 @@ impl PreKeyBundle {
                 if self
                     .identity_key
                     .public_key
-                    .verify(sig, &self.public_key.0.as_slice())
+                    .verify(sig, self.public_key.0.as_slice())
                 {
                     PreKeyAuth::Valid
                 } else {
@@ -456,7 +456,7 @@ pub struct SecretKey(ed25519_compact::SecretKey);
 impl PartialEq for SecretKey {
     fn eq(&self, other: &Self) -> bool {
         use subtle::ConstantTimeEq as _;
-        self.0.as_slice().ct_eq(&other.0.as_slice()).unwrap_u8() == 1
+        self.0.as_slice().ct_eq(other.0.as_slice()).unwrap_u8() == 1
     }
 }
 
@@ -515,7 +515,7 @@ impl SecretKey {
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.0.as_slice()))?;
+        e.u8(0).and(e.bytes(self.0.as_slice()))?;
         Ok(())
     }
 
@@ -575,7 +575,7 @@ impl PublicKey {
         fmt_hex(self.0.as_slice())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "hazmat"))]
     pub fn from_bytes<B: AsRef<[u8]>>(buf: B) -> ProteusResult<Self> {
         let pk = ed25519_compact::PublicKey::from_slice(buf.as_ref())?;
 
@@ -626,7 +626,7 @@ pub struct Signature(ed25519_compact::Signature);
 impl Signature {
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(&self.0.as_slice()))?;
+        e.u8(0).and(e.bytes(self.0.as_slice()))?;
         Ok(())
     }
 

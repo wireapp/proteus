@@ -1,3 +1,5 @@
+use proteus_traits::{ProteusErrorCode, ProteusErrorKind};
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProteusError {
     #[error(transparent)]
@@ -24,6 +26,46 @@ impl PartialEq for ProteusError {
             }
             _ => false,
         }
+    }
+}
+
+impl ProteusErrorCode for ProteusError {
+    fn code(&self) -> ProteusErrorKind {
+        match self {
+            Self::EncodeError(e) => e.code(),
+            Self::DecodeError(e) => e.code(),
+            Self::Zero => ProteusErrorKind::AssertZeroArray,
+            Self::Ed25519Error(_) => ProteusErrorKind::Ed25519Error,
+            Self::Other(_) => ProteusErrorKind::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub struct ProteusErrorWithCode<E: ProteusErrorCode + std::error::Error> {
+    source: E,
+    code: ProteusErrorKind,
+}
+
+impl<E: ProteusErrorCode + std::error::Error> ProteusErrorCode for ProteusErrorWithCode<E> {
+    fn code(&self) -> ProteusErrorKind {
+        self.code
+    }
+}
+
+impl<E: ProteusErrorCode + std::error::Error> From<E> for ProteusErrorWithCode<E> {
+    fn from(source: E) -> Self {
+        Self {
+            code: source.code(),
+            source,
+        }
+    }
+}
+
+impl<E: ProteusErrorCode + std::error::Error> ProteusErrorWithCode<E> {
+    pub fn with_code(mut self, code: ProteusErrorKind) -> Self {
+        self.code = code;
+        self
     }
 }
 
