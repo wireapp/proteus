@@ -1,4 +1,4 @@
-// Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+// Copyright (C) 2022 Wire Swiss GmbH <support@wire.com>
 // Based on libsignal-protocol-java by Open Whisper Systems
 // https://github.com/WhisperSystems/libsignal-protocol-java.
 //
@@ -17,6 +17,7 @@
 
 use crate::internal::keys::IdentityKey;
 use cbor;
+use proteus_traits::ProteusErrorKind;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InternalError {
@@ -47,6 +48,16 @@ impl From<hkdf::InvalidLength> for InternalError {
     }
 }
 
+impl proteus_traits::ProteusErrorCode for InternalError {
+    fn code(&self) -> ProteusErrorKind {
+        match self {
+            InternalError::NoSessionForTag => ProteusErrorKind::SessionStateNotFoundForTag,
+            InternalError::InvalidKdfLength => ProteusErrorKind::InvalidKdfOutputLength,
+            InternalError::IoError(_) => ProteusErrorKind::IoError,
+        }
+    }
+}
+
 // EncodeError //////////////////////////////////////////////////////////////
 
 pub type EncodeResult<A> = Result<A, EncodeError>;
@@ -57,6 +68,20 @@ pub enum EncodeError {
     Internal(#[from] InternalError),
     #[error("CBOR encoder error: {0}")]
     Encoder(#[from] cbor::EncodeError),
+}
+
+impl proteus_traits::ProteusErrorCode for EncodeError {
+    fn code(&self) -> ProteusErrorKind {
+        match self {
+            EncodeError::Internal(e) => e.code(),
+            EncodeError::Encoder(e) => match e {
+                cbor::EncodeError::IoError(_) | cbor::EncodeError::UnexpectedEOF => {
+                    ProteusErrorKind::IoError
+                }
+                _ => ProteusErrorKind::InvalidInput,
+            },
+        }
+    }
 }
 
 // DecodeError //////////////////////////////////////////////////////////////
@@ -71,6 +96,8 @@ pub enum DecodeError {
     InvalidArrayLen(usize),
     #[error("Local identity changed")]
     LocalIdentityChanged(IdentityKey),
+    #[error("Unknown message type {0}: {1}")]
+    UnknownMessageType(u8, &'static str),
     #[error("Invalid type {0}: {1}")]
     InvalidType(u8, &'static str),
     #[error("Missing field: {0}")]
@@ -79,4 +106,17 @@ pub enum DecodeError {
     InvalidField(&'static str),
     #[error("Duplicate field: ")]
     DuplicateField(&'static str),
+}
+
+impl proteus_traits::ProteusErrorCode for DecodeError {
+    fn code(&self) -> ProteusErrorKind {
+        match self {
+            DecodeError::InvalidArrayLen(_) => ProteusErrorKind::InvalidArrayLen,
+            DecodeError::LocalIdentityChanged(_) => ProteusErrorKind::LocalIdentityChanged,
+            DecodeError::UnknownMessageType(_, _) => ProteusErrorKind::UnknownMessageType,
+            DecodeError::InvalidType(_, _) => ProteusErrorKind::MalformedMessageData,
+            DecodeError::Decoder(cbor::DecodeError::IoError(_)) => ProteusErrorKind::IoError,
+            _ => ProteusErrorKind::DecodeError,
+        }
+    }
 }

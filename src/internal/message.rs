@@ -1,4 +1,4 @@
-// Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+// Copyright (C) 2022 Wire Swiss GmbH <support@wire.com>
 // Based on libsignal-protocol-java by Open Whisper Systems
 // https://github.com/WhisperSystems/libsignal-protocol-java.
 //
@@ -48,17 +48,20 @@ impl Counter {
 
     #[must_use]
     pub fn next(self) -> Counter {
-        Counter(self.0 + 1)
+        Counter(self.0.wrapping_add(1))
     }
 
     #[must_use]
-    pub fn as_nonce(self) -> zeroize::Zeroizing<[u8; 8]> {
-        let mut nonce = [0; 8];
-        nonce[0] = (self.0 >> 24) as u8;
-        nonce[1] = (self.0 >> 16) as u8;
-        nonce[2] = (self.0 >> 8) as u8;
-        nonce[3] = self.0 as u8;
-        zeroize::Zeroizing::new(nonce)
+    pub fn as_nonce(self) -> chacha20::LegacyNonce {
+        // ? Why are we throwing a u32 in a u64 nonce HMM?
+        // let mut nonce = [0; 8];
+        // ? UB here: u32::MAX >> 24 = -1, which is then casted as u8, which is UB
+        // nonce[0] = (self.0 >> 24) as u8;
+        // nonce[1] = (self.0 >> 16) as u8;
+        // nonce[2] = (self.0 >> 8) as u8;
+        // nonce[3] = self.0 as u8;
+        (self.0 as u64).to_be_bytes().into()
+        // nonce.into()
     }
 
     pub fn encode<W: Write>(self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -106,6 +109,21 @@ impl fmt::Debug for SessionTag {
     }
 }
 
+#[cfg(any(test, feature = "hazmat"))]
+impl std::ops::Deref for SessionTag {
+    type Target = [u8; 16];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(any(test, feature = "hazmat"))]
+impl std::ops::DerefMut for SessionTag {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 // Message //////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
@@ -139,7 +157,8 @@ impl<'r> Message<'r> {
         match d.u8()? {
             1 => CipherMessage::decode(d).map(|m| Message::Plain(Box::new(m))),
             2 => PreKeyMessage::decode(d).map(|m| Message::Keyed(Box::new(m))),
-            t => Err(DecodeError::InvalidType(t, "unknown message type")),
+            // ? Handles error code 200
+            t => Err(DecodeError::UnknownMessageType(t, "unknown message type")),
         }
     }
 }

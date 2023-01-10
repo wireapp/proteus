@@ -1,4 +1,4 @@
-// Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+// Copyright (C) 2022 Wire Swiss GmbH <support@wire.com>
 // Based on libsignal-protocol-java by Open Whisper Systems
 // https://github.com/WhisperSystems/libsignal-protocol-java.
 //
@@ -79,19 +79,19 @@ impl CipherKey {
     }
 
     #[must_use]
-    pub fn encrypt(&self, text: &[u8], nonce: &[u8]) -> Vec<u8> {
+    pub fn encrypt(&self, text: &[u8], nonce: chacha20::LegacyNonce) -> Vec<u8> {
         use chacha20::cipher::{KeyIvInit as _, StreamCipher as _};
-        let nonce = chacha20::LegacyNonce::from_slice(nonce);
-        let mut cipher = chacha20::ChaCha20Legacy::new(&self.0, nonce);
+        // let nonce = chacha20::LegacyNonce::from_slice(nonce);
+        let mut cipher = chacha20::ChaCha20Legacy::new(&self.0, &nonce);
         let mut data = Vec::from(text);
         cipher.apply_keystream(&mut data);
         data
     }
 
     #[must_use]
-    pub fn decrypt(&self, data: &[u8], nonce: &[u8]) -> Vec<u8> {
+    pub fn decrypt(&self, data: &[u8], nonce: chacha20::LegacyNonce) -> Vec<u8> {
         use chacha20::cipher::{KeyIvInit as _, StreamCipher as _, StreamCipherSeek as _};
-        let nonce = chacha20::LegacyNonce::from_slice(nonce);
+        let nonce = chacha20::LegacyNonce::from_slice(&nonce);
         let mut cipher = chacha20::ChaCha20Legacy::new(&self.0, nonce);
         let mut text = Vec::from(data);
         cipher.seek(0);
@@ -228,8 +228,6 @@ impl Deref for Mac {
     }
 }
 
-// Tests ////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,7 +236,7 @@ mod tests {
     #[test]
     #[wasm_bindgen_test::wasm_bindgen_test]
     fn derive_secrets() {
-        let nc = chacha20::LegacyNonce::from_slice(&[0; 8]);
+        let nc = chacha20::LegacyNonce::from([0u8; 8]);
         let ds = DerivedSecrets::kdf_without_salt(b"346234876", b"foobar").unwrap();
         let ct = ds.cipher_key.encrypt(b"plaintext", nc);
         assert_eq!(ct.len(), b"plaintext".len());

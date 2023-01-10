@@ -1,4 +1,4 @@
-// Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+// Copyright (C) 2022 Wire Swiss GmbH <support@wire.com>
 // Based on libsignal-protocol-java by Open Whisper Systems
 // https://github.com/WhisperSystems/libsignal-protocol-java.
 //
@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use proteus_traits::PreKeyStore;
+use proteus_traits::{PreKeyStore, ProteusErrorCode, ProteusErrorKind};
 use std::{
     borrow::{Borrow, Cow},
     cmp::{Ord, Ordering},
@@ -218,21 +218,26 @@ impl RecvChain {
             return Err(SessionError::OutdatedMessage);
         }
 
-        match self
+        let Some(i) = self
             .message_keys
             .iter()
-            .position(|mk| mk.counter == mesg.counter)
-        {
-            Some(i) => {
-                let mk = self.message_keys.remove(i).unwrap();
-                if env.verify(&mk.mac_key) {
-                    Ok(mk.decrypt(&mesg.cipher_text))
-                } else {
-                    Err(SessionError::InvalidSignature)
-                }
-            }
-            None => Err(SessionError::DuplicateMessage),
+            .position(|mk| mk.counter == mesg.counter) else {
+                // ? Handles erorr case 209
+                return Err(SessionError::DuplicateMessage);
+            };
+
+        let Some(mk) = self.message_keys.remove(i) else {
+            // SAFETY: We cannot reach this codepath as: if `i` doesn't exist, we'll return `SessionError::DuplicateMessage` above
+            // Thus, index `i` is always present and we cannot reach this codepath
+            unreachable!()
+        };
+
+        if !env.verify(&mk.mac_key) {
+            // ? Handles erorr case 210
+            return Err(SessionError::InvalidSignature);
         }
+
+        Ok(mk.decrypt(&mesg.cipher_text))
     }
 
     fn stage_message_keys<E>(
@@ -257,21 +262,23 @@ impl RecvChain {
         Ok((chk, mk, buf))
     }
 
-    fn commit_message_keys(&mut self, mks: VecDeque<MessageKeys>) {
-        assert!(mks.len() <= MAX_COUNTER_GAP);
-
-        let excess =
-            self.message_keys.len() as isize + mks.len() as isize - MAX_COUNTER_GAP as isize;
-
-        for _ in 0..excess {
-            self.message_keys.pop_front();
+    fn commit_message_keys<E>(&mut self, mut mks: VecDeque<MessageKeys>) -> SessionResult<(), E> {
+        // ? Handles error code 103
+        if mks.len() > MAX_COUNTER_GAP {
+            return Err(SessionError::MessageKeysExceedCounterGap);
         }
 
-        for m in mks {
-            self.message_keys.push_back(m);
+        let excess = self.message_keys.len() + mks.len() - MAX_COUNTER_GAP;
+
+        self.message_keys.drain(..excess);
+        self.message_keys.append(&mut mks);
+
+        // ? Handles error code 104
+        if self.message_keys.len() > MAX_COUNTER_GAP {
+            return Err(SessionError::SkippedMessageKeysExceedCounterGap);
         }
 
-        assert!(self.message_keys.len() <= MAX_COUNTER_GAP);
+        Ok(())
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -331,13 +338,12 @@ pub struct MessageKeys {
 
 impl MessageKeys {
     fn encrypt(&self, plain_text: &[u8]) -> Vec<u8> {
-        self.cipher_key
-            .encrypt(plain_text, &*self.counter.as_nonce())
+        self.cipher_key.encrypt(plain_text, self.counter.as_nonce())
     }
 
     fn decrypt(&self, cipher_text: &[u8]) -> Vec<u8> {
         self.cipher_key
-            .decrypt(cipher_text, &*self.counter.as_nonce())
+            .decrypt(cipher_text, self.counter.as_nonce())
     }
 
     fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
@@ -483,11 +489,23 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         }
     }
 
+    #[cfg(any(feature = "hazmat", test))]
+    pub fn session_tag_mut(&mut self) -> &mut SessionTag {
+        &mut self.session_tag
+    }
+
+    #[cfg(any(feature = "hazmat", test))]
+    pub fn session_states_mut(&mut self) -> &mut BTreeMap<SessionTag, Indexed<SessionState>> {
+        &mut self.session_states
+    }
+
     pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
         let state = self
             .session_states
             .get_mut(&self.session_tag)
+            // ? Handles error code 102
             .ok_or(InternalError::NoSessionForTag)?; // See note [session_tag]
+
         state.val.encrypt(
             &self.local_identity.borrow().public_key,
             &self.pending_prekey,
@@ -556,19 +574,22 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         store: &mut S,
         m: &PreKeyMessage<'_>,
     ) -> SessionResult<Option<SessionState>, S::Error> {
-        if let Some(prekey) = store
+        let prekey_raw = store
             .prekey(m.prekey_id.value())
             .await
+            // ? Handles error codes 101
             .map_err(SessionError::PreKeyStoreError)?
-            .and_then(|raw_prekey| PreKey::deserialise(&raw_prekey).ok())
-        {
-            let s = SessionState::init_as_bob(BobParams {
+            .ok_or(SessionError::PreKeyNotFound(m.prekey_id))?;
+
+        if let Ok(prekey) = PreKey::deserialise(&prekey_raw) {
+            SessionState::init_as_bob(BobParams {
                 bob_ident: self.local_identity.borrow(),
                 bob_prekey: prekey.key_pair,
                 alice_ident: &m.identity_key,
                 alice_base: &m.base_key,
-            })?;
-            Ok(Some(s))
+            })
+            .map(Some)
+            .map_err(Into::into)
         } else {
             Ok(None)
         }
@@ -588,12 +609,9 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     // state left is the one to be inserted, but if Alice and Bob do not
     // manage to agree on a session state within `usize::MAX` it is probably
     // of least concern.
-    #[allow(clippy::map_entry)]
     fn insert_session_state(&mut self, t: SessionTag, s: SessionState) {
-        if self.session_states.contains_key(&t) {
-            if let Some(x) = self.session_states.get_mut(&t) {
-                x.val = s;
-            }
+        if let Some(x) = self.session_states.get_mut(&t) {
+            x.val = s;
         } else {
             if self.counter == usize::MAX {
                 // See note [counter_overflow]
@@ -611,12 +629,15 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
 
         // Too many states => remove the one with lowest counter value (= oldest)
         if self.session_states.len() >= MAX_SESSION_STATES {
-            self.session_states
+            if let Some(session_tag) = self
+                .session_states
                 .iter()
                 .filter(|s| s.0 != &self.session_tag)
                 .min_by_key(|s| s.1.idx)
-                .map(|s| *s.0)
-                .map(|k| self.session_states.remove(&k));
+                .map(|(t, _)| *t)
+            {
+                self.session_states.remove(&session_tag);
+            }
         }
     }
 
@@ -756,13 +777,13 @@ impl SessionState {
     fn init_as_alice<E>(p: &AliceParams) -> SessionResult<SessionState, E> {
         let master_key = {
             let mut buf = Vec::new();
-            buf.extend(&*p.alice_ident.secret_key.shared_secret(&p.bob.public_key)?);
+            buf.extend(*p.alice_ident.secret_key.shared_secret(&p.bob.public_key)?);
             buf.extend(
-                &*p.alice_base
+                *p.alice_base
                     .secret_key
                     .shared_secret(&p.bob.identity_key.public_key)?,
             );
-            buf.extend(&*p.alice_base.secret_key.shared_secret(&p.bob.public_key)?);
+            buf.extend(*p.alice_base.secret_key.shared_secret(&p.bob.public_key)?);
             buf
         };
 
@@ -792,12 +813,12 @@ impl SessionState {
         let master_key = {
             let mut buf = Vec::new();
             buf.extend(
-                &*p.bob_prekey
+                *p.bob_prekey
                     .secret_key
                     .shared_secret(&p.alice_ident.public_key)?,
             );
-            buf.extend(&*p.bob_ident.secret_key.shared_secret(p.alice_base)?);
-            buf.extend(&*p.bob_prekey.secret_key.shared_secret(p.alice_base)?);
+            buf.extend(*p.bob_ident.secret_key.shared_secret(p.alice_base)?);
+            buf.extend(*p.bob_prekey.secret_key.shared_secret(p.alice_base)?);
             buf
         };
 
@@ -895,7 +916,7 @@ impl SessionState {
                     return Err(SessionError::InvalidSignature);
                 }
                 rchain.chain_key = chk.next();
-                rchain.commit_message_keys(mks);
+                rchain.commit_message_keys(mks)?;
                 Ok(plain)
             }
             Ordering::Equal => {
@@ -979,6 +1000,10 @@ pub enum SessionError<E> {
     TooDistantFuture,
     #[error("OutdatedMessage")]
     OutdatedMessage,
+    #[error("Message keys exceed counter gap limit")]
+    MessageKeysExceedCounterGap,
+    #[error("Skipped message keys exceed counter gap limit")]
+    SkippedMessageKeysExceedCounterGap,
     #[error("PreKeyStoreNotFound: {0}")]
     PreKeyNotFound(PreKeyId),
     #[error("PreKeyStoreError: {0}")]
@@ -994,8 +1019,32 @@ pub enum SessionError<E> {
 impl<E> From<crate::error::ProteusError> for SessionError<E> {
     fn from(e: crate::error::ProteusError) -> SessionError<E> {
         match e {
+            // ? Handles error code 100
             crate::error::ProteusError::Zero => Self::DegeneratedKey,
-            e @ _ => Self::ProteusError(e),
+            e => Self::ProteusError(e),
+        }
+    }
+}
+
+impl<E> ProteusErrorCode for SessionError<E> {
+    fn code(&self) -> ProteusErrorKind {
+        match self {
+            Self::RemoteIdentityChanged => ProteusErrorKind::RemoteIdentityChanged,
+            Self::InvalidSignature => ProteusErrorKind::PreKeyMessageDoesntMatchSignature,
+            Self::InvalidMessage => ProteusErrorKind::UnknownMessageFormat,
+            Self::DuplicateMessage => ProteusErrorKind::DuplicateMessage,
+            Self::TooDistantFuture => ProteusErrorKind::TooDistantFuture,
+            Self::OutdatedMessage => ProteusErrorKind::OutdatedMessage,
+            Self::MessageKeysExceedCounterGap => {
+                ProteusErrorKind::MessageKeysAboveMessageChainCounterGap
+            }
+            Self::SkippedMessageKeysExceedCounterGap => {
+                ProteusErrorKind::SkippedMessageKeysAboveMessageChainCounterGap
+            }
+            Self::PreKeyNotFound(_) | Self::PreKeyStoreError(_) => ProteusErrorKind::PreKeyNotFound,
+            Self::DegeneratedKey => ProteusErrorKind::AssertZeroArray,
+            Self::InternalError(e) => e.code(),
+            Self::ProteusError(e) => e.code(),
         }
     }
 }
@@ -1019,6 +1068,15 @@ mod tests {
 
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
+    #[derive(Debug, PartialEq)]
+    struct DummyError(());
+
+    impl proteus_traits::ProteusErrorCode for DummyError {
+        fn code(&self) -> ProteusErrorKind {
+            ProteusErrorKind::Unknown
+        }
+    }
+
     #[derive(Debug)]
     struct TestStore {
         prekeys: Vec<PreKey>,
@@ -1032,12 +1090,12 @@ mod tests {
 
     #[async_trait::async_trait(?Send)]
     impl proteus_traits::PreKeyStore for TestStore {
-        type Error = ();
+        type Error = DummyError;
 
         async fn prekey(
             &mut self,
             id: proteus_traits::RawPreKeyId,
-        ) -> Result<Option<proteus_traits::RawPreKey>, ()> {
+        ) -> Result<Option<proteus_traits::RawPreKey>, Self::Error> {
             if let Some(prekey) = self.prekeys.iter().find(|k| k.key_id.value() == id) {
                 Ok(Some(prekey.serialise().unwrap()))
             } else {
@@ -1045,7 +1103,7 @@ mod tests {
             }
         }
 
-        async fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), ()> {
+        async fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), Self::Error> {
             self.prekeys
                 .iter()
                 .position(|k| k.key_id.value() == id)

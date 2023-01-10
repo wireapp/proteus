@@ -1,4 +1,4 @@
-// Copyright (C) 2015 Wire Swiss GmbH <support@wire.com>
+// Copyright (C) 2022 Wire Swiss GmbH <support@wire.com>
 // Based on libsignal-protocol-java by Open Whisper Systems
 // https://github.com/WhisperSystems/libsignal-protocol-java.
 //

@@ -138,7 +138,7 @@ const DEFAULT_CONFIG: Config = Config {
     check_tags: true,
 };
 
-impl Config {
+impl Default for Config {
     /// Create default configuration with
     ///
     /// - `max_len_array` = 1000
@@ -148,7 +148,7 @@ impl Config {
     /// - `max_nesting` = 16
     /// - `skip_tags` = false
     /// - `check_tags` = true
-    pub fn default() -> Config {
+    fn default() -> Config {
         DEFAULT_CONFIG
     }
 }
