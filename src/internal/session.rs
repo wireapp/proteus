@@ -268,7 +268,13 @@ impl RecvChain {
             return Err(SessionError::MessageKeysExceedCounterGap);
         }
 
-        let excess = self.message_keys.len() + mks.len() - MAX_COUNTER_GAP;
+        let (excess, excess_overflows) = self.message_keys.len().overflowing_add(mks.len());
+
+        if excess_overflows {
+            return Err(SessionError::OverflowingMessageKeys);
+        }
+
+        let excess = excess.saturating_sub(MAX_COUNTER_GAP);
 
         self.message_keys.drain(..excess);
         self.message_keys.append(&mut mks);
@@ -1004,6 +1010,8 @@ pub enum SessionError<E> {
     MessageKeysExceedCounterGap,
     #[error("Skipped message keys exceed counter gap limit")]
     SkippedMessageKeysExceedCounterGap,
+    #[error("The count of message keys overflows the platform's unsigned integer type")]
+    OverflowingMessageKeys,
     #[error("PreKeyStoreNotFound: {0}")]
     PreKeyNotFound(PreKeyId),
     #[error("PreKeyStoreError: {0}")]
@@ -1041,6 +1049,7 @@ impl<E> ProteusErrorCode for SessionError<E> {
             Self::SkippedMessageKeysExceedCounterGap => {
                 ProteusErrorKind::SkippedMessageKeysAboveMessageChainCounterGap
             }
+            Self::OverflowingMessageKeys => ProteusErrorKind::IntegerOverflow,
             Self::PreKeyNotFound(_) | Self::PreKeyStoreError(_) => ProteusErrorKind::PreKeyNotFound,
             Self::DegeneratedKey => ProteusErrorKind::AssertZeroArray,
             Self::InternalError(e) => e.code(),

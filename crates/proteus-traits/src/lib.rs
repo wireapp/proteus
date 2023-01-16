@@ -66,6 +66,7 @@ pub enum ProteusErrorKind {
     IoError = 501,
     Ed25519Error = 502,
     InvalidKdfOutputLength = 504,
+    IntegerOverflow = 505,
 }
 
 impl ProteusErrorKind {
