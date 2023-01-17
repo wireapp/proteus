@@ -265,6 +265,14 @@ impl Client {
 
         Ok(message)
     }
+
+    pub fn encrypt_with_max_counter(&mut self, session_id: &str, plaintext: &[u8]) -> Vec<u8> {
+        let session = self.sessions.get_mut(session_id).unwrap();
+        let mut envelope = session.encrypt(plaintext).unwrap();
+        envelope.break_counter();
+
+        envelope.serialise().unwrap()
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]

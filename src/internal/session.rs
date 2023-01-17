@@ -619,13 +619,16 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         if let Some(x) = self.session_states.get_mut(&t) {
             x.val = s;
         } else {
-            if self.counter == usize::MAX {
+            let (new_counter, overflowing) = self.counter.overflowing_add(1);
+            let mut counter_to_insert = self.counter;
+            if overflowing {
                 // See note [counter_overflow]
                 self.session_states.clear();
-                self.counter = 0;
+                counter_to_insert = new_counter;
             }
-            self.session_states.insert(t, Indexed::new(self.counter, s));
-            self.counter += 1;
+            self.session_states
+                .insert(t, Indexed::new(counter_to_insert, s));
+            self.counter = new_counter;
         }
 
         // See note [session_tag]
@@ -747,7 +750,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                             let t = SessionTag::decode(d)?;
                             let s = SessionState::decode(d)?;
                             rb.insert(t, Indexed::new(counter, s));
-                            counter += 1;
+                            counter = counter.wrapping_add(1);
                         }
                         rb
                     });

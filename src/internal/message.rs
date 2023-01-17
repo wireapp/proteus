@@ -33,7 +33,7 @@ use std::{
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(transparent)]
-pub struct Counter(u32);
+pub struct Counter(pub(crate) u32);
 
 impl Counter {
     #[must_use]
@@ -343,6 +343,18 @@ impl<'r> Envelope<'r> {
     #[must_use]
     pub fn message(&self) -> &Message {
         &self.message
+    }
+
+    #[cfg(any(test, feature = "hazmat"))]
+    pub fn break_counter(&mut self) {
+        match &mut self.message {
+            Message::Plain(m) => {
+                m.counter = Counter(u32::MAX);
+            }
+            Message::Keyed(m) => {
+                m.message.counter = Counter(u32::MAX);
+            }
+        }
     }
 
     pub fn serialise(&self) -> EncodeResult<Vec<u8>> {

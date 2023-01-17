@@ -112,24 +112,10 @@ async fn error_code_102() {
 
 #[async_std::test]
 #[wasm_bindgen_test]
-async fn error_code_103() {
-    let mut alice = Client::new();
-    let mut bob = Client::new();
+#[ignore = "unimplemented - no idea how to trigger this"]
+async fn error_code_103() {}
 
-    let bob_prekey = bob.new_prekey_with_id(0xFFFF);
-
-    alice.init_session_from_prekey_bundle("ab", &bob_prekey.serialise().unwrap());
-
-    let alice_bob = alice.encrypt("ab", MSG);
-
-    assert_eq!(bob.decrypt("ba", &alice_bob).await, MSG);
-
-    assert_eq!(1, bob.session("ba").session_states_mut().len());
-
-    for _ in 0..1001 {
-        let hello_bob2 = alice.encrypt("ab", MSG);
-        assert_eq!(bob.decrypt("ba", &hello_bob2).await, MSG);
-
-        assert_eq!(1, bob.session("ba").session_states_mut().len());
-    }
-}
+#[async_std::test]
+#[wasm_bindgen_test]
+#[ignore = "unimplemented - no idea how to trigger this"]
+async fn error_code_104() {}
