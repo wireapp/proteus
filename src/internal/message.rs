@@ -60,7 +60,7 @@ impl Counter {
         // nonce[1] = (self.0 >> 16) as u8;
         // nonce[2] = (self.0 >> 8) as u8;
         // nonce[3] = self.0 as u8;
-        (self.0 as u64).to_be_bytes().into()
+        ((self.0 as u64) << 32).to_be_bytes().into()
         // nonce.into()
     }
 
