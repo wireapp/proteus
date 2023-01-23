@@ -276,7 +276,10 @@ impl RecvChain {
 
         let excess = excess.saturating_sub(MAX_COUNTER_GAP);
 
-        self.message_keys.drain(..excess);
+        if excess > 0 {
+            self.message_keys.drain(..excess);
+        }
+
         self.message_keys.append(&mut mks);
 
         // ? Handles error code 104
