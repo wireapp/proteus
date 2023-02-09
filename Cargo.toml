@@ -55,7 +55,7 @@ eyre = "0.6"
 ed25519-compact = { version = "2", default-features = false, features = ["std", "x25519", "opt_size"] }
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.4"
 pretty_assertions = "1.3"
 proteus-wasm = { path = ".", package = "proteus-wasm", features = ["hazmat", "cryptobox-identity"] }
 wasm-bindgen-test = "0.3"

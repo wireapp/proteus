@@ -33,15 +33,11 @@
 //! # Example 2: Direct decoding (nested array)
 //!
 //! ```
-//! extern crate cbor;
-//! extern crate rustc_serialize;
-//!
 //! use cbor::{Config, Decoder};
-//! use rustc_serialize::hex::FromHex;
 //! use std::io::Cursor;
 //!
 //! fn main() {
-//!     let input   = Cursor::new("828301020383010203".from_hex().unwrap());
+//!     let input   = Cursor::new(hex::decode("828301020383010203").unwrap());
 //!     let mut dec = Decoder::new(Config::default(), input);
 //!     let mut res = Vec::new();
 //!     for _ in 0 .. dec.array().unwrap() {
@@ -58,16 +54,12 @@
 //! # Example 3: Generic decoding
 //!
 //! ```
-//! extern crate cbor;
-//! extern crate rustc_serialize;
-//!
 //! use cbor::{Config, GenericDecoder};
 //! use cbor::value::{self, Key};
-//! use rustc_serialize::hex::FromHex;
 //! use std::io::Cursor;
 //!
 //! fn main() {
-//!     let input = Cursor::new("a2616101028103".from_hex().unwrap());
+//!     let input = Cursor::new(hex::decode("a2616101028103").unwrap());
 //!     let mut d = GenericDecoder::new(Config::default(), input);
 //!     let value = d.value().unwrap();
 //!     let     c = value::Cursor::new(&value);
@@ -1355,7 +1347,6 @@ mod tests {
     use super::*;
     use crate::types::Tag;
     use crate::value::{self, Int, Key, Simple, Value};
-    use rustc_serialize::hex::FromHex;
     use std::collections::BTreeMap;
     use std::io::Cursor;
     use std::{f32, f64, u64};
@@ -1690,7 +1681,7 @@ mod tests {
     }
 
     fn decoder(s: &str) -> Decoder<Cursor<Vec<u8>>> {
-        Decoder::new(Config::default(), Cursor::new(s.from_hex().unwrap()))
+        Decoder::new(Config::default(), Cursor::new(hex::decode(s).unwrap()))
     }
 
     fn gen_decoder(s: &str) -> GenericDecoder<Cursor<Vec<u8>>> {
