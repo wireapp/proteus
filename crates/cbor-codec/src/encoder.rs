@@ -95,13 +95,13 @@ pub enum EncodeError {
 impl fmt::Display for EncodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            EncodeError::IoError(ref e) => write!(f, "EncodeError: I/O error: {}", *e),
+            EncodeError::IoError(ref e) => write!(f, "EncodeError: I/O error: {e}"),
             EncodeError::UnexpectedEOF => write!(f, "EncodeError: unexpected end-of-file"),
-            EncodeError::InvalidValue(ref v) => write!(f, "EncodeError: invalid value {:?}", v),
+            EncodeError::InvalidValue(ref v) => write!(f, "EncodeError: invalid value {v:?}"),
             EncodeError::InvalidSimpleValue(ref s) => {
-                write!(f, "EncodeError: invalid simple value {:?}", s)
+                write!(f, "EncodeError: invalid simple value {s:?}")
             }
-            EncodeError::Other(ref e) => write!(f, "EncodeError: other error: {}", e),
+            EncodeError::Other(ref e) => write!(f, "EncodeError: other error: {e}"),
         }
     }
 }

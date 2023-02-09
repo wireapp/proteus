@@ -144,14 +144,14 @@ impl<'r> Cursor<'r> {
 
     pub fn at(&self, i: usize) -> Cursor<'r> {
         match self.value {
-            Some(&Value::Array(ref a)) => Cursor::of(a.get(i)),
+            Some(Value::Array(a)) => Cursor::of(a.get(i)),
             _ => Cursor::of(None),
         }
     }
 
     pub fn get(&self, k: Key) -> Cursor<'r> {
         match self.value {
-            Some(&Value::Map(ref m)) => Cursor::of(m.get(&k)),
+            Some(Value::Map(m)) => Cursor::of(m.get(&k)),
             _ => Cursor::of(None),
         }
     }
@@ -189,7 +189,7 @@ impl<'r> Cursor<'r> {
 
     pub fn bytes(&self) -> Option<&Bytes> {
         match self.value {
-            Some(&Value::Bytes(ref x)) => Some(x),
+            Some(Value::Bytes(ref x)) => Some(x),
             _ => None,
         }
     }
@@ -210,7 +210,7 @@ impl<'r> Cursor<'r> {
 
     pub fn text(&self) -> Option<&Text> {
         match self.value {
-            Some(&Value::Text(ref x)) => Some(x),
+            Some(Value::Text(x)) => Some(x),
             _ => None,
         }
     }

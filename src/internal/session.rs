@@ -467,9 +467,8 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         store: &mut S,
         env: &Envelope<'_>,
     ) -> SessionResult<(Session<I>, Vec<u8>), S::Error> {
-        let pkmsg = match *env.message() {
-            Message::Plain(_) => return Err(SessionError::InvalidMessage),
-            Message::Keyed(ref m) => m,
+        let Message::Keyed(pkmsg) = env.message() else {
+            return Err(SessionError::InvalidMessage);
         };
 
         let mut session = Session {

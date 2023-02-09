@@ -266,29 +266,29 @@ fn is_undefined(e: &DecodeError) -> bool {
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            DecodeError::DuplicateKey(ref k) => write!(f, "DecodeError: duplicate key: {:?}", *k),
-            DecodeError::IntOverflow(n) => write!(f, "DecodeError: integer overflow: {}", n),
+            DecodeError::DuplicateKey(ref k) => write!(f, "DecodeError: duplicate key: {k:?}"),
+            DecodeError::IntOverflow(n) => write!(f, "DecodeError: integer overflow: {n}"),
             DecodeError::InvalidKey(ref k) => {
-                write!(f, "DecodeError: unsuitable map key: {:?}", *k)
+                write!(f, "DecodeError: unsuitable map key: {k:?}")
             }
             DecodeError::InvalidTag(ref v) => {
-                write!(f, "DecodeError: value does not match tag: {:?}", *v)
+                write!(f, "DecodeError: value does not match tag: {v:?}")
             }
             DecodeError::InvalidUtf8(ref e) => {
-                write!(f, "DecodeError: Invalid UTF-8 encoding: {}", *e)
+                write!(f, "DecodeError: Invalid UTF-8 encoding: {e}")
             }
-            DecodeError::IoError(ref e) => write!(f, "DecodeError: I/O error: {}", *e),
+            DecodeError::IoError(ref e) => write!(f, "DecodeError: I/O error: {e}"),
             DecodeError::TooNested => write!(f, "DecodeError: value is too nested"),
             DecodeError::UnexpectedEOF => write!(f, "DecodeError: unexpected end-of-file"),
             DecodeError::UnexpectedBreak => write!(f, "DecodeError: unexpected break"),
-            DecodeError::Other(ref e) => write!(f, "DecodeError: other: {:?}", e),
+            DecodeError::Other(ref e) => write!(f, "DecodeError: other: {e:?}"),
             DecodeError::TooLong { max: m, actual: a } => {
-                write!(f, "DecodeError: value is too long {} (max={})", a, m)
+                write!(f, "DecodeError: value is too long {a} (max={m})")
             }
             DecodeError::UnexpectedType {
                 datatype: t,
                 info: i,
-            } => write!(f, "DecodeError: unexpected type {:?} (info={})", t, i),
+            } => write!(f, "DecodeError: unexpected type {t:?} (info={i})"),
         }
     }
 }
