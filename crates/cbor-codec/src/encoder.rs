@@ -12,34 +12,26 @@
 //! # Example 1: Direct encoding
 //!
 //! ```
-//! extern crate cbor;
-//! extern crate rustc_serialize;
-//!
 //! use cbor::Encoder;
-//! use rustc_serialize::hex::FromHex;
 //! use std::io::Cursor;
 //!
 //! fn main() {
 //!     let mut e = Encoder::new(Cursor::new(Vec::new()));
 //!     e.u16(1000).unwrap();
-//!     assert_eq!("1903e8".from_hex().unwrap(), e.into_writer().into_inner())
+//!     assert_eq!(hex::decode("1903e8").unwrap(), e.into_writer().into_inner())
 //! }
 //! ```
 //!
 //! # Example 2: Direct encoding (indefinite string)
 //!
 //! ```
-//! extern crate cbor;
-//! extern crate rustc_serialize;
-//!
 //! use cbor::Encoder;
-//! use rustc_serialize::hex::FromHex;
 //! use std::io::Cursor;
 //!
 //! fn main() {
 //!     let mut e = Encoder::new(Cursor::new(Vec::new()));
 //!     e.text_iter(vec!["strea", "ming"].into_iter()).unwrap();
-//!     let output = "7f657374726561646d696e67ff".from_hex().unwrap();
+//!     let output = hex::decode("7f657374726561646d696e67ff").unwrap();
 //!     assert_eq!(output, e.into_writer().into_inner())
 //! }
 //! ```
@@ -47,11 +39,8 @@
 //! # Example 3: Direct encoding (nested array)
 //!
 //! ```
-//! extern crate cbor;
-//! extern crate rustc_serialize;
 //!
 //! use cbor::Encoder;
-//! use rustc_serialize::hex::FromHex;
 //! use std::io::Cursor;
 //!
 //! fn main() {
@@ -61,7 +50,7 @@
 //!      .and(e.array(2)).and(e.u8(2)).and(e.u8(3))
 //!      .and(e.array(2)).and(e.u8(4)).and(e.u8(5))
 //!      .unwrap();
-//!     let output = "8301820203820405".from_hex().unwrap();
+//!     let output = hex::decode("8301820203820405").unwrap();
 //!     assert_eq!(output, e.into_writer().into_inner())
 //! }
 //! ```
@@ -546,7 +535,6 @@ mod tests {
     use super::*;
     use crate::types::Tag;
     use crate::value::Simple;
-    use rustc_serialize::hex::FromHex;
     use std::io::Cursor;
     use std::{f32, f64};
 
@@ -742,7 +730,7 @@ mod tests {
         let mut buffer = vec![0u8; 128];
         assert!(f(Encoder::new(Cursor::new(&mut buffer[..]))).is_ok());
         assert_eq!(
-            &expected.from_hex().unwrap()[..],
+            &hex::decode(expected).unwrap()[..],
             &buffer[0..expected.len() / 2]
         )
     }

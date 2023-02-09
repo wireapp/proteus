@@ -7,7 +7,6 @@ use cbor::value::{Int, Key, Text, Value};
 use cbor::{Config, GenericDecoder};
 use json::decoder::ReadIter;
 use json::{DecodeResult, Decoder, FromJson, Json};
-use rustc_serialize::base64::FromBase64;
 use std::fs::File;
 
 pub mod util;
@@ -83,8 +82,9 @@ fn int_min_max() {
 fn test_all() {
     let iter = ReadIter::new(File::open("tests/appendix_a.json").unwrap());
     let test_vectors: Vec<TestVector> = Decoder::default(iter).from_json().unwrap();
+    use base64::prelude::{Engine as _, BASE64_STANDARD};
     for v in test_vectors {
-        let raw = v.cbor.from_base64().unwrap();
+        let raw = BASE64_STANDARD.decode(v.cbor).unwrap();
         let mut dec = GenericDecoder::new(Config::default(), &raw[..]);
         let val = dec.value().unwrap();
         if let Some(x) = v.decoded {
