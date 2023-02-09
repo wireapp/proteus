@@ -559,7 +559,7 @@ impl PublicKey {
         let res = self.0.verify(m, &s.0);
 
         if let Err(e) = &res {
-            println!("{}", e);
+            println!("{e}");
         }
 
         res.is_ok()
