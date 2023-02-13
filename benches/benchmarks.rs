@@ -88,13 +88,10 @@ fn bench_verify_batched(c: &mut Criterion) {
         &inputs,
         |b, inputs| {
             b.iter(|| {
-                for (sig, msg) in inputs {
-                    let _r = x.public_key.verify(&sig, &msg);
-                }
+                let _r = x.public_key.verify_batch(inputs);
             })
         },
     );
-
     group.finish();
 }
 
