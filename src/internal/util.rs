@@ -47,7 +47,10 @@ impl Bytes32 {
         let mut a = [0u8; 32];
         let n = d.read_bytes(&mut a)?;
         if 32 != n {
-            return Err(DecodeError::InvalidArrayLen(n));
+            return Err(DecodeError::InvalidArrayLen {
+                expected: 32,
+                got: n,
+            });
         }
         Ok(Bytes32 {
             array: zeroize::Zeroizing::new(a),
@@ -66,7 +69,10 @@ impl Bytes64 {
         let mut a = [0u8; 64];
         let n = d.read_bytes(&mut a)?;
         if 64 != n {
-            return Err(DecodeError::InvalidArrayLen(n));
+            return Err(DecodeError::InvalidArrayLen {
+                expected: 64,
+                got: n,
+            });
         }
         Ok(Bytes64 {
             array: zeroize::Zeroizing::new(a),

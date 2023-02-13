@@ -362,7 +362,9 @@ impl LegacyClient {
 impl Client {
     pub fn from_raw(sk: [u8; 64], pk: [u8; 32]) -> Self {
         Client {
-            identity: unsafe { proteus_wasm::keys::IdentityKeyPair::from_raw_key_pair(sk, pk) },
+            identity: unsafe {
+                proteus_wasm::keys::IdentityKeyPair::from_raw_key_pair(sk, pk).unwrap()
+            },
             prekeys: Default::default(),
             sessions: Default::default(),
         }

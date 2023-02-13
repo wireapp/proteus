@@ -9,7 +9,9 @@ pub enum ProteusError {
     #[error("The provided public key is made up of zeros!")]
     Zero,
     #[error(transparent)]
-    Ed25519Error(#[from] ed25519_compact::Error),
+    Ed25519Error(#[from] ed25519_dalek::SignatureError),
+    #[error("The public key contained in the raw repr does not match the private key's computed public key. This is probably a corrupted keypair")]
+    PublicKeyMismatch,
     #[error(transparent)]
     Other(#[from] eyre::Report),
 }
@@ -20,10 +22,10 @@ impl PartialEq for ProteusError {
             (ProteusError::DecodeError(_), ProteusError::DecodeError(_)) => true,
             (ProteusError::EncodeError(_), ProteusError::EncodeError(_)) => true,
             (ProteusError::Zero, ProteusError::Zero) => true,
-            (ProteusError::Ed25519Error(a), ProteusError::Ed25519Error(b)) if a == b => true,
             (ProteusError::Other(a), ProteusError::Other(b)) if a.to_string() == b.to_string() => {
                 true
             }
+            (ProteusError::PublicKeyMismatch, ProteusError::PublicKeyMismatch) => true,
             _ => false,
         }
     }
@@ -35,7 +37,7 @@ impl ProteusErrorCode for ProteusError {
             Self::EncodeError(e) => e.code(),
             Self::DecodeError(e) => e.code(),
             Self::Zero => ProteusErrorKind::AssertZeroArray,
-            Self::Ed25519Error(_) => ProteusErrorKind::Ed25519Error,
+            Self::Ed25519Error(_) | Self::PublicKeyMismatch => ProteusErrorKind::Ed25519Error,
             Self::Other(_) => ProteusErrorKind::Unknown,
         }
     }

@@ -95,7 +95,10 @@ impl SessionTag {
     pub fn decode<R: Read>(d: &mut Decoder<R>) -> DecodeResult<SessionTag> {
         let v = d.bytes()?;
         if 16 != v.len() {
-            return Err(DecodeError::InvalidArrayLen(v.len()));
+            return Err(DecodeError::InvalidArrayLen {
+                expected: 16,
+                got: v.len(),
+            });
         }
         let mut a = [0u8; 16];
         a[..16].clone_from_slice(&v[..16]);
