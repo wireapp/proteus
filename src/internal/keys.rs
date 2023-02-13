@@ -619,7 +619,7 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 // Signature ////////////////////////////////////////////////////////////////
 
 // SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Signature(ed25519_compact::Signature);
 

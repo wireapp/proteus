@@ -67,5 +67,42 @@ fn bench_verify(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_keygen, bench_dh, bench_sign, bench_verify);
+fn bench_verify_batched(c: &mut Criterion) {
+    let x = KeyPair::new(None);
+    const ITEMS: usize = 16;
+    let mut inputs = std::collections::HashMap::new();
+    use rand::Rng as _;
+    for _ in 0..ITEMS {
+        let message: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect();
+        inputs.insert(x.secret_key.sign(message.as_bytes()), message.into_bytes());
+    }
+
+    let mut group = c.benchmark_group("verify-batched-30l-16m");
+    group.throughput(criterion::Throughput::Elements(ITEMS as u64));
+    group.bench_with_input(
+        criterion::BenchmarkId::new("batch-verify", "30-len message, 16 messages"),
+        &inputs,
+        |b, inputs| {
+            b.iter(|| {
+                for (sig, msg) in inputs {
+                    let _r = x.public_key.verify(&sig, &msg);
+                }
+            })
+        },
+    );
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_keygen,
+    bench_dh,
+    bench_sign,
+    bench_verify,
+    bench_verify_batched
+);
 criterion_main!(benches);
