@@ -94,6 +94,7 @@ fn bench_verify_batched(c: &mut Criterion) {
             })
         },
     );
+
     group.finish();
 }
 
