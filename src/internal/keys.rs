@@ -67,7 +67,8 @@ impl IdentityKey {
 
 // Identity Keypair /////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "hazmat", derive(PartialEq, Eq))]
 pub struct IdentityKeyPair {
     pub version: u8,
     pub secret_key: SecretKey,
@@ -140,8 +141,8 @@ impl IdentityKeyPair {
 
     #[cfg(feature = "hazmat")]
     #[must_use]
-    pub unsafe fn from_raw_key_pair(sk: [u8; 64], pk: [u8; 32]) -> Self {
-        Self::from_keypair(KeyPair::from_raw(sk, pk))
+    pub unsafe fn from_raw_key_pair(sk: [u8; 64], pk: [u8; 32]) -> ProteusResult<Self> {
+        Ok(Self::from_keypair(KeyPair::from_raw(sk, pk)?))
     }
 }
 
@@ -252,7 +253,7 @@ impl PreKeyBundle {
     #[must_use]
     pub fn signed(ident: &IdentityKeyPair, key: &PreKey) -> PreKeyBundle {
         let ratchet_key = key.key_pair.public_key.clone();
-        let signature = ident.secret_key.sign(ratchet_key.0.as_slice());
+        let signature = ident.secret_key.sign(ratchet_key.as_slice());
         PreKeyBundle {
             version: 1,
             prekey_id: key.key_id,
@@ -269,7 +270,7 @@ impl PreKeyBundle {
                 if self
                     .identity_key
                     .public_key
-                    .verify(sig, self.public_key.0.as_slice())
+                    .verify(sig, self.public_key.as_slice())
                 {
                     PreKeyAuth::Valid
                 } else {
@@ -378,9 +379,7 @@ pub struct KeyPair {
 
 impl KeyPair {
     #[must_use]
-    pub fn new(
-        mut seed: Option<zeroize::Zeroizing<[u8; ed25519_compact::Seed::BYTES]>>,
-    ) -> KeyPair {
+    pub fn new(mut seed: Option<zeroize::Zeroizing<[u8; 32]>>) -> KeyPair {
         use rand::{RngCore as _, SeedableRng as _};
 
         let mut rng = if let Some(seed) = seed.take() {
@@ -389,13 +388,13 @@ impl KeyPair {
             rand_chacha::ChaCha20Rng::from_entropy()
         };
 
-        let mut kp_seed = [0u8; ed25519_compact::Seed::BYTES];
-        rng.fill_bytes(&mut kp_seed);
+        let mut seed = zeroize::Zeroizing::new(ed25519_dalek::SecretKey::default());
+        rng.fill_bytes(&mut *seed);
 
-        let kp = ed25519_compact::KeyPair::from_seed(kp_seed.into());
+        let kp = ed25519_dalek::SigningKey::from_bytes(&seed);
 
-        let secret_key = SecretKey(kp.sk);
-        let public_key = PublicKey(kp.pk);
+        let public_key = PublicKey(kp.verifying_key());
+        let secret_key = SecretKey(kp);
 
         KeyPair {
             secret_key,
@@ -430,18 +429,20 @@ impl KeyPair {
 
     #[cfg(feature = "hazmat")]
     #[must_use]
-    pub unsafe fn from_raw(sk: [u8; 64], pk: [u8; 32]) -> Self {
-        let sk = ed25519_compact::SecretKey::new(sk);
-        let pk = ed25519_compact::PublicKey::new(pk);
+    pub unsafe fn from_raw(sk: [u8; 64], pk: [u8; 32]) -> ProteusResult<Self> {
+        let sk = ed25519_dalek::SigningKey::from_keypair_bytes(&sk)?;
+        let pk = ed25519_dalek::VerifyingKey::from_bytes(&pk)?;
         let secret_key = SecretKey(sk);
         let public_key = PublicKey(pk);
 
-        debug_assert_eq!(secret_key.public_key(), public_key);
+        if secret_key.0.verifying_key() != public_key.0 {
+            return Err(ProteusError::PublicKeyMismatch);
+        }
 
-        KeyPair {
+        Ok(KeyPair {
             secret_key,
             public_key,
-        }
+        })
     }
 }
 
@@ -451,16 +452,28 @@ impl KeyPair {
 pub struct Zero {}
 
 #[derive(Clone, ZeroizeOnDrop)]
-pub struct SecretKey(ed25519_compact::SecretKey);
+pub struct SecretKey(ed25519_dalek::SigningKey);
 
+#[cfg(feature = "hazmat")]
 impl PartialEq for SecretKey {
     fn eq(&self, other: &Self) -> bool {
         use subtle::ConstantTimeEq as _;
-        self.0.as_slice().ct_eq(other.0.as_slice()).unwrap_u8() == 1
+        self.0
+            .to_bytes()
+            .as_slice()
+            .ct_eq(other.0.to_bytes().as_slice())
+            .into()
     }
 }
 
+#[cfg(feature = "hazmat")]
 impl Eq for SecretKey {}
+
+impl From<ed25519_dalek::SecretKey> for SecretKey {
+    fn from(sk: ed25519_dalek::SecretKey) -> Self {
+        Self(ed25519_dalek::SigningKey::from_bytes(&sk))
+    }
+}
 
 impl std::fmt::Debug for SecretKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -474,17 +487,42 @@ impl SecretKey {
     #[must_use]
     #[allow(dead_code)]
     pub(crate) fn public_key(&self) -> PublicKey {
-        PublicKey(self.0.public_key())
+        PublicKey(self.0.verifying_key())
     }
 
     #[must_use]
     pub fn sign(&self, m: &[u8]) -> Signature {
-        Signature(self.0.sign(m, None))
+        use ed25519_dalek::Signer as _;
+        Signature(self.0.sign(m))
     }
 
     #[cfg(feature = "hazmat")]
-    pub fn as_slice(&self) -> &[u8] {
-        self.0.as_slice()
+    pub fn to_bytes(&self) -> [u8; ed25519_dalek::SECRET_KEY_LENGTH] {
+        self.0.to_bytes()
+    }
+
+    #[cfg(feature = "hazmat")]
+    pub fn to_keypair_bytes(&self) -> [u8; ed25519_dalek::KEYPAIR_LENGTH] {
+        self.0.to_keypair_bytes()
+    }
+
+    pub(crate) fn to_dh(&self) -> x25519_dalek::StaticSecret {
+        let seed = self.0.to_bytes();
+        let sk_hash = {
+            use sha2::Digest as _;
+            let mut hash = sha2::Sha512::default();
+            hash.update(seed);
+            let mut hash_output = hash.finalize();
+            hash_output[0] &= 248;
+            hash_output[31] &= 63;
+            hash_output[31] |= 64;
+            hash_output
+        };
+
+        let mut dh_sk_raw = zeroize::Zeroizing::new([0u8; 32]);
+        dh_sk_raw.copy_from_slice(&sk_hash[..32]);
+
+        x25519_dalek::StaticSecret::from(*dh_sk_raw)
     }
 
     pub fn shared_secret(
@@ -492,30 +530,21 @@ impl SecretKey {
         bob_public: &PublicKey,
     ) -> ProteusResult<zeroize::Zeroizing<[u8; 32]>> {
         use subtle::ConstantTimeEq as _;
-        if bob_public.0.as_slice().ct_eq(&[0; 32]).unwrap_u8() == 1 {
+        if bob_public.0.to_bytes().ct_eq(&[0; 32]).unwrap_u8() == 1 {
             return Err(ProteusError::Zero);
         }
 
-        let alice_x25519_sk = ed25519_compact::x25519::SecretKey::from_ed25519(&self.0)?;
-        let bob_x25519_pk = ed25519_compact::x25519::PublicKey::from_ed25519(&bob_public.0)?;
+        let alice_x25519_sk = self.to_dh();
+        let bob_x25519_pk = bob_public.to_dh()?;
 
-        // ? This exists as a possible compatibility layer between proteus 1.0 and 2.0.
-        // ? Proteus 1.0 did not clamp DH exchanges (used libsodium's scalarmult raw, which is vulnerable to signature malleability)
-        // ? In case of need, we can use the weaker unclamped scalarmult to get things rolling. But better not!
-        #[cfg(not(feature = "unclamped-dh-exchange"))]
-        let shared = bob_x25519_pk.dh(&alice_x25519_sk)?;
-        #[cfg(feature = "unclamped-dh-exchange")]
-        let shared = bob_x25519_pk.unclamped_mul(&alice_x25519_sk)?;
+        let shared = alice_x25519_sk.diffie_hellman(&bob_x25519_pk);
 
-        let mut shared_buf = zeroize::Zeroizing::new([0u8; 32]);
-        shared_buf.copy_from_slice(shared.as_slice());
-
-        Ok(shared_buf)
+        Ok(shared.to_bytes().into())
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(self.0.as_slice()))?;
+        e.u8(0).and(e.bytes(&self.0.to_keypair_bytes()))?;
         Ok(())
     }
 
@@ -525,7 +554,9 @@ impl SecretKey {
         for _ in 0..n {
             match d.u8()? {
                 0 if secret_key.is_none() => {
-                    secret_key = Some(ed25519_compact::SecretKey::new(*Bytes64::decode(d)?.array));
+                    secret_key = Some(ed25519_dalek::SigningKey::from_keypair_bytes(
+                        &Bytes64::decode(d)?.array,
+                    )?);
                 }
                 _ => d.skip()?,
             }
@@ -540,14 +571,12 @@ impl SecretKey {
 
 // SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
 #[derive(Clone, Debug)]
-pub struct PublicKey(ed25519_compact::PublicKey);
+pub struct PublicKey(ed25519_dalek::VerifyingKey);
 
 impl PartialEq for PublicKey {
     fn eq(&self, other: &Self) -> bool {
         use subtle::ConstantTimeEq as _;
-        let ct = self.0.as_slice().ct_eq(other.0.as_slice());
-
-        ct.unwrap_u8() == 1
+        self.0.to_bytes().ct_eq(&other.0.to_bytes()).into()
     }
 }
 
@@ -556,6 +585,7 @@ impl Eq for PublicKey {}
 impl PublicKey {
     #[must_use]
     pub fn verify(&self, s: &Signature, m: &[u8]) -> bool {
+        use ed25519_dalek::Verifier as _;
         let res = self.0.verify(m, &s.0);
 
         if let Err(e) = &res {
@@ -565,26 +595,42 @@ impl PublicKey {
         res.is_ok()
     }
 
-    #[cfg(feature = "hazmat")]
     pub fn as_slice(&self) -> &[u8] {
-        self.0.as_slice()
+        self.0.as_bytes()
+    }
+
+    pub(crate) fn to_dh(&self) -> ProteusResult<x25519_dalek::PublicKey> {
+        let pk_montgomery = {
+            let edwards = curve25519_dalek::edwards::CompressedEdwardsY(self.0.to_bytes());
+
+            let edwards_relaxed = edwards
+                .decompress()
+                .ok_or_else(|| ProteusError::Ed25519Error(ed25519_dalek::SignatureError::new()))?;
+
+            zeroize::Zeroizing::new(edwards_relaxed.to_montgomery().to_bytes())
+        };
+
+        Ok(x25519_dalek::PublicKey::from(*pk_montgomery))
     }
 
     #[must_use]
     pub fn fingerprint(&self) -> String {
-        fmt_hex(self.0.as_slice())
+        fmt_hex(self.as_slice())
     }
 
     #[cfg(any(test, feature = "hazmat"))]
     pub fn from_bytes<B: AsRef<[u8]>>(buf: B) -> ProteusResult<Self> {
-        let pk = ed25519_compact::PublicKey::from_slice(buf.as_ref())?;
+        let mut pk_raw = zeroize::Zeroizing::new([0u8; ed25519_dalek::PUBLIC_KEY_LENGTH]);
+        pk_raw.copy_from_slice(&buf.as_ref()[..ed25519_dalek::PUBLIC_KEY_LENGTH]);
+
+        let pk = ed25519_dalek::VerifyingKey::from_bytes(&pk_raw)?;
 
         Ok(PublicKey(pk))
     }
 
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(self.0.as_slice()))?;
+        e.u8(0).and(e.bytes(self.as_slice()))?;
         Ok(())
     }
 
@@ -601,7 +647,7 @@ impl PublicKey {
             }
         }
         let pub_edward = pub_edward.ok_or(DecodeError::MissingField("PublicKey::pub_edward"))?;
-        Ok(Self(ed25519_compact::PublicKey::new(*pub_edward)))
+        Ok(Self(ed25519_dalek::VerifyingKey::from_bytes(&*pub_edward)?))
     }
 }
 
@@ -621,12 +667,12 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 // SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 #[repr(transparent)]
-pub struct Signature(ed25519_compact::Signature);
+pub struct Signature(ed25519_dalek::Signature);
 
 impl Signature {
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {
         e.object(1)?;
-        e.u8(0).and(e.bytes(self.0.as_slice()))?;
+        e.u8(0).and(e.bytes(&self.0.to_bytes()))?;
         Ok(())
     }
 
@@ -636,7 +682,9 @@ impl Signature {
         for _ in 0..n {
             match d.u8()? {
                 0 if sig.is_none() => {
-                    sig = Some(ed25519_compact::Signature::new(*Bytes64::decode(d)?.array));
+                    sig = Some(ed25519_dalek::Signature::from_bytes(
+                        &Bytes64::decode(d)?.array,
+                    ));
                 }
                 _ => d.skip()?,
             }
@@ -705,7 +753,8 @@ mod tests {
             |mut e| k.secret_key.encode(&mut e),
             |mut d| SecretKey::decode(&mut d),
         );
-        assert_eq!(&k.secret_key.0.as_slice()[..], &r.0.as_slice()[..]);
+        assert_eq!(&k.secret_key.0.to_bytes()[..], &r.0.to_bytes()[..]);
+        assert_eq!(k.secret_key, r);
     }
 
     #[test]
@@ -741,7 +790,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn degenerated_key() {
         let k = KeyPair::new(None);
-        let bytes: Vec<u8> = k.public_key.0.as_slice().iter().map(|_| 0).collect();
+        let bytes: Vec<u8> = k.public_key.as_slice().iter().map(|_| 0).collect();
         let pk = PublicKey::from_bytes(bytes).unwrap();
         let Err(ProteusError::Zero) = k.secret_key.shared_secret(&pk) else {
             panic!("Not a zero pk");

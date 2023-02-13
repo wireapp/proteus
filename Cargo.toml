@@ -1,6 +1,6 @@
 [package]
 name         = "proteus-wasm"
-version      = "2.0.0"
+version      = "2.1.0"
 authors      = ["Wire Swiss GmbH <seceng@wire.com>"]
 description  = "Axolotl protocol implementation"
 homepage     = "https://github.com/wireapp/proteus"
@@ -22,8 +22,7 @@ git = "https://github.com/wireapp//proteus"
 branch = "otak/fix-1.0.3"
 
 [features]
-default = ["extra-signature-checks"]
-extra-signature-checks = ["ed25519-compact/self-verify"]
+default = []
 cryptobox-identity = []
 unclamped-dh-exchange = []
 hazmat = []
@@ -43,16 +42,15 @@ sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
 chacha20 = "0.9"
-ed25519-compact = { version = "2", default-features = false, features = ["std", "x25519"] }
+ed25519-dalek = { version = "2.0.0-pre.0", features = ["zeroize"] }
+x25519-dalek = { git = "https://github.com/dalek-cryptography/x25519-dalek.git", branch = "release/2.0" }
+curve25519-dalek = { version = "4.0.0-rc.1", features = ["precomputed-tables"] }
 subtle = "2.4"
 
 # Utils
 hex = "0.4"
 cbor-codec = { path = "crates/cbor-codec" }
 eyre = "0.6"
-
-[target.'cfg(target_family = "wasm")'.dependencies]
-ed25519-compact = { version = "2", default-features = false, features = ["std", "x25519", "opt_size"] }
 
 [dev-dependencies]
 criterion = "0.4"

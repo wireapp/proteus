@@ -94,7 +94,7 @@ mod serialization {
 
         assert_eq!(
             identity_new_into_legacy.secret_key.as_slice(),
-            alice.identity.secret_key.as_slice(),
+            &alice.identity.secret_key.to_keypair_bytes(),
         );
 
         assert_eq!(
@@ -103,7 +103,7 @@ mod serialization {
         );
 
         assert_eq!(
-            identity_legacy_into_new.secret_key.as_slice(),
+            &identity_legacy_into_new.secret_key.to_keypair_bytes(),
             alice_legacy.identity.secret_key.as_slice(),
         );
 

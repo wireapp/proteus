@@ -92,10 +92,12 @@ pub type DecodeResult<A> = Result<A, DecodeError>;
 pub enum DecodeError {
     #[error("CBOR decoder error: {0}")]
     Decoder(#[from] cbor::DecodeError),
-    #[error("CBOR array length mismatch: {0}")]
-    InvalidArrayLen(usize),
+    #[error("CBOR array length mismatch: expected {expected}, got {got}")]
+    InvalidArrayLen { expected: usize, got: usize },
     #[error("Local identity changed")]
     LocalIdentityChanged(IdentityKey),
+    #[error(transparent)]
+    Ed25519Error(#[from] ed25519_dalek::SignatureError),
     #[error("Unknown message type {0}: {1}")]
     UnknownMessageType(u8, &'static str),
     #[error("Invalid type {0}: {1}")]
@@ -111,11 +113,12 @@ pub enum DecodeError {
 impl proteus_traits::ProteusErrorCode for DecodeError {
     fn code(&self) -> ProteusErrorKind {
         match self {
-            DecodeError::InvalidArrayLen(_) => ProteusErrorKind::InvalidArrayLen,
-            DecodeError::LocalIdentityChanged(_) => ProteusErrorKind::LocalIdentityChanged,
-            DecodeError::UnknownMessageType(_, _) => ProteusErrorKind::UnknownMessageType,
-            DecodeError::InvalidType(_, _) => ProteusErrorKind::MalformedMessageData,
-            DecodeError::Decoder(cbor::DecodeError::IoError(_)) => ProteusErrorKind::IoError,
+            Self::InvalidArrayLen { .. } => ProteusErrorKind::InvalidArrayLen,
+            Self::LocalIdentityChanged(_) => ProteusErrorKind::LocalIdentityChanged,
+            Self::UnknownMessageType(_, _) => ProteusErrorKind::UnknownMessageType,
+            Self::InvalidType(_, _) => ProteusErrorKind::MalformedMessageData,
+            Self::Decoder(cbor::DecodeError::IoError(_)) => ProteusErrorKind::IoError,
+            Self::Ed25519Error(_) => ProteusErrorKind::Ed25519Error,
             _ => ProteusErrorKind::DecodeError,
         }
     }
