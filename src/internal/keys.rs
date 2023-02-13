@@ -595,6 +595,18 @@ impl PublicKey {
         res.is_ok()
     }
 
+    #[must_use]
+    pub fn verify_batch(
+        &self,
+        verifying_contents: &std::collections::HashMap<Signature, Vec<u8>>,
+    ) -> bool {
+        let messages: Vec<&[u8]> = verifying_contents.values().map(|m| m.as_slice()).collect();
+        let signatures: Vec<_> = verifying_contents.keys().map(|s| s.0).collect();
+        let verifying_keys: Vec<_> = (0..signatures.len()).map(|_| self.0.clone()).collect();
+
+        ed25519_dalek::verify_batch(&messages, &signatures, &verifying_keys).is_ok()
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_bytes()
     }
@@ -665,9 +677,15 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 // Signature ////////////////////////////////////////////////////////////////
 
 // SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Signature(ed25519_dalek::Signature);
+
+impl std::hash::Hash for Signature {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write(&self.0.to_bytes());
+    }
+}
 
 impl Signature {
     pub fn encode<W: Write>(&self, e: &mut Encoder<W>) -> EncodeResult<()> {

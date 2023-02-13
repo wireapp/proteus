@@ -24,7 +24,6 @@ branch = "otak/fix-1.0.3"
 [features]
 default = []
 cryptobox-identity = []
-unclamped-dh-exchange = []
 hazmat = []
 
 [dependencies]
@@ -42,7 +41,7 @@ sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
 chacha20 = "0.9"
-ed25519-dalek = { version = "2.0.0-pre.0", features = ["zeroize"] }
+ed25519-dalek = { version = "2.0.0-pre.0", features = ["zeroize", "batch"] }
 x25519-dalek = { git = "https://github.com/dalek-cryptography/x25519-dalek.git", branch = "release/2.0" }
 curve25519-dalek = { version = "4.0.0-rc.1", features = ["precomputed-tables"] }
 subtle = "2.4"
