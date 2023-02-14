@@ -595,6 +595,7 @@ impl PublicKey {
         res.is_ok()
     }
 
+    #[cfg(feature = "public-key-batch-verification")]
     #[must_use]
     pub fn verify_batch(
         &self,
