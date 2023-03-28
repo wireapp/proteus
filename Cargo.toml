@@ -42,9 +42,9 @@ sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
 chacha20 = "0.9"
-ed25519-dalek = { version = "2.0.0-pre.0", features = ["zeroize"] }
-x25519-dalek = { git = "https://github.com/dalek-cryptography/x25519-dalek.git", branch = "release/2.0" }
-curve25519-dalek = { version = "4.0.0-rc.1", features = ["precomputed-tables"] }
+ed25519-dalek = { version = "2.0.0-rc.2", features = ["zeroize", "fast"] }
+x25519-dalek = { version = "2.0.0-pre.1" }
+curve25519-dalek = { version = "4.0.0-rc.2", features = ["precomputed-tables"] }
 subtle = "2.4"
 
 # Utils
