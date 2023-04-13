@@ -222,20 +222,21 @@ impl RecvChain {
             .message_keys
             .iter()
             .position(|mk| mk.counter == mesg.counter) else {
-                // ? Handles erorr case 209
+                // ? Handles error case 209
                 return Err(SessionError::DuplicateMessage);
             };
+
+        // SAFETY: Indexing directly is safe as the `position` check above ensure we have a MessageKeys present at the index
+        if !env.verify(&self.message_keys[i].mac_key) {
+            // ? Handles error case 210
+            return Err(SessionError::InvalidSignature);
+        }
 
         let Some(mk) = self.message_keys.remove(i) else {
             // SAFETY: We cannot reach this codepath as: if `i` doesn't exist, we'll return `SessionError::DuplicateMessage` above
             // Thus, index `i` is always present and we cannot reach this codepath
             unreachable!()
         };
-
-        if !env.verify(&mk.mac_key) {
-            // ? Handles erorr case 210
-            return Err(SessionError::InvalidSignature);
-        }
 
         Ok(mk.decrypt(&mesg.cipher_text))
     }
