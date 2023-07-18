@@ -70,7 +70,8 @@ impl proteus::session::PreKeyStore for PrekeyStore<proteus::keys::PreKey> {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
 impl proteus_traits::PreKeyStore for PrekeyStore<proteus_wasm::keys::PreKey> {
     type Error = DummyError;
 
