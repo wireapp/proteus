@@ -29,7 +29,7 @@ hazmat = []
 
 [dependencies]
 thiserror = "1.0"
-proteus-traits = { version = "2.0", path = "crates/proteus-traits" }
+proteus-traits = { version = "2.1", path = "crates/proteus-traits" }
 
 # CSPRNG
 rand = { version = "0.8", features = ["getrandom"] }
@@ -37,15 +37,15 @@ getrandom = { version = "0.2", features = ["js"] }
 rand_chacha = "0.3"
 
 # Crypto
-zeroize = { version = "1.5", features = ["zeroize_derive"] }
+zeroize = { version = "1.6", features = ["zeroize_derive"] }
 sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
 chacha20 = "0.9"
-ed25519-dalek = { version = "2.0.0-rc.2", features = ["zeroize", "fast"] }
-x25519-dalek = { version = "2.0.0-rc.2", features = ["precomputed-tables", "static_secrets", "zeroize"] }
-curve25519-dalek = { version = "4.0.0-rc.2", features = ["precomputed-tables", "zeroize"] }
-subtle = "2.4"
+ed25519-dalek = { version = "2.0.0-rc.3", features = ["zeroize", "fast"] }
+x25519-dalek = { version = "2.0.0-rc.3", features = ["precomputed-tables", "static_secrets", "zeroize"] }
+curve25519-dalek = { version = "4.0.0-rc.3", features = ["precomputed-tables", "zeroize"] }
+subtle = "2.5"
 
 # Utils
 hex = "0.4"
@@ -53,7 +53,7 @@ cbor-codec = { path = "crates/cbor-codec" }
 eyre = "0.6"
 
 [dev-dependencies]
-criterion = "0.4"
+criterion = "0.5"
 pretty_assertions = "1.3"
 proteus-wasm = { path = ".", package = "proteus-wasm", features = ["hazmat", "cryptobox-identity", "public-key-batch-verification"] }
 wasm-bindgen-test = "0.3"
