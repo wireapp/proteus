@@ -15,15 +15,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::error::{ProteusError, ProteusResult};
-use crate::internal::types::{DecodeError, DecodeResult, EncodeResult};
-use crate::internal::util::{fmt_hex, opt, Bytes32, Bytes64};
-use cbor::skip::Skip;
-use cbor::{Config, Decoder, Encoder};
-use std::fmt::{self, Debug, Formatter};
-use std::io::{Cursor, Read, Write};
-use std::u16;
-use std::vec::Vec;
+use crate::{
+    error::{ProteusError, ProteusResult},
+    internal::{
+        types::{DecodeError, DecodeResult, EncodeResult},
+        util::{fmt_hex, opt, Bytes32, Bytes64},
+    },
+};
+use cbor::{skip::Skip, Config, Decoder, Encoder};
+
+use std::{
+    fmt::{self, Debug, Formatter},
+    io::{Cursor, Read, Write},
+};
 use zeroize::ZeroizeOnDrop;
 
 // Identity Key /////////////////////////////////////////////////////////////
@@ -87,6 +91,11 @@ impl IdentityKeyPair {
     #[must_use]
     pub fn new() -> IdentityKeyPair {
         Self::from_keypair(KeyPair::new(None))
+    }
+
+    #[must_use]
+    pub fn new_with_rng(csprng: &mut dyn rand_core::CryptoRngCore) -> IdentityKeyPair {
+        Self::from_keypair(KeyPair::new_with_rng(csprng))
     }
 
     fn from_keypair(k: KeyPair) -> Self {
@@ -387,7 +396,7 @@ pub struct KeyPair {
 impl KeyPair {
     #[must_use]
     pub fn new(mut seed: Option<zeroize::Zeroizing<[u8; 32]>>) -> KeyPair {
-        use rand::{RngCore as _, SeedableRng as _};
+        use rand::SeedableRng as _;
 
         let mut rng = if let Some(seed) = seed.take() {
             rand_chacha::ChaCha20Rng::from_seed(*seed)
@@ -395,8 +404,13 @@ impl KeyPair {
             rand_chacha::ChaCha20Rng::from_entropy()
         };
 
+        KeyPair::new_with_rng(&mut rng)
+    }
+
+    #[must_use]
+    pub fn new_with_rng(csprng: &mut dyn rand_core::CryptoRngCore) -> KeyPair {
         let mut seed = zeroize::Zeroizing::new(ed25519_dalek::SecretKey::default());
-        rng.fill_bytes(&mut *seed);
+        csprng.fill_bytes(&mut *seed);
 
         let kp = ed25519_dalek::SigningKey::from_bytes(&seed);
 

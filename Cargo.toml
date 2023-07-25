@@ -34,6 +34,7 @@ proteus-traits = { version = "2.1", path = "crates/proteus-traits" }
 
 # CSPRNG
 rand = { version = "0.8", features = ["getrandom"] }
+rand_core = "0.6"
 getrandom = { version = "0.2", features = ["js"] }
 rand_chacha = "0.3"
 
