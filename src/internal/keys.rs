@@ -29,6 +29,7 @@ use zeroize::ZeroizeOnDrop;
 // Identity Key /////////////////////////////////////////////////////////////
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKey {
     pub public_key: PublicKey,
 }
@@ -68,6 +69,7 @@ impl IdentityKey {
 // Identity Keypair /////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "hazmat", derive(PartialEq, Eq))]
 pub struct IdentityKeyPair {
     pub version: u8,
@@ -149,6 +151,7 @@ impl IdentityKeyPair {
 // Prekey ///////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PreKey {
     pub version: u8,
     pub key_id: PreKeyId,
@@ -223,6 +226,7 @@ pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
 // Prekey bundle ////////////////////////////////////////////////////////////
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PreKeyAuth {
     Invalid,
     Valid,
@@ -230,6 +234,7 @@ pub enum PreKeyAuth {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PreKeyBundle {
     pub version: u8,
     pub prekey_id: PreKeyId,
@@ -339,6 +344,7 @@ impl PreKeyBundle {
 // Prekey ID ////////////////////////////////////////////////////////////////
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PreKeyId(u16);
 
 pub const MAX_PREKEY_ID: PreKeyId = PreKeyId(u16::MAX);
@@ -372,6 +378,7 @@ impl fmt::Display for PreKeyId {
 // Keypair //////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KeyPair {
     pub secret_key: SecretKey,
     pub public_key: PublicKey,
@@ -449,9 +456,11 @@ impl KeyPair {
 // SecretKey ////////////////////////////////////////////////////////////////
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Zero {}
 
 #[derive(Clone, ZeroizeOnDrop)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SecretKey(ed25519_dalek::SigningKey);
 
 #[cfg(feature = "hazmat")]
@@ -571,6 +580,7 @@ impl SecretKey {
 
 // SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PublicKey(ed25519_dalek::VerifyingKey);
 
 impl PartialEq for PublicKey {
@@ -679,6 +689,7 @@ pub fn rand_bytes(size: usize) -> Vec<u8> {
 
 // SAFETY: ZeroizeOnDrop isn't needed as ed25519_dalek types already implement Zeroize + Drop
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct Signature(ed25519_dalek::Signature);
 

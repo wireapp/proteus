@@ -37,7 +37,6 @@ pub fn opt<A>(r: DecodeResult<A>) -> DecodeResult<Option<A>> {
 }
 
 // Bytes32 //////////////////////////////////////////////////////////////////
-
 pub struct Bytes32 {
     pub array: zeroize::Zeroizing<[u8; 32]>,
 }
@@ -59,7 +58,6 @@ impl Bytes32 {
 }
 
 // Bytes64 //////////////////////////////////////////////////////////////////
-
 pub struct Bytes64 {
     pub array: zeroize::Zeroizing<[u8; 64]>,
 }
