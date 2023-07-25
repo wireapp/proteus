@@ -26,6 +26,7 @@ default = []
 cryptobox-identity = []
 public-key-batch-verification = ["ed25519-dalek/batch"]
 hazmat = []
+serde = ["dep:serde", "ed25519-dalek/serde", "zeroize/serde", "generic-array/serde"]
 
 [dependencies]
 thiserror = "1.0"
@@ -42,6 +43,7 @@ sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
 chacha20 = "0.9"
+generic-array = "0.14"
 ed25519-dalek = { version = "2.0.0-rc.3", features = ["zeroize", "fast"] }
 x25519-dalek = { version = "2.0.0-rc.3", features = ["precomputed-tables", "static_secrets", "zeroize"] }
 curve25519-dalek = { version = "4.0.0-rc.3", features = ["precomputed-tables", "zeroize"] }
@@ -51,6 +53,7 @@ subtle = "2.5"
 hex = "0.4"
 cbor-codec = { path = "crates/cbor-codec" }
 eyre = "0.6"
+serde = { version = "1", features = ["derive"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

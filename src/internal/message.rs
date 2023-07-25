@@ -32,6 +32,7 @@ use std::{
 // Counter ////////////////////////////////////////////////////////////////////
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct Counter(pub(crate) u32);
 
@@ -76,6 +77,7 @@ impl Counter {
 // Session Tag //////////////////////////////////////////////////////////////
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SessionTag([u8; 16]);
 
 impl SessionTag {
@@ -130,6 +132,7 @@ impl std::ops::DerefMut for SessionTag {
 // Message //////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Message<'r> {
     Plain(Box<CipherMessage<'r>>),
     Keyed(Box<PreKeyMessage<'r>>),
@@ -169,6 +172,7 @@ impl<'r> Message<'r> {
 // Prekey Message ///////////////////////////////////////////////////////////
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PreKeyMessage<'r> {
     pub prekey_id: PreKeyId,
     pub base_key: Cow<'r, PublicKey>,
@@ -229,6 +233,7 @@ impl<'r> PreKeyMessage<'r> {
 // CipherMessage ////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CipherMessage<'r> {
     pub session_tag: SessionTag,
     pub counter: Counter,
@@ -298,6 +303,7 @@ impl<'r> CipherMessage<'r> {
 // Message Envelope /////////////////////////////////////////////////////////
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Envelope<'r> {
     version: u8,
     mac: Mac,

@@ -34,6 +34,7 @@ type HkdfSha256 = hkdf::Hkdf<sha2::Sha256>;
 // Derived Secrets //////////////////////////////////////////////////////////
 
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DerivedSecrets {
     pub cipher_key: CipherKey,
     pub mac_key: MacKey,
@@ -69,6 +70,7 @@ impl DerivedSecrets {
 // Cipher Key ///////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, ZeroizeOnDrop)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct CipherKey(chacha20::Key);
 
@@ -135,6 +137,7 @@ impl Deref for CipherKey {
 // MAC Key //////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, ZeroizeOnDrop)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct MacKey([u8; 32]);
 
@@ -184,6 +187,7 @@ impl MacKey {
 // MAC //////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone, PartialEq, Eq, ZeroizeOnDrop)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct Mac([u8; 32]);
 

@@ -21,12 +21,14 @@ use std::borrow::Cow;
 use std::io;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IdentityMode {
     Complete,
     Public,
 }
 
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Identity<'r> {
     Sec(Cow<'r, IdentityKeyPair>),
     Pub(Cow<'r, IdentityKey>),

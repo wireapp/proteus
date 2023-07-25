@@ -38,6 +38,7 @@ use cbor::{self, skip::Skip, Config, Decoder, Encoder};
 // Root key /////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RootKey {
     key: CipherKey,
 }
@@ -85,6 +86,7 @@ impl RootKey {
 // Chain key /////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChainKey {
     key: MacKey,
     idx: Counter,
@@ -143,6 +145,7 @@ impl ChainKey {
 // Send Chain ///////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SendChain {
     chain_key: ChainKey,
     ratchet_key: KeyPair,
@@ -188,6 +191,7 @@ impl SendChain {
 const MAX_COUNTER_GAP: usize = 1000;
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RecvChain {
     chain_key: ChainKey,
     ratchet_key: PublicKey,
@@ -340,6 +344,7 @@ impl RecvChain {
 // Message Keys /////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MessageKeys {
     cipher_key: CipherKey,
     mac_key: MacKey,
@@ -393,6 +398,7 @@ const MAX_RECV_CHAINS: usize = 5;
 const MAX_SESSION_STATES: usize = 100;
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Indexed<A> {
     pub idx: usize,
     pub val: A,
@@ -415,6 +421,7 @@ impl<A> Indexed<A> {
 // it after initialisation is in `Session::insert_session_state` which
 // sets it to the value of the state which is inserted.
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Session<I> {
     version: u8,
     session_tag: SessionTag,
@@ -778,6 +785,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
 // Session State ////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SessionState {
     recv_chains: VecDeque<RecvChain>,
     send_chain: SendChain,
