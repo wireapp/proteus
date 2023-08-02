@@ -78,7 +78,7 @@ impl Counter {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SessionTag([u8; 16]);
+pub struct SessionTag(#[cfg_attr(feature = "serde", serde(with = "hex"))] [u8; 16]);
 
 impl SessionTag {
     #[must_use]

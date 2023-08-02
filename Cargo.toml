@@ -26,7 +26,7 @@ default = []
 cryptobox-identity = []
 public-key-batch-verification = ["ed25519-dalek/batch"]
 hazmat = []
-serde = ["dep:serde", "ed25519-dalek/serde", "zeroize/serde", "generic-array/serde"]
+serde = ["dep:serde", "ed25519-dalek/serde", "zeroize/serde", "generic-array/serde", "hex/serde"]
 
 [dependencies]
 thiserror = "1.0"
