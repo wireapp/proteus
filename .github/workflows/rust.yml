@@ -34,7 +34,7 @@ jobs:
         run: cargo nextest run --verbose --release
       - name: Run tests (WASM)
         run: wasm-pack test --release --headless --chrome
-      - name Upload test results
+      - name: Upload test results
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
