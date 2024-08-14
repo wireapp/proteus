@@ -75,8 +75,9 @@ mod serialization {
         let (alice, alice_legacy) = get_client_pair();
         let identity_legacy =
             cryptobox::Identity::Sec(std::borrow::Cow::Owned(alice_legacy.identity.clone()));
-        let identity =
-            proteus_wasm::identity::Identity::Sec(std::borrow::Cow::Owned(alice.identity.clone()));
+        let identity = proteus_wasm::identity::Identity::Sec(std::borrow::Cow::Owned(Box::new(
+            alice.identity.clone(),
+        )));
 
         let identity_legacy_ser = identity_legacy.serialise().unwrap();
         let identity_ser = identity.serialise().unwrap();
@@ -84,11 +85,13 @@ mod serialization {
         assert_eq!(identity_legacy_ser, identity_ser);
 
         let cryptobox::Identity::Sec(identity_new_into_legacy) =
-        cryptobox::Identity::deserialise(&identity_ser).unwrap() else {
+            cryptobox::Identity::deserialise(&identity_ser).unwrap()
+        else {
             panic!("Wrong identity type: 2.0 -> 1.0");
         };
         let proteus_wasm::identity::Identity::Sec(identity_legacy_into_new) =
-        proteus_wasm::identity::Identity::deserialise(&identity_legacy_ser).unwrap() else {
+            proteus_wasm::identity::Identity::deserialise(&identity_legacy_ser).unwrap()
+        else {
             panic!("Wrong identity type: 1.0 -> 2.0")
         };
 
@@ -238,7 +241,7 @@ mod communication {
         assert_eq!(hello_bob, MSG);
 
         let hello_alice_from_bob = &bob.encrypt("ba", MSG);
-        let decrypted = alice.decrypt("ab", &hello_alice_from_bob);
+        let decrypted = alice.decrypt("ab", hello_alice_from_bob);
         assert_eq!(decrypted, MSG);
     }
 
