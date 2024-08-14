@@ -107,6 +107,12 @@ macro_rules! impl_harness_for_crate {
             >,
         }
 
+        impl Default for $client {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
         impl $client {
             #[must_use]
             pub fn new() -> Self {
@@ -363,9 +369,7 @@ impl LegacyClient {
 impl Client {
     pub fn from_raw(sk: [u8; 64], pk: [u8; 32]) -> Self {
         Client {
-            identity: unsafe {
-                proteus_wasm::keys::IdentityKeyPair::from_raw_key_pair(sk, pk).unwrap()
-            },
+            identity: proteus_wasm::keys::IdentityKeyPair::from_raw_key_pair(sk, pk).unwrap(),
             prekeys: Default::default(),
             sessions: Default::default(),
         }

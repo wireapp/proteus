@@ -13,12 +13,10 @@ edition       = "2021"
 [lib]
 name = "cbor"
 
-[features]
-random = ["quickcheck"]
-
 [dependencies]
 byteorder = "1.4"
 half = "2.1"
+rand = "0.8"
 
 [dependencies.quickcheck]
 version  = "1.0"
