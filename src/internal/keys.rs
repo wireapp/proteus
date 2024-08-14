@@ -151,8 +151,7 @@ impl IdentityKeyPair {
     }
 
     #[cfg(feature = "hazmat")]
-    #[must_use]
-    pub unsafe fn from_raw_key_pair(sk: [u8; 64], pk: [u8; 32]) -> ProteusResult<Self> {
+    pub fn from_raw_key_pair(sk: [u8; 64], pk: [u8; 32]) -> ProteusResult<Self> {
         Ok(Self::from_keypair(KeyPair::from_raw(sk, pk)?))
     }
 }
@@ -449,8 +448,7 @@ impl KeyPair {
     }
 
     #[cfg(feature = "hazmat")]
-    #[must_use]
-    pub unsafe fn from_raw(sk: [u8; 64], pk: [u8; 32]) -> ProteusResult<Self> {
+    pub fn from_raw(sk: [u8; 64], pk: [u8; 32]) -> ProteusResult<Self> {
         let sk = ed25519_dalek::SigningKey::from_keypair_bytes(&sk)?;
         let pk = ed25519_dalek::VerifyingKey::from_bytes(&pk)?;
         let secret_key = SecretKey(sk);
@@ -627,7 +625,7 @@ impl PublicKey {
     ) -> bool {
         let messages: Vec<&[u8]> = verifying_contents.values().map(|m| m.as_slice()).collect();
         let signatures: Vec<_> = verifying_contents.keys().map(|s| s.0).collect();
-        let verifying_keys: Vec<_> = (0..signatures.len()).map(|_| self.0.clone()).collect();
+        let verifying_keys: Vec<_> = (0..signatures.len()).map(|_| self.0).collect();
 
         ed25519_dalek::verify_batch(&messages, &signatures, &verifying_keys).is_ok()
     }
@@ -684,7 +682,7 @@ impl PublicKey {
             }
         }
         let pub_edward = pub_edward.ok_or(DecodeError::MissingField("PublicKey::pub_edward"))?;
-        Ok(Self(ed25519_dalek::VerifyingKey::from_bytes(&*pub_edward)?))
+        Ok(Self(ed25519_dalek::VerifyingKey::from_bytes(&pub_edward)?))
     }
 }
 

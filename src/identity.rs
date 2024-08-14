@@ -30,8 +30,8 @@ pub enum IdentityMode {
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Identity<'r> {
-    Sec(Cow<'r, IdentityKeyPair>),
-    Pub(Cow<'r, IdentityKey>),
+    Sec(Cow<'r, Box<IdentityKeyPair>>),
+    Pub(Cow<'r, Box<IdentityKey>>),
 }
 
 impl<'r> Identity<'r> {
@@ -73,8 +73,9 @@ impl<'r> Identity<'r> {
                             if keypair.is_some() {
                                 return Err(DecodeError::DuplicateField("identity keypair"));
                             } else {
-                                keypair =
-                                    Some(Identity::Sec(Cow::Owned(IdentityKeyPair::decode(d)?)))
+                                keypair = Some(Identity::Sec(Cow::Owned(Box::new(
+                                    IdentityKeyPair::decode(d)?,
+                                ))))
                             }
                         }
                         _ => d.skip()?,
@@ -91,7 +92,9 @@ impl<'r> Identity<'r> {
                             if key.is_some() {
                                 return Err(DecodeError::DuplicateField("identity key"));
                             } else {
-                                key = Some(Identity::Pub(Cow::Owned(IdentityKey::decode(d)?)))
+                                key = Some(Identity::Pub(Cow::Owned(Box::new(
+                                    IdentityKey::decode(d)?,
+                                ))))
                             }
                         }
                         _ => d.skip()?,
@@ -114,7 +117,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn enc_dec_identity_sec() {
         let k = IdentityKeyPair::new();
-        let identity = Identity::Sec(std::borrow::Cow::Owned(k));
+        let identity = Identity::Sec(std::borrow::Cow::Owned(Box::new(k)));
         let r = roundtrip(
             |mut e| identity.encode(&mut e),
             |mut d| Identity::decode(&mut d),
@@ -126,7 +129,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn enc_dec_identity_pub() {
         let k = IdentityKeyPair::new();
-        let identity = Identity::Pub(std::borrow::Cow::Owned(k.public_key));
+        let identity = Identity::Pub(std::borrow::Cow::Owned(Box::new(k.public_key)));
         let r = roundtrip(
             |mut e| identity.encode(&mut e),
             |mut d| Identity::decode(&mut d),

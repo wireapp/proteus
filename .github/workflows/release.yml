@@ -3,11 +3,8 @@ name: Rust compile & test
 
 on:
   push:
-    branches:
-      - develop
-  pull_request:
-    branches:
-      - develop
+    tags:
+      - "*"
 
 permissions:
   contents: read
@@ -27,10 +24,11 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --tests --benches
-      - run: cargo build --verbose
-      - run: cargo clippy -- -D warnings
       - name: Run tests (Native)
         run: cargo nextest run --verbose --release
       - name: Run tests (WASM)
         run: wasm-pack test --release --headless --chrome
+      - name: Upload test results
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target/nextest/default/junit.xml

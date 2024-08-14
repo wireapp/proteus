@@ -105,8 +105,8 @@ fn eq(a: &Json, b: &Value) -> bool {
     match (a, b) {
         (&Json::Null, &Value::Null) => true,
         (&Json::Bool(x), &Value::Bool(y)) => x == y,
-        (&Json::String(ref x), &Value::Text(Text::Text(ref y))) => x == y,
-        (&Json::String(ref x), &Value::Text(Text::Chunks(ref y))) => {
+        (Json::String(x), &Value::Text(Text::Text(ref y))) => x == y,
+        (Json::String(x), &Value::Text(Text::Chunks(ref y))) => {
             let mut s = String::new();
             for c in y {
                 s.push_str(c)
@@ -116,10 +116,8 @@ fn eq(a: &Json, b: &Value) -> bool {
         (&Json::Number(x), y) => util::as_f64(y)
             .map(|i| (x - i).abs() < f64::EPSILON)
             .unwrap_or(false),
-        (&Json::Array(ref x), &Value::Array(ref y)) => {
-            x.iter().zip(y.iter()).all(|(xi, yi)| eq(xi, yi))
-        }
-        (&Json::Object(ref x), &Value::Map(ref y)) => {
+        (Json::Array(x), Value::Array(y)) => x.iter().zip(y.iter()).all(|(xi, yi)| eq(xi, yi)),
+        (Json::Object(x), Value::Map(y)) => {
             for (k, v) in x {
                 if let Some(w) = y.get(&Key::Text(Text::Text(k.clone()))) {
                     if !eq(v, w) {

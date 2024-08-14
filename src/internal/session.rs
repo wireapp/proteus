@@ -215,7 +215,7 @@ impl RecvChain {
     ) -> SessionResult<Vec<u8>, E> {
         let too_old = self
             .message_keys
-            .get(0)
+            .front()
             .map_or(false, |k| k.counter > mesg.counter);
 
         if too_old {
@@ -225,10 +225,11 @@ impl RecvChain {
         let Some(i) = self
             .message_keys
             .iter()
-            .position(|mk| mk.counter == mesg.counter) else {
-                // ? Handles error case 209
-                return Err(SessionError::DuplicateMessage);
-            };
+            .position(|mk| mk.counter == mesg.counter)
+        else {
+            // ? Handles error case 209
+            return Err(SessionError::DuplicateMessage);
+        };
 
         // SAFETY: Indexing directly is safe as the `position` check above ensure we have a MessageKeys present at the index
         if !env.verify(&self.message_keys[i].mac_key) {
@@ -727,7 +728,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 2 => {
                     let li = IdentityKey::decode(d)?;
                     if ident.borrow().public_key != li {
-                        return Err(DecodeError::LocalIdentityChanged(li));
+                        return Err(DecodeError::LocalIdentityChanged(Box::new(li)));
                     }
                 }
                 3 if remote_identity.is_none() => remote_identity = Some(IdentityKey::decode(d)?),
@@ -1085,7 +1086,6 @@ mod tests {
     use std::borrow::Borrow;
     use std::collections::BTreeMap;
     use std::fmt;
-    use std::usize;
     use std::vec::Vec;
     use wasm_bindgen_test::wasm_bindgen_test;
 

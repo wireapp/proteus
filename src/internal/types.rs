@@ -95,7 +95,7 @@ pub enum DecodeError {
     #[error("CBOR array length mismatch: expected {expected}, got {got}")]
     InvalidArrayLen { expected: usize, got: usize },
     #[error("Local identity changed")]
-    LocalIdentityChanged(IdentityKey),
+    LocalIdentityChanged(Box<IdentityKey>),
     #[error(transparent)]
     Ed25519Error(#[from] ed25519_dalek::SignatureError),
     #[error("Unknown message type {0}: {1}")]

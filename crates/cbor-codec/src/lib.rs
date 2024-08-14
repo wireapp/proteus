@@ -12,9 +12,6 @@ pub mod slice;
 pub mod types;
 pub mod value;
 
-#[cfg(feature = "random")]
-pub mod random;
-
 pub use crate::decoder::{maybe, opt, or_break};
 pub use crate::decoder::{Config, DecodeError, DecodeResult, Decoder, GenericDecoder};
 pub use crate::encoder::{EncodeError, EncodeResult, Encoder, GenericEncoder};

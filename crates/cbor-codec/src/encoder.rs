@@ -15,11 +15,9 @@
 //! use cbor::Encoder;
 //! use std::io::Cursor;
 //!
-//! fn main() {
-//!     let mut e = Encoder::new(Cursor::new(Vec::new()));
-//!     e.u16(1000).unwrap();
-//!     assert_eq!(hex::decode("1903e8").unwrap(), e.into_writer().into_inner())
-//! }
+//! let mut e = Encoder::new(Cursor::new(Vec::new()));
+//! e.u16(1000).unwrap();
+//! assert_eq!(hex::decode("1903e8").unwrap(), e.into_writer().into_inner())
 //! ```
 //!
 //! # Example 2: Direct encoding (indefinite string)
@@ -28,12 +26,10 @@
 //! use cbor::Encoder;
 //! use std::io::Cursor;
 //!
-//! fn main() {
-//!     let mut e = Encoder::new(Cursor::new(Vec::new()));
-//!     e.text_iter(vec!["strea", "ming"].into_iter()).unwrap();
-//!     let output = hex::decode("7f657374726561646d696e67ff").unwrap();
-//!     assert_eq!(output, e.into_writer().into_inner())
-//! }
+//! let mut e = Encoder::new(Cursor::new(Vec::new()));
+//! e.text_iter(vec!["strea", "ming"].into_iter()).unwrap();
+//! let output = hex::decode("7f657374726561646d696e67ff").unwrap();
+//! assert_eq!(output, e.into_writer().into_inner())
 //! ```
 //!
 //! # Example 3: Direct encoding (nested array)
@@ -43,16 +39,14 @@
 //! use cbor::Encoder;
 //! use std::io::Cursor;
 //!
-//! fn main() {
-//!     let mut e = Encoder::new(Cursor::new(Vec::new()));
-//!     e.array(3)
-//!      .and(e.u8(1))
-//!      .and(e.array(2)).and(e.u8(2)).and(e.u8(3))
-//!      .and(e.array(2)).and(e.u8(4)).and(e.u8(5))
-//!      .unwrap();
-//!     let output = hex::decode("8301820203820405").unwrap();
-//!     assert_eq!(output, e.into_writer().into_inner())
-//! }
+//! let mut e = Encoder::new(Cursor::new(Vec::new()));
+//! e.array(3)
+//!  .and(e.u8(1))
+//!  .and(e.array(2)).and(e.u8(2)).and(e.u8(3))
+//!  .and(e.array(2)).and(e.u8(4)).and(e.u8(5))
+//!  .unwrap();
+//! let output = hex::decode("8301820203820405").unwrap();
+//! assert_eq!(output, e.into_writer().into_inner())
 //! ```
 
 use crate::types::{Tag, Type};
@@ -727,7 +721,7 @@ mod tests {
     where
         F: FnMut(Encoder<Cursor<&mut [u8]>>) -> EncodeResult,
     {
-        let mut buffer = vec![0u8; 128];
+        let mut buffer = [0u8; 128];
         assert!(f(Encoder::new(Cursor::new(&mut buffer[..]))).is_ok());
         assert_eq!(
             &hex::decode(expected).unwrap()[..],

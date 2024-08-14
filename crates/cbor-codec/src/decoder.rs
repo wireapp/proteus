@@ -15,10 +15,10 @@
 //! The module is structured as follows:
 //!
 //! 1. `Kernel` contains the basic decoding functionality, capable of
-//! decoding simple unstructured types.
+//!         decoding simple unstructured types.
 //! 2. `Decoder` directly decodes into native Rust types.
 //! 3. `GenericDecoder` handles arbitrary CBOR items and decodes them
-//! into an `Value` AST.
+//!         into an `Value` AST.
 //!
 //! # Example 1: Direct decoding
 //!
@@ -36,19 +36,17 @@
 //! use cbor::{Config, Decoder};
 //! use std::io::Cursor;
 //!
-//! fn main() {
-//!     let input   = Cursor::new(hex::decode("828301020383010203").unwrap());
-//!     let mut dec = Decoder::new(Config::default(), input);
-//!     let mut res = Vec::new();
+//! let input   = Cursor::new(hex::decode("828301020383010203").unwrap());
+//! let mut dec = Decoder::new(Config::default(), input);
+//! let mut res = Vec::new();
+//! for _ in 0 .. dec.array().unwrap() {
+//!     let mut vec = Vec::new();
 //!     for _ in 0 .. dec.array().unwrap() {
-//!         let mut vec = Vec::new();
-//!         for _ in 0 .. dec.array().unwrap() {
-//!             vec.push(dec.u8().unwrap())
-//!         }
-//!         res.push(vec)
+//!         vec.push(dec.u8().unwrap())
 //!     }
-//!     assert_eq!(vec![vec![1, 2, 3], vec![1, 2, 3]], res)
+//!     res.push(vec)
 //! }
+//! assert_eq!(vec![vec![1, 2, 3], vec![1, 2, 3]], res)
 //! ```
 //!
 //! # Example 3: Generic decoding
@@ -58,14 +56,12 @@
 //! use cbor::value::{self, Key};
 //! use std::io::Cursor;
 //!
-//! fn main() {
-//!     let input = Cursor::new(hex::decode("a2616101028103").unwrap());
-//!     let mut d = GenericDecoder::new(Config::default(), input);
-//!     let value = d.value().unwrap();
-//!     let     c = value::Cursor::new(&value);
-//!     assert_eq!(Some(1), c.field("a").u8());
-//!     assert_eq!(Some(3), c.get(Key::u64(2)).at(0).u8())
-//! }
+//! let input = Cursor::new(hex::decode("a2616101028103").unwrap());
+//! let mut d = GenericDecoder::new(Config::default(), input);
+//! let value = d.value().unwrap();
+//! let     c = value::Cursor::new(&value);
+//! assert_eq!(Some(1), c.field("a").u8());
+//! assert_eq!(Some(3), c.get(Key::u64(2)).at(0).u8())
 //! ```
 //!
 //! # Example 4: Direct decoding (optional value)
@@ -90,7 +86,6 @@ use std::fmt;
 use std::io;
 use std::str::{from_utf8, Utf8Error};
 use std::string;
-use std::{i16, i32, i64, i8};
 
 // Decoder Configuration ////////////////////////////////////////////////////
 
@@ -1349,7 +1344,6 @@ mod tests {
     use crate::value::{self, Int, Key, Simple, Value};
     use std::collections::BTreeMap;
     use std::io::Cursor;
-    use std::{f32, f64, u64};
 
     #[test]
     fn unsigned() {
