@@ -465,7 +465,7 @@ dependencies = [
 [[package]]
 name = "cryptobox"
 version = "1.0.3"
-source = "git+https://github.com/wireapp/cryptobox?tag=v1.0.3#7efb84db709da829589939a34a6183c492092720"
+source = "git+https://github.com/wireapp/cryptobox?branch=develop#7fcf478b1f04fd89e183e308c53dd1b357ed56a0"
 dependencies = [
  "byteorder",
  "cbor-codec 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1606,7 +1606,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

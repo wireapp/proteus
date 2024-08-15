@@ -66,7 +66,7 @@ async-std = { version = "1.12", features = ["attributes"] }
 async-trait = "0.1"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
-cryptobox = { git = "https://github.com/wireapp/cryptobox", tag = "v1.0.3" }
+cryptobox = { git = "https://github.com/wireapp/cryptobox", branch = "develop" }
 proteus = { git = "https://github.com/wireapp/proteus", branch = "otak/fix-1.0.3", package = "proteus" }
 
 [[bench]]
