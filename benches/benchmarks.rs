@@ -73,8 +73,8 @@ fn bench_verify_batched(c: &mut Criterion) {
     let mut inputs = std::collections::HashMap::new();
     use rand::Rng as _;
     for _ in 0..ITEMS {
-        let message: String = rand::thread_rng()
-            .sample_iter(&rand::distributions::Alphanumeric)
+        let message: String = rand::rng()
+            .sample_iter(&rand::distr::Alphanumeric)
             .take(30)
             .map(char::from)
             .collect();

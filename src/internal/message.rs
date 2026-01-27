@@ -85,7 +85,7 @@ impl SessionTag {
     pub fn new() -> SessionTag {
         let mut bytes = [0; 16];
         use rand::{RngCore as _, SeedableRng as _};
-        let mut rng = rand_chacha::ChaCha12Rng::from_entropy();
+        let mut rng = rand_chacha::ChaCha12Rng::from_os_rng();
         rng.fill_bytes(&mut bytes);
         SessionTag(bytes)
     }

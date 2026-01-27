@@ -94,7 +94,7 @@ impl IdentityKeyPair {
     }
 
     #[must_use]
-    pub fn new_with_rng(csprng: &mut dyn rand_core::CryptoRngCore) -> IdentityKeyPair {
+    pub fn new_with_rng(csprng: &mut dyn rand::CryptoRng) -> IdentityKeyPair {
         Self::from_keypair(KeyPair::new_with_rng(csprng))
     }
 
@@ -400,14 +400,14 @@ impl KeyPair {
         let mut rng = if let Some(seed) = seed.take() {
             rand_chacha::ChaCha20Rng::from_seed(*seed)
         } else {
-            rand_chacha::ChaCha20Rng::from_entropy()
+            rand_chacha::ChaCha20Rng::from_os_rng()
         };
 
         KeyPair::new_with_rng(&mut rng)
     }
 
     #[must_use]
-    pub fn new_with_rng(csprng: &mut dyn rand_core::CryptoRngCore) -> KeyPair {
+    pub fn new_with_rng(csprng: &mut dyn rand::CryptoRng) -> KeyPair {
         let mut seed = zeroize::Zeroizing::new(ed25519_dalek::SecretKey::default());
         csprng.fill_bytes(&mut *seed);
 
@@ -692,7 +692,7 @@ impl PublicKey {
 pub fn rand_bytes(size: usize) -> Vec<u8> {
     let mut buf = Vec::with_capacity(size);
     use rand::{RngCore as _, SeedableRng as _};
-    let mut rng = rand_chacha::ChaCha12Rng::from_entropy();
+    let mut rng = rand_chacha::ChaCha12Rng::from_os_rng();
     rng.fill_bytes(&mut buf);
     buf
 }
