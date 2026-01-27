@@ -216,7 +216,7 @@ impl RecvChain {
         let too_old = self
             .message_keys
             .front()
-            .map_or(false, |k| k.counter > mesg.counter);
+            .is_some_and(|k| k.counter > mesg.counter);
 
         if too_old {
             return Err(SessionError::OutdatedMessage);
@@ -516,7 +516,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
         &mut self.session_states
     }
 
-    pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope> {
+    pub fn encrypt(&mut self, plain: &[u8]) -> EncodeResult<Envelope<'_>> {
         let state = self
             .session_states
             .get_mut(&self.session_tag)
@@ -605,9 +605,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 alice_ident: &m.identity_key,
                 alice_base: &m.base_key,
             })
-            .map(Some)
-            .map_err(Into::into)
-        } else {
+            .map(Some)} else {
             Ok(None)
         }
     }
@@ -889,7 +887,7 @@ impl SessionState {
         pending: &'r Option<(PreKeyId, PublicKey)>,
         tag: SessionTag,
         plain: &[u8],
-    ) -> EncodeResult<Envelope> {
+    ) -> EncodeResult<Envelope<'r>> {
         let msgkeys = self.send_chain.chain_key.message_keys()?;
 
         let cmessage = CipherMessage {
@@ -1429,7 +1427,7 @@ mod tests {
                 .len()
         );
 
-        for m in &vec![hello1, hello2, hello3, hello4, hello5] {
+        for m in &[hello1, hello2, hello3, hello4, hello5] {
             assert_eq!(
                 Some(SessionError::DuplicateMessage),
                 alice.decrypt(&mut alice_store, m).await.err()

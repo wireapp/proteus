@@ -225,7 +225,7 @@ impl PreKey {
 #[must_use]
 pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
     (1..)
-        .map(|i| ((u32::from(start.value()) + i) % u32::from(MAX_PREKEY_ID.value())))
+        .map(|i| (u32::from(start.value()) + i) % u32::from(MAX_PREKEY_ID.value()))
         .map(|i| PreKey::new(PreKeyId::new(i as u16)))
         .take(size as usize)
         .collect()

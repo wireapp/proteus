@@ -25,7 +25,7 @@ impl ReadSlice for Cursor<Vec<u8>> {
     }
 }
 
-impl<'r> ReadSlice for Cursor<&'r [u8]> {
+impl ReadSlice for Cursor<&[u8]> {
     fn read_slice(&mut self, n: usize) -> Result<&[u8], ReadSliceError> {
         let start = self.position() as usize;
         if self.get_ref().len() - start < n {

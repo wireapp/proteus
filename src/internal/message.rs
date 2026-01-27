@@ -350,7 +350,7 @@ impl<'r> Envelope<'r> {
     }
 
     #[must_use]
-    pub fn message(&self) -> &Message {
+    pub fn message(&self) -> &Message<'_> {
         &self.message
     }
 

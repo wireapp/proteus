@@ -15,10 +15,10 @@
 //! The module is structured as follows:
 //!
 //! 1. `Kernel` contains the basic decoding functionality, capable of
-//!         decoding simple unstructured types.
+//!    decoding simple unstructured types.
 //! 2. `Decoder` directly decodes into native Rust types.
 //! 3. `GenericDecoder` handles arbitrary CBOR items and decodes them
-//!         into an `Value` AST.
+//!    into an `Value` AST.
 //!
 //! # Example 1: Direct decoding
 //!
@@ -773,7 +773,7 @@ impl<R: ReadBytesExt> Decoder<R> {
     }
 
     /// Decode an indefinite byte string.
-    pub fn bytes_iter(&mut self) -> DecodeResult<BytesIter<R>> {
+    pub fn bytes_iter(&mut self) -> DecodeResult<BytesIter<'_, R>> {
         match self.typeinfo()? {
             (Type::Bytes, 31) => Ok(BytesIter { decoder: self }),
             ti => unexpected_type(&ti),
@@ -797,7 +797,7 @@ impl<R: ReadBytesExt> Decoder<R> {
     }
 
     /// Decode an indefinite string.
-    pub fn text_iter(&mut self) -> DecodeResult<TextIter<R>> {
+    pub fn text_iter(&mut self) -> DecodeResult<TextIter<'_, R>> {
         match self.typeinfo()? {
             (Type::Text, 31) => Ok(TextIter { decoder: self }),
             ti => unexpected_type(&ti),

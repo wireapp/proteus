@@ -5,7 +5,7 @@
 
 //! `Skip` trait to allow efficient skipping of consecutive bytes.
 
-use std::io::{Error, ErrorKind, Result, Seek, SeekFrom};
+use std::io::{Error, Result, Seek, SeekFrom};
 
 /// Type which supports skipping a number of bytes.
 ///
@@ -20,7 +20,7 @@ impl<A: Seek> Skip for A {
     /// `n` must be in range `[0, i64::MAX]`.
     fn skip(&mut self, n: u64) -> Result<()> {
         if n > i64::MAX as u64 {
-            return Err(Error::new(ErrorKind::Other, "n too large"));
+            return Err(Error::other("n too large"));
         }
         self.seek(SeekFrom::Current(n as i64)).and(Ok(()))
     }
