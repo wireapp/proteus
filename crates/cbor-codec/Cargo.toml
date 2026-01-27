@@ -16,7 +16,7 @@ name = "cbor"
 [dependencies]
 byteorder = "1.4"
 half = "2.1"
-rand = "0.8"
+rand = "0.9"
 
 [dependencies.quickcheck]
 version  = "1.0"
@@ -26,6 +26,6 @@ optional = true
 json-codec        = ">= 0.3"
 quickcheck        = "1.0"
 quickcheck_macros = "1.0"
-rand              = "0.8"
+rand              = "0.9"
 hex               = "0.4"
 base64            = "0.21"
