@@ -11,6 +11,14 @@ edition = "2021"
 [workspace]
 members = ["crates/proteus-traits", "crates/cbor-codec"]
 
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(wasm_bindgen_unstable_test_coverage)',
+] }
+
+[lints]
+workspace = true
+
 [patch.'https://github.com/wireapp/proteus'.proteus]
 package = "proteus"
 # Keep the extra / in the url, it prevents this error:
