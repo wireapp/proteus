@@ -6,7 +6,7 @@ description = "Traits for Proteus keystore implementation"
 homepage = "https://github.com/wireapp/proteus"
 repository = "https://github.com/wireapp/proteus.git"
 edition = "2021"
-license = "GPL-3.0"
+license = "GPL-3.0-only"
 
 [dependencies]
 async-trait = "0.1"
