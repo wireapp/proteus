@@ -33,20 +33,21 @@ mod serialization {
         sk.copy_from_slice(&alice_legacy.identity.secret_key.as_slice()[..64]);
         let mut pk = [0u8; 32];
         pk.copy_from_slice(&alice_legacy.identity.public_key.public_key.as_slice()[..32]);
-        let mut alice = Client::from_raw(sk, pk);
+        let alice = Client::from_raw(sk, pk);
 
         for _ in 0..10 {
             alice_legacy.new_prekey();
         }
 
-        let alice_legacy_prekeys = alice_legacy
+        for pk in alice_legacy
             .prekeys
+            .lock()
             .iter()
-            .map(|pk| pk.serialise().unwrap());
-
-        for pk in alice_legacy_prekeys {
+            .map(|pk| pk.serialise().unwrap())
+        {
             alice
                 .prekeys
+                .lock()
                 .push(proteus_wasm::keys::PreKey::deserialise(&pk).unwrap());
         }
 
@@ -120,8 +121,8 @@ mod serialization {
     fn serialize_interop_prekey() {
         let (alice, alice_legacy) = get_client_pair();
 
-        let prekey = &alice.prekeys[0];
-        let prekey_legacy = &alice_legacy.prekeys[0];
+        let prekey = &alice.prekeys.lock()[0];
+        let prekey_legacy = &alice_legacy.prekeys.lock()[0];
 
         // Check if prekeys serialize the same
         assert_eq!(

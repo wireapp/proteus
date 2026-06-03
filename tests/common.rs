@@ -16,6 +16,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #![allow(dead_code)]
 
+use std::sync::{Mutex, MutexGuard};
+
 pub const MSG: &[u8] = b"Hello world!";
 
 #[derive(Debug, PartialEq)]
@@ -28,24 +30,32 @@ impl proteus_traits::ProteusErrorCode for DummyError {
 }
 
 #[derive(Debug)]
-pub struct PrekeyStore<T>(pub Vec<T>);
+pub struct PrekeyStore<T>(Mutex<Vec<T>>);
 
+// manual impl so as not to impose a `T: Default` bound
 impl<T> Default for PrekeyStore<T> {
     fn default() -> Self {
-        Self(vec![])
+        Self(Default::default())
     }
 }
 
-impl<T> std::ops::Deref for PrekeyStore<T> {
-    type Target = Vec<T>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl<T> FromIterator<T> for PrekeyStore<T> {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+    {
+        let store = Self::default();
+        {
+            let mut guard = store.lock();
+            guard.extend(iter);
+        }
+        store
     }
 }
 
-impl<T> std::ops::DerefMut for PrekeyStore<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+impl<T> PrekeyStore<T> {
+    pub fn lock(&self) -> MutexGuard<'_, Vec<T>> {
+        self.0.lock().expect("propagate any mutex lock poison")
     }
 }
 
@@ -57,14 +67,15 @@ impl proteus::session::PreKeyStore for PrekeyStore<proteus::keys::PreKey> {
         &mut self,
         id: proteus::keys::PreKeyId,
     ) -> Result<Option<proteus::keys::PreKey>, Self::Error> {
-        Ok(self.0.iter().find(|k| k.key_id == id).cloned())
+        Ok(self.lock().iter().find(|k| k.key_id == id).cloned())
     }
 
     fn remove(&mut self, id: proteus::keys::PreKeyId) -> Result<(), Self::Error> {
-        self.0
+        let mut guard = self.lock();
+        guard
             .iter()
             .position(|k| k.key_id.value() == id.value())
-            .map(|idx| self.0.swap_remove(idx));
+            .map(|idx| guard.swap_remove(idx));
 
         Ok(())
     }
@@ -76,21 +87,22 @@ impl proteus_traits::PreKeyStore for PrekeyStore<proteus_wasm::keys::PreKey> {
     type Error = DummyError;
 
     async fn prekey(
-        &mut self,
+        &self,
         id: proteus_traits::RawPreKeyId,
     ) -> Result<Option<proteus_traits::RawPreKey>, Self::Error> {
         Ok(self
-            .0
+            .lock()
             .iter()
             .find(|k| k.key_id.value() == id)
             .map(|pk| proteus_wasm::keys::PreKey::serialise(pk).unwrap()))
     }
 
-    async fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), Self::Error> {
-        self.0
+    async fn remove(&self, id: proteus_traits::RawPreKeyId) -> Result<(), Self::Error> {
+        let mut guard = self.lock();
+        guard
             .iter()
             .position(|k| k.key_id.value() == id)
-            .map(|idx| self.0.swap_remove(idx));
+            .map(|idx| guard.swap_remove(idx));
 
         Ok(())
     }
@@ -169,24 +181,26 @@ macro_rules! impl_harness_for_crate {
             }
 
             pub fn new_prekey(&mut self) -> $target::keys::PreKeyBundle {
-                let prekey_id = (self.prekeys.len() + 1 % u16::MAX as usize) as u16;
+                let mut store_guard = self.prekeys.lock();
+                let prekey_id = (store_guard.len() + 1 % u16::MAX as usize) as u16;
                 let prekey = $target::keys::PreKey::new($target::keys::PreKeyId::new(prekey_id));
                 let prekey_bundle =
                     $target::keys::PreKeyBundle::new(self.identity.public_key.clone(), &prekey);
-                self.prekeys.push(prekey);
+                store_guard.push(prekey);
                 prekey_bundle
             }
 
             pub fn new_prekey_with_id(&mut self, prekey_id: u16) -> $target::keys::PreKeyBundle {
+                let mut store_guard = self.prekeys.lock();
                 let prekey = $target::keys::PreKey::new($target::keys::PreKeyId::new(prekey_id));
                 let prekey_bundle =
                     $target::keys::PreKeyBundle::new(self.identity.public_key.clone(), &prekey);
-                self.prekeys.push(prekey);
+                store_guard.push(prekey);
                 prekey_bundle
             }
 
             pub fn get_prekey_bundle(&self, index: usize) -> $target::keys::PreKeyBundle {
-                let prekey = &self.prekeys[index];
+                let prekey = &self.prekeys.lock()[index];
                 let prekey_bundle =
                     $target::keys::PreKeyBundle::new(self.identity.public_key.clone(), prekey);
                 prekey_bundle
@@ -205,12 +219,12 @@ impl Client {
         let identity =
             proteus::keys::IdentityKeyPair::deserialise(&self.identity.serialise().unwrap())
                 .unwrap();
-        let prekeys = PrekeyStore(
-            self.prekeys
-                .iter()
-                .map(|pk| proteus::keys::PreKey::deserialise(&pk.serialise().unwrap()).unwrap())
-                .collect(),
-        );
+        let prekeys = self
+            .prekeys
+            .lock()
+            .iter()
+            .map(|pk| proteus::keys::PreKey::deserialise(&pk.serialise().unwrap()).unwrap())
+            .collect();
 
         let sessions = self
             .sessions
@@ -288,14 +302,12 @@ impl LegacyClient {
         let identity =
             proteus_wasm::keys::IdentityKeyPair::deserialise(&self.identity.serialise().unwrap())
                 .unwrap();
-        let prekeys = PrekeyStore(
-            self.prekeys
-                .iter()
-                .map(|pk| {
-                    proteus_wasm::keys::PreKey::deserialise(&pk.serialise().unwrap()).unwrap()
-                })
-                .collect(),
-        );
+        let prekeys = self
+            .prekeys
+            .lock()
+            .iter()
+            .map(|pk| proteus_wasm::keys::PreKey::deserialise(&pk.serialise().unwrap()).unwrap())
+            .collect();
 
         let sessions = self
             .sessions
