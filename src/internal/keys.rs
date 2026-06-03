@@ -222,13 +222,11 @@ impl PreKey {
     }
 }
 
-#[must_use]
-pub fn gen_prekeys(start: PreKeyId, size: u16) -> Vec<PreKey> {
-    (1..)
-        .map(|i| (u32::from(start.value()) + i) % u32::from(MAX_PREKEY_ID.value()))
-        .map(|i| PreKey::new(PreKeyId::new(i as u16)))
-        .take(size as usize)
-        .collect()
+pub fn gen_prekeys(start: PreKeyId, size: u16) -> impl Iterator<Item = PreKey> {
+    (1..=size).map(move |i| {
+        let id = (start.value() as u32 + i as u32) % MAX_PREKEY_ID.value() as u32;
+        PreKey::new(PreKeyId::new(id as _))
+    })
 }
 
 // Prekey bundle ////////////////////////////////////////////////////////////
@@ -751,7 +749,6 @@ mod tests {
     #[wasm_bindgen_test]
     fn prekey_generation() {
         let k = gen_prekeys(PreKeyId::new(0xFFFC), 5)
-            .iter()
             .map(|k| k.key_id.value())
             .collect::<Vec<_>>();
         assert_eq!(vec![0xFFFD, 0xFFFE, 0, 1, 2], k)
