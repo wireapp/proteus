@@ -81,8 +81,8 @@ pub trait PreKeyStore {
     type Error: ProteusErrorCode;
 
     /// Lookup prekey by ID.
-    async fn prekey(&mut self, id: RawPreKeyId) -> Result<Option<RawPreKey>, Self::Error>;
+    async fn prekey(&self, id: RawPreKeyId) -> Result<Option<RawPreKey>, Self::Error>;
 
     /// Remove prekey by ID.
-    async fn remove(&mut self, id: RawPreKeyId) -> Result<(), Self::Error>;
+    async fn remove(&self, id: RawPreKeyId) -> Result<(), Self::Error>;
 }
