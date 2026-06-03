@@ -605,7 +605,8 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
                 alice_ident: &m.identity_key,
                 alice_base: &m.base_key,
             })
-            .map(Some)} else {
+            .map(Some)
+        } else {
             Ok(None)
         }
     }
@@ -1084,6 +1085,7 @@ mod tests {
     use std::borrow::Borrow;
     use std::collections::BTreeMap;
     use std::fmt;
+    use std::sync::{Mutex, MutexGuard};
     use std::vec::Vec;
     use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -1098,14 +1100,14 @@ mod tests {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     struct TestStore {
-        prekeys: Vec<PreKey>,
+        prekeys: Mutex<Vec<PreKey>>,
     }
 
     impl TestStore {
-        pub fn prekey_slice(&self) -> &[PreKey] {
-            &self.prekeys
+        pub fn lock(&self) -> MutexGuard<'_, Vec<PreKey>> {
+            self.prekeys.lock().expect("propagate any mutex poison")
         }
     }
 
@@ -1115,22 +1117,34 @@ mod tests {
         type Error = DummyError;
 
         async fn prekey(
-            &mut self,
+            &self,
             id: proteus_traits::RawPreKeyId,
         ) -> Result<Option<proteus_traits::RawPreKey>, Self::Error> {
-            if let Some(prekey) = self.prekeys.iter().find(|k| k.key_id.value() == id) {
-                Ok(Some(prekey.serialise().unwrap()))
-            } else {
-                Ok(None)
-            }
+            self.lock()
+                .iter()
+                .find(|k| k.key_id.value() == id)
+                .map(|prekey| Ok(prekey.serialise().unwrap()))
+                .transpose()
         }
 
-        async fn remove(&mut self, id: proteus_traits::RawPreKeyId) -> Result<(), Self::Error> {
-            self.prekeys
+        async fn remove(&self, id: proteus_traits::RawPreKeyId) -> Result<(), Self::Error> {
+            let mut guard = self.lock();
+            guard
                 .iter()
                 .position(|k| k.key_id.value() == id)
-                .map(|ix| self.prekeys.swap_remove(ix));
+                .map(|ix| guard.swap_remove(ix));
             Ok(())
+        }
+    }
+
+    impl FromIterator<PreKey> for TestStore {
+        fn from_iter<I: IntoIterator<Item = PreKey>>(iter: I) -> Self {
+            let store = TestStore::default();
+            {
+                let mut guard = store.lock();
+                guard.extend(iter);
+            }
+            store
         }
     }
 
@@ -1147,12 +1161,10 @@ mod tests {
 
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), total_size as u16),
-        };
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), total_size as u16).collect::<TestStore>();
 
         let mut alices = Vec::new();
-        for pk in bob_store.prekey_slice() {
+        for pk in bob_store.lock().iter() {
             let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), pk);
             alices.push(Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap());
         }
@@ -1193,14 +1205,10 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut alice_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let mut alice_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
@@ -1340,14 +1348,10 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut alice_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let mut alice_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
@@ -1441,11 +1445,9 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
@@ -1474,17 +1476,13 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut alice_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let mut alice_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
-        let alice_prekey = alice_store.prekey_slice().first().unwrap().clone();
+        let alice_prekey = alice_store.lock().first().unwrap().clone();
         let alice_bundle = PreKeyBundle::new(alice_ident.public_key.clone(), &alice_prekey);
 
         // Initial simultaneous prekey message
@@ -1524,17 +1522,13 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut alice_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let mut alice_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
-        let alice_prekey = alice_store.prekey_slice().first().unwrap().clone();
+        let alice_prekey = alice_store.lock().first().unwrap().clone();
         let alice_bundle = PreKeyBundle::new(alice_ident.public_key.clone(), &alice_prekey);
 
         // Initial simultaneous prekey message
@@ -1598,11 +1592,9 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key, &bob_prekey);
 
         let alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
@@ -1620,14 +1612,10 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut alice_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let mut alice_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
@@ -1682,11 +1670,9 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
@@ -1709,14 +1695,10 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut alice_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let mut alice_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle = PreKeyBundle::new(bob_ident.public_key.clone(), &bob_prekey);
 
         let mut alice = Session::init_from_prekey::<()>(&alice_ident, bob_bundle).unwrap();
@@ -1828,11 +1810,9 @@ mod tests {
         let bob_ident = IdentityKeyPair::new();
         let eve_ident = IdentityKeyPair::new();
 
-        let eve_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
+        let eve_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
 
-        let eve_prekey = eve_store.prekey_slice().first().unwrap().clone();
+        let eve_prekey = eve_store.lock().first().unwrap().clone();
         let mut eve_bundle = PreKeyBundle::new(eve_ident.public_key.clone(), &eve_prekey);
         let mut eve_bundle_signed = PreKeyBundle::signed(&eve_ident, &eve_prekey);
 
@@ -1846,10 +1826,8 @@ mod tests {
         assert_eq!(PreKeyAuth::Invalid, eve_bundle_signed.verify());
 
         // authentic prekey
-        let bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 10),
-        };
-        let bob_prekey = bob_store.prekey_slice().first().unwrap().clone();
+        let bob_store = gen_prekeys(PreKeyId::new(0), 10).collect::<TestStore>();
+        let bob_prekey = bob_store.lock().first().unwrap().clone();
         let bob_bundle_signed = PreKeyBundle::signed(&bob_ident, &bob_prekey);
         assert_eq!(PreKeyAuth::Valid, bob_bundle_signed.verify());
     }
@@ -1860,9 +1838,7 @@ mod tests {
         let alice = IdentityKeyPair::new();
         let bob = IdentityKeyPair::new();
 
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 500),
-        };
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 500).collect::<TestStore>();
 
         async fn get_bob(bob: &IdentityKeyPair, i: u16, store: &mut TestStore) -> PreKeyBundle {
             PreKeyBundle::new(
@@ -1927,13 +1903,9 @@ mod tests {
         let alice = IdentityKeyPair::new();
         let bob = IdentityKeyPair::new();
 
-        let mut bob_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(0), 1),
-        };
+        let mut bob_store = gen_prekeys(PreKeyId::new(0), 1).collect::<TestStore>();
 
-        let mut alice_store = TestStore {
-            prekeys: gen_prekeys(PreKeyId::new(1), 1),
-        };
+        let mut alice_store = gen_prekeys(PreKeyId::new(1), 1).collect::<TestStore>();
 
         async fn get_bob(bob: &IdentityKeyPair, i: u16, store: &mut TestStore) -> PreKeyBundle {
             PreKeyBundle::new(
@@ -2007,12 +1979,12 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut bob_store1 = TestStore {
-            prekeys: vec![PreKey::new(PreKeyId::new(1))],
-        };
-        let mut bob_store2 = TestStore {
-            prekeys: vec![PreKey::new(PreKeyId::new(1))],
-        };
+        let mut bob_store1 = [PreKey::new(PreKeyId::new(1))]
+            .into_iter()
+            .collect::<TestStore>();
+        let mut bob_store2 = [PreKey::new(PreKeyId::new(1))]
+            .into_iter()
+            .collect::<TestStore>();
 
         let bob_prekey = PreKey::deserialise(
             &bob_store1
@@ -2053,9 +2025,7 @@ mod tests {
         let alice_ident = IdentityKeyPair::new();
         let bob_ident = IdentityKeyPair::new();
 
-        let mut bob_store = TestStore {
-            prekeys: vec![PreKey::last_resort()],
-        };
+        let mut bob_store = [PreKey::last_resort()].into_iter().collect::<TestStore>();
 
         let bob_prekey = PreKey::deserialise(
             &bob_store
