@@ -473,7 +473,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     #[allow(clippy::type_complexity)]
     pub async fn init_from_message<S: proteus_traits::PreKeyStore>(
         ours: I,
-        store: &mut S,
+        store: &S,
         env: &Envelope<'_>,
     ) -> SessionResult<(Session<I>, Vec<u8>), S::Error> {
         let Message::Keyed(pkmsg) = env.message() else {
@@ -533,7 +533,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
 
     pub async fn decrypt<S: PreKeyStore>(
         &mut self,
-        store: &mut S,
+        store: &S,
         env: &Envelope<'_>,
     ) -> SessionResult<Vec<u8>, S::Error> {
         match *env.message() {
@@ -588,7 +588,7 @@ impl<I: Borrow<IdentityKeyPair>> Session<I> {
     // See note [no_new_state] for those cases where no prekey has been found.
     async fn new_state<S: proteus_traits::PreKeyStore>(
         &self,
-        store: &mut S,
+        store: &S,
         m: &PreKeyMessage<'_>,
     ) -> SessionResult<Option<SessionState>, S::Error> {
         let prekey_raw = store
